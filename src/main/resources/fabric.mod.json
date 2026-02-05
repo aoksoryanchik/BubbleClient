@@ -1,16 +1,15 @@
 {
   "schemaVersion": 1,
   "id": "bubbleclient",
-  "version": "${version}",
+  "version": "1.0.0",
   "name": "BubbleClient",
-  "description": "Killaura for 1.21.4",
-  "authors": [ "aoksoryanchik" ],
-  "contact": { "sources": "https://github.com/aoksoryanchik/BubbleClient" },
+  "description": "Killaura 1.21.4",
+  "authors": ["aoksoryanchik"],
+  "contact": {},
   "license": "MIT",
-  "icon": "assets/bubbleclient/icon.png",
   "environment": "*",
   "entrypoints": {
-    "main": [ "com.example.ExampleMod" ]
+    "main": ["com.example.ExampleMod"]
   },
   "depends": {
     "fabricloader": ">=0.16.9",
