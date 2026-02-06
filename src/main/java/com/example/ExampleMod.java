@@ -58,6 +58,7 @@ public class ExampleMod implements ModInitializer {
             if (isPressed(h, keyTB)) triggerbot = !triggerbot;
             if (isPressed(h, keyFB)) fullbright = !fullbright;
 
+            // Исправленный NoFire
             if (noFire) {
                 client.player.setFireTicks(0);
                 if (client.player.isOnFire()) client.player.extinguish();
@@ -93,25 +94,34 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runKillaura(MinecraftClient client) {
+        // Если выключена — выходим сразу
+        if (!killaura) return;
+
         for (PlayerEntity target : client.world.getPlayers()) {
             if (target == client.player || !target.isAlive() || target.isInvisible()) continue;
+            
             double d = client.player.distanceTo(target);
-            if (d <= (client.player.canSee(target) ? kaRange : kaWallsRange)) {
+            double currentLimit = client.player.canSee(target) ? kaRange : kaWallsRange;
+
+            if (d <= currentLimit) {
+                // Рандомный КД 0.95 - 1.05
                 float rndCD = 0.95f + (random.nextFloat() * 0.1f);
+                
                 if (client.player.getAttackCooldownProgress(0.5f) >= rndCD) {
                     if (screenShake) {
-                        client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * 0.35f);
-                        client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * 0.35f);
+                        client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * 0.4f);
+                        client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * 0.4f);
                     }
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
-                    break;
+                    break; 
                 }
             }
         }
     }
 
     private void runTriggerbot(MinecraftClient client) {
+        if (!triggerbot) return;
         if (client.crosshairTarget instanceof EntityHitResult res && res.getEntity() instanceof PlayerEntity target) {
             if (target.isAlive() && client.player.getAttackCooldownProgress(0) >= 0.98f) {
                 client.interactionManager.attackEntity(client.player, target);
@@ -136,7 +146,6 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI & CONFIG (СОХРАНЕНО БЕЗ ИЗМЕНЕНИЙ) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -145,9 +154,11 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(x, y, x+180, y+210, 0xFF0A0A0A);
             ctx.drawBorder(x, y, 180, 210, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width/2, y+10, -1);
+            
             String[] n = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "NoFire", "Waypoint", "Hands Mod"};
             boolean[] s = {killaura, triggerbot, fullbright, autoTotem, noFire, waypointActive, viewModelActive};
             int[] k = {keyKA, keyTB, keyFB, keyAT, keyNF, keyWP, keyVM};
+            
             for(int i=0; i<7; i++) {
                 int iy = y+35+i*22;
                 boolean h = mx>=x+10 && mx<=x+170 && my>=iy && my<=iy+18;
@@ -213,7 +224,19 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xF0000000);
             ctx.drawCenteredTextWithShadow(textRenderer, "SETTINGS: " + t, width/2, height/2-75, 0xFF00AAFF);
+            
+            // ВОЗВРАЩЕНЫ НАЗВАНИЯ ПОЛЕЙ
+            if(t.equals("KA")) {
+                ctx.drawTextWithShadow(textRenderer, "Range:", width/2-95, height/2-41, -1);
+                ctx.drawTextWithShadow(textRenderer, "Walls:", width/2-95, height/2-16, -1);
+            } else if(t.equals("WP") || t.equals("VM")) {
+                ctx.drawTextWithShadow(textRenderer, "X:", width/2-70, height/2-41, -1);
+                ctx.drawTextWithShadow(textRenderer, "Y:", width/2-70, height/2-16, -1);
+                ctx.drawTextWithShadow(textRenderer, "Z:", width/2-70, height/2+9, -1);
+            }
+
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); if(f3.isVisible()) f3.render(ctx, mx, my, d);
+            
             if(t.equals("KA")) {
                 renderCheck(ctx, "AutoRun", autoRun, height/2+30, mx, my);
                 renderCheck(ctx, "AntiVelocity", antiVelocity, height/2+50, mx, my);
@@ -277,3 +300,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
