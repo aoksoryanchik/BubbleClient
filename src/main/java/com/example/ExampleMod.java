@@ -46,8 +46,8 @@ public class ExampleMod implements ModInitializer {
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
     
-    private float nextAttackThreshold = 0.95f;
-    private float strafeAngle = 0; // Для режима 360
+    private float nextAttackThreshold = 0.94f;
+    private float strafeAngle = 0;
 
     @Override
     public void onInitialize() {
@@ -57,8 +57,12 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
+            // Открытие меню (только если нет других окон)
+            if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
+                client.setScreen(new BubbleMenu());
+            }
             
+            // Работа горячих клавиш (блокируется в чате)
             if (client.currentScreen == null) {
                 if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
                 if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
@@ -68,6 +72,7 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
             }
 
+            // Модули выживания
             if (noFire) { client.player.setFireTicks(0); if (client.player.isOnFire()) client.player.extinguish(); }
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
 
@@ -84,8 +89,9 @@ public class ExampleMod implements ModInitializer {
                 client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
             }
 
+            // ПВП Логика
             if (killaura) {
-                runNursultanKillaura(client);
+                runProKillaura(client);
             } else if (triggerbot) {
                 runTriggerbot(client);
             }
@@ -98,7 +104,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void runNursultanKillaura(MinecraftClient client) {
+    private void runProKillaura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
@@ -110,26 +116,25 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // 1. Наводка
-            double targetY = target.getY() + (target.getHeight() * (0.42 + random.nextDouble() * 0.25));
-            lookAt(client.player, new Vec3d(target.getX(), targetY, target.getZ()));
+            // Наводка (плавная)
+            double tY = target.getY() + (target.getHeight() * (0.45 + random.nextDouble() * 0.2));
+            lookAt(client.player, new Vec3d(target.getX(), tY, target.getZ()));
 
-            // 2. Режим 360 (Strafe вокруг цели)
+            // Режим 360 (Target Strafe)
             if (mode360) {
                 client.options.sprintKey.setPressed(true);
-                strafeAngle += 0.15f; // Скорость вращения
-                double radius = kaRange - 0.5; // Держимся чуть ближе радиуса удара
-                double posX = target.getX() + Math.cos(strafeAngle) * radius;
-                double posZ = target.getZ() + Math.sin(strafeAngle) * radius;
+                strafeAngle += 0.18f;
+                double r = kaRange - 0.7;
+                double targetX = target.getX() + Math.cos(strafeAngle) * r;
+                double targetZ = target.getZ() + Math.sin(strafeAngle) * r;
                 
-                // Двигаем игрока в нужную точку круга
-                Vec3d moveVec = new Vec3d(posX - client.player.getX(), 0, posZ - client.player.getZ()).normalize().multiply(0.25);
-                client.player.addVelocity(moveVec.x, 0, moveVec.z);
+                Vec3d dir = new Vec3d(targetX - client.player.getX(), 0, targetZ - client.player.getZ()).normalize().multiply(0.22);
+                client.player.addVelocity(dir.x, 0, dir.z);
             } else if (autoRun) {
                 client.options.sprintKey.setPressed(true);
             }
 
-            // 3. Удар по КД (0.93 - 0.98)
+            // Удар (исправлено)
             float progress = client.player.getAttackCooldownProgress(0.0f);
             if (progress >= nextAttackThreshold) {
                 if (screenShake) {
@@ -138,7 +143,7 @@ public class ExampleMod implements ModInitializer {
                 }
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
-                nextAttackThreshold = 0.93f + (random.nextFloat() * 0.05f);
+                nextAttackThreshold = 0.92f + (random.nextFloat() * 0.06f);
             }
         }
     }
@@ -148,8 +153,8 @@ public class ExampleMod implements ModInitializer {
         double diffXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.84f);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.84f);
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.75f);
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.75f);
     }
 
     private void runTriggerbot(MinecraftClient client) {
@@ -183,7 +188,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI И КОНФИГ ---
+    // --- GUI ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
@@ -264,7 +269,7 @@ public class ExampleMod implements ModInitializer {
                 ctx.drawTextWithShadow(textRenderer, "Shake:", width/2-95, height/2+9, -1);
                 renderCheck(ctx, "AutoRun", autoRun, height/2+35, mx, my);
                 renderCheck(ctx, "AntiVelocity", antiVelocity, height/2+50, mx, my);
-                renderCheck(ctx, "360 Mode", mode360, height/2+65, mx, my); // КНОПКА 360
+                renderCheck(ctx, "360 Mode", mode360, height/2+65, mx, my);
             }
             super.render(ctx, mx, my, d);
         }
