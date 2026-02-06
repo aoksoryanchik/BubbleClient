@@ -1,6 +1,5 @@
 package com.example;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
@@ -14,11 +13,9 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.opengl.GL11;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false;
@@ -54,18 +51,14 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot && !killaura) runTriggerbot(client);
         });
 
-        WorldRenderEvents.LAST.register(context -> {
+        // Исправленный рендер для 1.21.4
+        WorldRenderEvents.AFTER_ENTITIES.register(context -> {
             if (!esp) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
-            // ХАРДКОРНЫЙ РЕНДЕР СКВОЗЬ СТЕНЫ
-            RenderSystem.disableDepthTest();
-            RenderSystem.setShader(GameRenderer::getPositionShader); // Самый базовый шейдер
-            
-            Tessellator tessellator = Tessellator.getInstance();
-            BufferBuilder buffer = tessellator.getBuffer();
-            buffer.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+            // В 1.21.4 используем специальный буфер, который рисует ПОВЕРХ
+            VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getDebugQuads()); 
 
             for (PlayerEntity entity : client.world.getPlayers()) {
                 if (entity == client.player || !entity.isAlive() || entity.isInvisible()) continue;
@@ -74,41 +67,47 @@ public class ExampleMod implements ModInitializer {
                 Vec3d cam = context.camera().getPos();
                 
                 matrices.push();
-                double x = entity.prevX + (entity.getX() - entity.prevX) * context.tickCounter.getTickDelta(true) - cam.x;
-                double y = entity.prevY + (entity.getY() - entity.prevY) * context.tickCounter().getTickDelta(true) - cam.y;
-                double z = entity.prevZ + (entity.getZ() - entity.prevZ) * context.tickCounter().getTickDelta(true) - cam.z;
+                double x = entity.getX() - cam.x;
+                double y = entity.getY() - cam.y;
+                double z = entity.getZ() - cam.z;
                 matrices.translate(x, y, z);
 
-                Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ()).expand(0.01);
-                drawBox(buffer, matrices.peek(), b);
+                Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ()).expand(0.05);
+                
+                // Рисуем бокс через новые методы VertexConsumer
+                drawEspBox(matrices, buffer, b);
+                
                 matrices.pop();
             }
-            
-            tessellator.draw();
-            RenderSystem.enableDepthTest();
         });
     }
 
-    private void drawBox(BufferBuilder buffer, MatrixStack.Entry entry, Box b) {
+    private void drawEspBox(MatrixStack matrices, VertexConsumer buffer, Box b) {
+        // В 1.21.4 мы рисуем линии через VertexConsumer
+        // Белый цвет, полная непрозрачность
         float r=1, g=1, bl=1, a=1;
-        // Линии бокса
-        line(buffer, entry, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.minX, b.minY, b.maxZ, r, g, bl, a);
-        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.minY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.minX, b.maxY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.maxY, b.minZ, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.maxY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, bl, a);
-        line(buffer, entry, b.minX, b.maxY, b.maxZ, b.minX, b.maxY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.minX, b.minY, b.minZ, b.minX, b.maxY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
-        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, bl, a);
+        
+        // Отрисовка линий (12 ребер)
+        renderLine(matrices, buffer, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, r, g, bl, a);
+        renderLine(matrices, buffer, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ, r, g, bl, a);
+        renderLine(matrices, buffer, b.maxX, b.minY, b.maxZ, b.minX, b.minY, b.maxZ, r, g, bl, a);
+        renderLine(matrices, buffer, b.minX, b.minY, b.maxZ, b.minX, b.minY, b.minZ, r, g, bl, a);
+
+        renderLine(matrices, buffer, b.minX, b.maxY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, bl, a);
+        renderLine(matrices, buffer, b.maxX, b.maxY, b.minZ, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
+        renderLine(matrices, buffer, b.maxX, b.maxY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, bl, a);
+        renderLine(matrices, buffer, b.minX, b.maxY, b.maxZ, b.minX, b.maxY, b.minZ, r, g, bl, a);
+
+        renderLine(matrices, buffer, b.minX, b.minY, b.minZ, b.minX, b.maxY, b.minZ, r, g, bl, a);
+        renderLine(matrices, buffer, b.maxX, b.minY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, bl, a);
+        renderLine(matrices, buffer, b.maxX, b.minY, b.maxZ, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
+        renderLine(matrices, buffer, b.minX, b.minY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, bl, a);
     }
 
-    private void line(BufferBuilder b, MatrixStack.Entry e, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float bl, float a) {
-        b.vertex(e.getPositionMatrix(), (float)x1, (float)y1, (float)z1).color(r, g, bl, a).next();
-        b.vertex(e.getPositionMatrix(), (float)x2, (float)y2, (float)z2).color(r, g, bl, a).next();
+    private void renderLine(MatrixStack matrices, VertexConsumer buffer, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float b, float a) {
+        MatrixStack.Entry entry = matrices.peek();
+        buffer.vertex(entry, (float)x1, (float)y1, (float)z1).color(r, g, b, a).normal(entry, 0, 1, 0);
+        buffer.vertex(entry, (float)x2, (float)y2, (float)z2).color(r, g, b, a).normal(entry, 0, 1, 0);
     }
 
     private boolean isPressed(long handle, int key) {
@@ -122,7 +121,7 @@ public class ExampleMod implements ModInitializer {
     private void runKillaura(MinecraftClient client) {
         PlayerEntity target = null;
         for (PlayerEntity p : client.world.getPlayers()) {
-            if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= 3.5) { target = p; break; }
+            if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= 3.6) { target = p; break; }
         }
         if (target != null) {
             client.player.setYaw((float) Math.toDegrees(Math.atan2(target.getZ() - client.player.getZ(), target.getX() - client.player.getX())) - 90);
