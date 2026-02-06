@@ -1,6 +1,5 @@
 package com.example;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
@@ -64,44 +63,36 @@ public class ExampleMod implements ModInitializer {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
-            // СУТЬ ТУТ: Используем RenderLayer который рисуется поверх (DEBUG_LINE_STRIP или аналоги)
-            // Но самый надежный метод для просвечивания — прямая манипуляция RenderSystem
             for (PlayerEntity entity : client.world.getPlayers()) {
                 if (entity == client.player || !entity.isAlive() || entity.isInvisible()) continue;
                 
                 MatrixStack matrices = context.matrixStack();
                 Vec3d camPos = context.camera().getPos();
                 
+                // Используем DEBUG_LINE_STRIP — он часто игнорирует глубину по умолчанию в Fabric
+                VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
+
                 matrices.push();
                 double x = entity.prevX + (entity.getX() - entity.prevX) * context.tickCounter().getTickDelta(true) - camPos.x;
                 double y = entity.prevY + (entity.getY() - entity.prevY) * context.tickCounter().getTickDelta(true) - camPos.y;
                 double z = entity.prevZ + (entity.getZ() - entity.prevZ) * context.tickCounter().getTickDelta(true) - camPos.z;
                 matrices.translate(x, y, z);
 
-                Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ()).expand(0.02);
+                Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ()).expand(0.01);
                 
-                // ВКЛЮЧАЕМ РЕЖИМ "СКВОЗЬ СТЕНЫ"
-                RenderSystem.disableDepthTest();
-                RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-                
-                Tessellator tessellator = Tessellator.getInstance();
-                BufferBuilder bufferBuilder = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
-                
-                drawEspBox(matrices, bufferBuilder, b);
-                
-                BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
-                RenderSystem.enableDepthTest();
+                // Рисуем линии. Для просвечивания используем максимально простой метод
+                drawEspBox(matrices, buffer, b);
+
                 matrices.pop();
             }
         });
     }
 
-    private void drawEspBox(MatrixStack matrices, BufferBuilder buffer, Box b) {
+    private void drawEspBox(MatrixStack matrices, VertexConsumer buffer, Box b) {
         MatrixStack.Entry entry = matrices.peek();
         float r = 1, g = 1, b1 = 1, a = 1;
         
-        // Рисуем 12 линий бокса вручную в буфер
-        // Нижний
+        // Нижний квадрат
         line(buffer, entry, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.minY, b.maxZ, b.minX, b.minY, b.maxZ, r, g, b1, a);
@@ -118,9 +109,9 @@ public class ExampleMod implements ModInitializer {
         line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, b1, a);
     }
 
-    private void line(BufferBuilder b, MatrixStack.Entry e, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float bl, float a) {
-        b.vertex(e, (float)x1, (float)y1, (float)z1).color(r, g, bl, a);
-        b.vertex(e, (float)x2, (float)y2, (float)z2).color(r, g, bl, a);
+    private void line(VertexConsumer buffer, MatrixStack.Entry e, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float bl, float a) {
+        buffer.vertex(e, (float)x1, (float)y1, (float)z1).color(r, g, bl, a).normal(e, 0, 1, 0);
+        buffer.vertex(e, (float)x2, (float)y2, (float)z2).color(r, g, bl, a).normal(e, 0, 1, 0);
     }
 
     private boolean isPressed(long handle, int key) {
@@ -137,7 +128,7 @@ public class ExampleMod implements ModInitializer {
     private void runKillaura(MinecraftClient client) {
         PlayerEntity target = null;
         for (PlayerEntity p : client.world.getPlayers()) {
-            if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= 3.3) {
+            if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= 3.4) {
                 target = p; break;
             }
         }
