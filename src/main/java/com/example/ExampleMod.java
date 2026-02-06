@@ -46,7 +46,6 @@ public class ExampleMod implements ModInitializer {
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
     
-    // Порог КД для следующего удара
     private float nextAttackThreshold = 0.95f;
 
     @Override
@@ -57,15 +56,22 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
+            // Открытие меню на '0' (только если экран пуст)
+            if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
+                client.setScreen(new BubbleMenu());
+            }
             
-            if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
-            if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
-            if (isPressed(h, keyFB)) { fullbright = !fullbright; sendNotify("FullBright", fullbright); }
-            if (isPressed(h, keyAT)) { autoTotem = !autoTotem; sendNotify("AutoTotem", autoTotem); }
-            if (isPressed(h, keyNF)) { noFire = !noFire; sendNotify("NoFire", noFire); }
-            if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
+            // ПРОВЕРКА: Если открыт любой экран (чат, инвентарь), бинды не работают
+            if (client.currentScreen == null) {
+                if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
+                if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
+                if (isPressed(h, keyFB)) { fullbright = !fullbright; sendNotify("FullBright", fullbright); }
+                if (isPressed(h, keyAT)) { autoTotem = !autoTotem; sendNotify("AutoTotem", autoTotem); }
+                if (isPressed(h, keyNF)) { noFire = !noFire; sendNotify("NoFire", noFire); }
+                if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
+            }
 
+            // Логика модулей (работает всегда, если включены)
             if (noFire) {
                 client.player.setFireTicks(0);
                 if (client.player.isOnFire()) client.player.extinguish();
@@ -105,7 +111,6 @@ public class ExampleMod implements ModInitializer {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
-        // Поиск ближайшей цели
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
@@ -117,25 +122,18 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // 1. Наводка (в тело)
             double targetY = target.getY() + (target.getHeight() * (0.42 + random.nextDouble() * 0.25));
             lookAt(client.player, new Vec3d(target.getX(), targetY, target.getZ()));
 
-            // 2. Удар по кулдауну (0.93 - 0.98 для всех состояний)
             float progress = client.player.getAttackCooldownProgress(0.0f);
             
             if (progress >= nextAttackThreshold) {
-                // Рандомная тряска для обхода проверок
                 if (screenShake) {
                     client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                     client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
                 }
-
-                // Выполнение атаки
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
-                
-                // Генерируем новый порог для следующего удара
                 nextAttackThreshold = 0.93f + (random.nextFloat() * 0.05f);
             }
         }
@@ -181,7 +179,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI И КОНФИГ ---
+    // --- GUI СЕКЦИЯ ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
@@ -321,3 +319,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
