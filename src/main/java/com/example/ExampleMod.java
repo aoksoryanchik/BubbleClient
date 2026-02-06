@@ -47,7 +47,7 @@ public class ExampleMod implements ModInitializer {
     private final Random random = new Random();
     
     private float nextAttackThreshold = 0.94f;
-    private int strafeDirection = 1;
+    private double currentRotation = 0;
 
     @Override
     public void onInitialize() {
@@ -81,12 +81,9 @@ public class ExampleMod implements ModInitializer {
             }
 
             if (killaura) {
-                runAresKillaura(client);
+                runNursultanStyleAura(client);
             } else if (triggerbot) {
                 runTriggerbot(client);
-            } else {
-                // Сбрасываем клавиши, если аура выключена
-                if (mode360) resetMoveKeys(client);
             }
         });
 
@@ -97,7 +94,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void runAresKillaura(MinecraftClient client) {
+    private void runNursultanStyleAura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
@@ -109,27 +106,32 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // Наводка
-            double tY = target.getY() + (target.getHeight() * 0.5);
+            // 1. Поворот головы к цели
+            double tY = target.getY() + (target.getHeight() * 0.45);
             lookAt(client.player, new Vec3d(target.getX(), tY, target.getZ()));
 
-            // Ares Strafe (360) через клавиши
+            // 2. Логика 360 (TargetStrafe) - работает только когда Киллаура нашла цель
             if (mode360) {
-                client.options.sprintKey.setPressed(true);
-                double dist = client.player.distanceTo(target);
+                client.player.setSprinting(true);
+                currentRotation += 0.12; // Скорость закручивания
                 
-                // Авто-обход препятствий (если уперлись в стену, меняем направление круга)
-                if (client.player.horizontalCollision) strafeDirection *= -1;
-
-                client.options.forwardKey.setPressed(dist > kaRange - 0.5);
-                client.options.backKey.setPressed(dist < kaRange - 1.2);
-                client.options.leftKey.setPressed(strafeDirection == 1);
-                client.options.rightKey.setPressed(strafeDirection == -1);
+                double radius = kaRange - 0.6;
+                double x = target.getX() + Math.cos(currentRotation) * radius;
+                double z = target.getZ() + Math.sin(currentRotation) * radius;
+                
+                // Рассчитываем вектор движения в точку на круге
+                Vec3d targetPos = new Vec3d(x, client.player.getY(), z);
+                Vec3d moveDir = targetPos.subtract(client.player.getPos()).normalize().multiply(0.24);
+                
+                // Применяем скорость только если мы не слишком близко к точке
+                if (client.player.getPos().distanceTo(targetPos) > 0.3) {
+                    client.player.addVelocity(moveDir.x, 0, moveDir.z);
+                }
             } else if (autoRun) {
                 client.options.sprintKey.setPressed(true);
             }
 
-            // Удар по КД
+            // 3. Удар по КД (0.93 - 0.98)
             float progress = client.player.getAttackCooldownProgress(0.0f);
             if (progress >= nextAttackThreshold) {
                 if (screenShake) {
@@ -140,16 +142,7 @@ public class ExampleMod implements ModInitializer {
                 client.player.swingHand(Hand.MAIN_HAND);
                 nextAttackThreshold = 0.93f + (random.nextFloat() * 0.05f);
             }
-        } else if (mode360) {
-            resetMoveKeys(client);
         }
-    }
-
-    private void resetMoveKeys(MinecraftClient client) {
-        client.options.forwardKey.setPressed(false);
-        client.options.backKey.setPressed(false);
-        client.options.leftKey.setPressed(false);
-        client.options.rightKey.setPressed(false);
     }
 
     private void lookAt(PlayerEntity player, Vec3d target) {
@@ -157,8 +150,8 @@ public class ExampleMod implements ModInitializer {
         double diffXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.65f);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.65f);
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.70f);
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.70f);
     }
 
     private void runTriggerbot(MinecraftClient client) {
