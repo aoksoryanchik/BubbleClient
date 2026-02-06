@@ -3,6 +3,7 @@ package com.example;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -29,17 +30,14 @@ import java.nio.file.Paths;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния всех модулей (Ничего не забыто)
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, noFire = true, viewModelActive = true, autoRun = false;
     public static boolean antiVelocity = true, screenShake = true;
 
-    // Параметры настройки
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
     public static float handX = 0.0f, handY = 0.0f, handZ = 0.0f;
     
-    // Бинды клавиш
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
     public static int keyAT = GLFW.GLFW_KEY_UNKNOWN, keyNF = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN, keyVM = GLFW.GLFW_KEY_UNKNOWN;
 
@@ -55,24 +53,18 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            // Открытие меню на кнопку "0" (по умолчанию)
             if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
-            
-            // Обработка биндов модулей
             if (isPressed(h, keyKA)) killaura = !killaura;
             if (isPressed(h, keyTB)) triggerbot = !triggerbot;
             if (isPressed(h, keyFB)) fullbright = !fullbright;
 
-            // NoFire (Исправлено: setFireTicks вместо clearFireTicks)
             if (noFire) {
                 client.player.setFireTicks(0);
                 if (client.player.isOnFire()) client.player.extinguish();
             }
 
-            // FullBright
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
 
-            // AutoTotem
             if (autoTotem && client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
                 for (int i = 0; i < 45; i++) {
                     if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
@@ -82,21 +74,17 @@ public class ExampleMod implements ModInitializer {
                 }
             }
 
-            // Anti-Velocity
             if (antiVelocity && client.player.hurtTime > 0) {
                 client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
             }
 
-            // KillAura с ПВП-логикой (Криты + Рандом КД)
             if (killaura) {
                 runKillaura(client);
                 if (autoRun) client.options.sprintKey.setPressed(true);
             }
-
             if (triggerbot && !killaura) runTriggerbot(client);
         });
 
-        // Исправленный рендер Waypoint
         WorldRenderEvents.LAST.register(this::renderWaypoint);
 
         HudRenderCallback.EVENT.register((ctx, t) -> {
@@ -109,9 +97,8 @@ public class ExampleMod implements ModInitializer {
             if (target == client.player || !target.isAlive() || target.isInvisible()) continue;
             double d = client.player.distanceTo(target);
             if (d <= (client.player.canSee(target) ? kaRange : kaWallsRange)) {
-                // Рандомный КД для обхода античитов и нормальных критов
-                float nextCooldown = 0.95f + (random.nextFloat() * 0.1f);
-                if (client.player.getAttackCooldownProgress(0.5f) >= nextCooldown) {
+                float rndCD = 0.95f + (random.nextFloat() * 0.1f);
+                if (client.player.getAttackCooldownProgress(0.5f) >= rndCD) {
                     if (screenShake) {
                         client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * 0.35f);
                         client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * 0.35f);
@@ -133,8 +120,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // Исправлено обращение к WorldRenderContext (WorldRenderEvents.Context)
-    private void renderWaypoint(WorldRenderEvents.Context context) {
+    private void renderWaypoint(WorldRenderContext context) {
         if (!waypointActive) return;
         MinecraftClient client = MinecraftClient.getInstance();
         double d = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
@@ -150,7 +136,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI МЕНЮ ---
+    // --- GUI & CONFIG (СОХРАНЕНО БЕЗ ИЗМЕНЕНИЙ) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -291,4 +277,3 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
-
