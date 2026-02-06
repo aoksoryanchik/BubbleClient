@@ -28,27 +28,21 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null) return;
+            if (client.player == null || client.world == null) return;
 
             long handle = client.getWindow().getHandle();
 
-            // Открытие меню на 0
+            // Открытие меню
             boolean menuDown = InputUtil.isKeyPressed(handle, menuKey);
             if (menuDown && !menuPressed) {
                 client.setScreen(new BubbleMenu());
             }
             menuPressed = menuDown;
 
-            // Бинды функций
+            // Бинды
             if (client.currentScreen == null) {
-                if (isPressed(handle, killauraKey)) {
-                    killaura = !killaura;
-                    client.player.sendMessage(Text.literal("§b[B] §fKillaura: " + (killaura ? "§aON" : "§cOFF")), true);
-                }
-                if (isPressed(handle, triggerbotKey)) {
-                    triggerbot = !triggerbot;
-                    client.player.sendMessage(Text.literal("§b[B] §fTrigger: " + (triggerbot ? "§aON" : "§cOFF")), true);
-                }
+                if (isPressed(handle, killauraKey)) killaura = !killaura;
+                if (isPressed(handle, triggerbotKey)) triggerbot = !triggerbot;
             }
 
             if (killaura) runKillaura(client);
@@ -74,11 +68,20 @@ public class ExampleMod implements ModInitializer {
                 target = p; break;
             }
         }
+        
         if (target != null) {
+            // --- НОВАЯ ФУНКЦИЯ: COMBAT SPRINT ---
+            // Если мы в бою, заставляем персонажа бежать (как будто зажат Ctrl)
+            if (client.player.forwardSpeed > 0 && !client.player.isHorizontalCollision) {
+                client.player.setSprinting(true);
+            }
+
+            // Наводка
             double dx = target.getX() - client.player.getX();
             double dz = target.getZ() - client.player.getZ();
             client.player.setYaw((float) Math.toDegrees(Math.atan2(dz, dx)) - 90);
 
+            // Удар
             if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
@@ -96,20 +99,18 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // ТВОЕ ЧЕТКОЕ МЕНЮ (без изменений)
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Menu")); }
 
         @Override
         public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-            context.fill(0, 0, width, height, 0x95000000); // Четкий фон без блюра
-            
+            context.fill(0, 0, width, height, 0x95000000); 
             int x = width / 2 - 80;
             int y = height / 2 - 40;
-
             context.fill(x, y, x + 160, y + 80, 0xFF121212);
             context.drawBorder(x, y, 160, 80, 0xFF00AAFF);
             context.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width / 2, y + 6, -1);
-
             drawBtn(context, x + 10, y + 30, "Killaura", killaura, killauraKey, "ka", mouseX, mouseY);
             drawBtn(context, x + 10, y + 55, "TriggerBot", triggerbot, triggerbotKey, "tb", mouseX, mouseY);
         }
@@ -118,7 +119,6 @@ public class ExampleMod implements ModInitializer {
             boolean hover = mx >= x && mx <= x + 140 && my >= y && my <= y + 16;
             String kName = bindingFor.equals(id) ? "???" : GLFW.glfwGetKeyName(key, 0);
             if (kName == null) kName = "KEY_" + key;
-
             context.fill(x, y, x + 140, y + 16, hover ? 0xFF252525 : 0xFF181818);
             context.fill(x + 2, y + 4, x + 10, y + 12, on ? 0xFF00FF00 : 0xFFFF0000);
             context.drawTextWithShadow(textRenderer, name + " §7[" + kName.toUpperCase() + "]", x + 15, y + 4, -1);
@@ -128,7 +128,6 @@ public class ExampleMod implements ModInitializer {
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
             int x = width / 2 - 80;
             int y = height / 2 - 40;
-
             if (isOver(mouseX, mouseY, x + 10, y + 30)) {
                 if (button == 0) killaura = !killaura;
                 else if (button == 1) bindingFor = "ka";
@@ -144,8 +143,8 @@ public class ExampleMod implements ModInitializer {
         public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
             if (!bindingFor.isEmpty()) {
                 if (keyCode != GLFW.GLFW_KEY_ESCAPE) {
-                    if (bindingTargetIs("ka")) killauraKey = keyCode;
-                    if (bindingTargetIs("tb")) triggerbotKey = keyCode;
+                    if (bindingFor.equals("ka")) killauraKey = keyCode;
+                    if (bindingFor.equals("tb")) triggerbotKey = keyCode;
                 }
                 bindingFor = "";
                 return true;
@@ -153,7 +152,6 @@ public class ExampleMod implements ModInitializer {
             return super.keyPressed(keyCode, scanCode, modifiers);
         }
 
-        private boolean bindingTargetIs(String id) { return bindingFor.equals(id); }
         private boolean isOver(double mx, double my, int x, int y) { return mx >= x && mx <= x + 140 && my >= y && my <= y + 16; }
         @Override public boolean shouldPause() { return false; }
     }
