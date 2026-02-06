@@ -1,5 +1,6 @@
 package com.example;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
@@ -30,7 +31,6 @@ public class ExampleMod implements ModInitializer {
 
     public static String bindingFor = ""; 
     private static final boolean[] keyStates = new boolean[512];
-    private boolean menuPressed = false;
 
     @Override
     public void onInitialize() {
@@ -63,15 +63,20 @@ public class ExampleMod implements ModInitializer {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
+            // Настройка шейдера и системы рендеринга
+            RenderSystem.setShader(GameRenderer::getPositionColorShader);
+            RenderSystem.disableDepthTest(); // Отключаем глубину для всего блока ESP
+            RenderSystem.enableBlend();
+            
+            Tessellator tessellator = Tessellator.getInstance();
+            BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+
             for (PlayerEntity entity : client.world.getPlayers()) {
                 if (entity == client.player || !entity.isAlive() || entity.isInvisible()) continue;
                 
                 MatrixStack matrices = context.matrixStack();
                 Vec3d camPos = context.camera().getPos();
                 
-                // Используем DEBUG_LINE_STRIP — он часто игнорирует глубину по умолчанию в Fabric
-                VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
-
                 matrices.push();
                 double x = entity.prevX + (entity.getX() - entity.prevX) * context.tickCounter().getTickDelta(true) - camPos.x;
                 double y = entity.prevY + (entity.getY() - entity.prevY) * context.tickCounter().getTickDelta(true) - camPos.y;
@@ -80,38 +85,40 @@ public class ExampleMod implements ModInitializer {
 
                 Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ()).expand(0.01);
                 
-                // Рисуем линии. Для просвечивания используем максимально простой метод
-                drawEspBox(matrices, buffer, b);
+                drawEspLines(buffer, matrices.peek(), b);
 
                 matrices.pop();
             }
+            
+            // Финализируем отрисовку
+            BufferRenderer.drawWithGlobalProgram(buffer.end());
+            RenderSystem.enableDepthTest();
+            RenderSystem.disableBlend();
         });
     }
 
-    private void drawEspBox(MatrixStack matrices, VertexConsumer buffer, Box b) {
-        MatrixStack.Entry entry = matrices.peek();
-        float r = 1, g = 1, b1 = 1, a = 1;
-        
-        // Нижний квадрат
-        line(buffer, entry, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, r, g, b1, a);
-        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ, r, g, b1, a);
-        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.minX, b.minY, b.maxZ, r, g, b1, a);
-        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.minY, b.minZ, r, g, b1, a);
+    private void drawEspLines(BufferBuilder buffer, MatrixStack.Entry entry, Box b) {
+        float r = 1, g = 1, bl = 1, a = 1;
+        // Нижний
+        line(buffer, entry, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.minX, b.minY, b.maxZ, r, g, bl, a);
+        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.minY, b.minZ, r, g, bl, a);
         // Верхний
-        line(buffer, entry, b.minX, b.maxY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, b1, a);
-        line(buffer, entry, b.maxX, b.maxY, b.minZ, b.maxX, b.maxY, b.maxZ, r, g, b1, a);
-        line(buffer, entry, b.maxX, b.maxY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, b1, a);
-        line(buffer, entry, b.minX, b.maxY, b.maxZ, b.minX, b.maxY, b.minZ, r, g, b1, a);
+        line(buffer, entry, b.minX, b.maxY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.maxY, b.minZ, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.maxY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, bl, a);
+        line(buffer, entry, b.minX, b.maxY, b.maxZ, b.minX, b.maxY, b.minZ, r, g, bl, a);
         // Стойки
-        line(buffer, entry, b.minX, b.minY, b.minZ, b.minX, b.maxY, b.minZ, r, g, b1, a);
-        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, b1, a);
-        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.maxX, b.maxY, b.maxZ, r, g, b1, a);
-        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, b1, a);
+        line(buffer, entry, b.minX, b.minY, b.minZ, b.minX, b.maxY, b.minZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
+        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, bl, a);
     }
 
-    private void line(VertexConsumer buffer, MatrixStack.Entry e, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float bl, float a) {
-        buffer.vertex(e, (float)x1, (float)y1, (float)z1).color(r, g, bl, a).normal(e, 0, 1, 0);
-        buffer.vertex(e, (float)x2, (float)y2, (float)z2).color(r, g, bl, a).normal(e, 0, 1, 0);
+    private void line(BufferBuilder b, MatrixStack.Entry e, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float bl, float a) {
+        b.vertex(e, (float)x1, (float)y1, (float)z1).color(r, g, bl, a);
+        b.vertex(e, (float)x2, (float)y2, (float)z2).color(r, g, bl, a);
     }
 
     private boolean isPressed(long handle, int key) {
