@@ -47,7 +47,7 @@ public class ExampleMod implements ModInitializer {
     private final Random random = new Random();
     
     private float nextAttackThreshold = 0.94f;
-    private float strafeAngle = 0;
+    private int strafeDirection = 1;
 
     @Override
     public void onInitialize() {
@@ -57,12 +57,8 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            // Открытие меню (только если нет других окон)
-            if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
-                client.setScreen(new BubbleMenu());
-            }
+            if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
             
-            // Работа горячих клавиш (блокируется в чате)
             if (client.currentScreen == null) {
                 if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
                 if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
@@ -72,7 +68,6 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
             }
 
-            // Модули выживания
             if (noFire) { client.player.setFireTicks(0); if (client.player.isOnFire()) client.player.extinguish(); }
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
 
@@ -85,15 +80,13 @@ public class ExampleMod implements ModInitializer {
                 }
             }
 
-            if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
-            }
-
-            // ПВП Логика
             if (killaura) {
-                runProKillaura(client);
+                runAresKillaura(client);
             } else if (triggerbot) {
                 runTriggerbot(client);
+            } else {
+                // Сбрасываем клавиши, если аура выключена
+                if (mode360) resetMoveKeys(client);
             }
         });
 
@@ -104,7 +97,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void runProKillaura(MinecraftClient client) {
+    private void runAresKillaura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
@@ -116,25 +109,27 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // Наводка (плавная)
-            double tY = target.getY() + (target.getHeight() * (0.45 + random.nextDouble() * 0.2));
+            // Наводка
+            double tY = target.getY() + (target.getHeight() * 0.5);
             lookAt(client.player, new Vec3d(target.getX(), tY, target.getZ()));
 
-            // Режим 360 (Target Strafe)
+            // Ares Strafe (360) через клавиши
             if (mode360) {
                 client.options.sprintKey.setPressed(true);
-                strafeAngle += 0.18f;
-                double r = kaRange - 0.7;
-                double targetX = target.getX() + Math.cos(strafeAngle) * r;
-                double targetZ = target.getZ() + Math.sin(strafeAngle) * r;
+                double dist = client.player.distanceTo(target);
                 
-                Vec3d dir = new Vec3d(targetX - client.player.getX(), 0, targetZ - client.player.getZ()).normalize().multiply(0.22);
-                client.player.addVelocity(dir.x, 0, dir.z);
+                // Авто-обход препятствий (если уперлись в стену, меняем направление круга)
+                if (client.player.horizontalCollision) strafeDirection *= -1;
+
+                client.options.forwardKey.setPressed(dist > kaRange - 0.5);
+                client.options.backKey.setPressed(dist < kaRange - 1.2);
+                client.options.leftKey.setPressed(strafeDirection == 1);
+                client.options.rightKey.setPressed(strafeDirection == -1);
             } else if (autoRun) {
                 client.options.sprintKey.setPressed(true);
             }
 
-            // Удар (исправлено)
+            // Удар по КД
             float progress = client.player.getAttackCooldownProgress(0.0f);
             if (progress >= nextAttackThreshold) {
                 if (screenShake) {
@@ -143,9 +138,18 @@ public class ExampleMod implements ModInitializer {
                 }
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
-                nextAttackThreshold = 0.92f + (random.nextFloat() * 0.06f);
+                nextAttackThreshold = 0.93f + (random.nextFloat() * 0.05f);
             }
+        } else if (mode360) {
+            resetMoveKeys(client);
         }
+    }
+
+    private void resetMoveKeys(MinecraftClient client) {
+        client.options.forwardKey.setPressed(false);
+        client.options.backKey.setPressed(false);
+        client.options.leftKey.setPressed(false);
+        client.options.rightKey.setPressed(false);
     }
 
     private void lookAt(PlayerEntity player, Vec3d target) {
@@ -153,8 +157,8 @@ public class ExampleMod implements ModInitializer {
         double diffXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.75f);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.75f);
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.65f);
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.65f);
     }
 
     private void runTriggerbot(MinecraftClient client) {
@@ -328,3 +332,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
