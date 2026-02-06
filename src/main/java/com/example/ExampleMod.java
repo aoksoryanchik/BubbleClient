@@ -22,7 +22,7 @@ import org.lwjgl.glfw.GLFW;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false;
     public static boolean triggerbot = false;
-    public static boolean esp = true;
+    public static boolean esp = false; // По умолчанию выключен
     
     public static int killauraKey = GLFW.GLFW_KEY_P;
     public static int triggerbotKey = GLFW.GLFW_KEY_R;
@@ -44,14 +44,14 @@ public class ExampleMod implements ModInitializer {
             if (menuDown && !menuPressed) client.setScreen(new BubbleMenu());
             menuPressed = menuDown;
 
-            // Бинды и уведомления в Actionbar
+            // Бинды
             if (client.currentScreen == null) {
                 if (isPressed(handle, killauraKey)) killaura = !killaura;
                 if (isPressed(handle, triggerbotKey)) triggerbot = !triggerbot;
                 if (isPressed(handle, espKey)) esp = !esp;
             }
 
-            // Вывод статуса над полоской опыта
+            // Статус в Actionbar
             String status = "§bBubble §7| " + 
                 (killaura ? "§aKA " : "§cKA ") + 
                 (triggerbot ? "§aTB " : "§cTB ") + 
@@ -62,20 +62,19 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot && !killaura) runTriggerbot(client);
         });
 
+        // Исправленный рендер ESP
         WorldRenderEvents.LAST.register(context -> {
             if (!esp) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
-
-            // Настройка рендера для "просвечивания" сквозь стены
-            RenderSystem.disableDepthTest();
-            RenderSystem.enableBlend();
 
             for (PlayerEntity entity : client.world.getPlayers()) {
                 if (entity == client.player || !entity.isAlive() || entity.isInvisible()) continue;
                 
                 MatrixStack matrices = context.matrixStack();
                 Vec3d camPos = context.camera().getPos();
+                
+                // Используем специальный слой, который рисуется поверх всего
                 VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
 
                 matrices.push();
@@ -85,30 +84,30 @@ public class ExampleMod implements ModInitializer {
                 matrices.translate(x, y, z);
 
                 Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
-                MatrixStack.Entry entry = matrices.peek();
                 
-                drawBoxLines(buffer, entry, b);
+                // Отключаем глубину только на момент отрисовки линий
+                RenderSystem.disableDepthTest();
+                drawBoxLines(buffer, matrices.peek(), b);
+                RenderSystem.enableDepthTest();
 
                 matrices.pop();
             }
-            RenderSystem.enableDepthTest();
-            RenderSystem.disableBlend();
         });
     }
 
     private void drawBoxLines(VertexConsumer buffer, MatrixStack.Entry entry, Box b) {
         float r = 1, g = 1, b1 = 1, a = 1;
-        // Нижний квадрат
+        // Нижний контур
         line(buffer, entry, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.minY, b.maxZ, b.minX, b.minY, b.maxZ, r, g, b1, a);
         line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.minY, b.minZ, r, g, b1, a);
-        // Верхний
+        // Верхний контур
         line(buffer, entry, b.minX, b.maxY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.maxY, b.minZ, b.maxX, b.maxY, b.maxZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.maxY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, b1, a);
         line(buffer, entry, b.minX, b.maxY, b.maxZ, b.minX, b.maxY, b.minZ, r, g, b1, a);
-        // Стойки
+        // Вертикальные стойки
         line(buffer, entry, b.minX, b.minY, b.minZ, b.minX, b.maxY, b.minZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.minY, b.maxZ, b.maxX, b.maxY, b.maxZ, r, g, b1, a);
