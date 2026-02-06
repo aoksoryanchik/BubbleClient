@@ -47,7 +47,7 @@ public class ExampleMod implements ModInitializer {
     private final Random random = new Random();
     
     private float nextAttackThreshold = 0.94f;
-    private boolean leftStrafe = true;
+    private float strafeAngle = 0;
 
     @Override
     public void onInitialize() {
@@ -81,7 +81,7 @@ public class ExampleMod implements ModInitializer {
             }
 
             if (killaura) {
-                runMasterAura(client);
+                runAresAura(client);
             }
         });
 
@@ -91,7 +91,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void runMasterAura(MinecraftClient client) {
+    private void runAresAura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
@@ -103,30 +103,34 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            lookAt(client.player, target.getPos().add(0, target.getHeight() * 0.45, 0));
+            // Наводка (плавная, чтобы не было флагов за ротации)
+            lookAt(client.player, target.getPos().add(0, target.getHeight() * 0.5, 0));
 
-            // НОВАЯ ЛОГИКА 360: Движение вектором без блокировки кнопок
+            // ЛОГИКА 360 (Orbit Strafe)
             if (mode360) {
                 client.player.setSprinting(true);
-                double dist = client.player.distanceTo(target);
                 
-                // Переключаем сторону закрута при ударе о стену
-                if (client.player.horizontalCollision && client.player.age % 5 == 0) leftStrafe = !leftStrafe;
-
-                float yaw = (float) Math.toRadians(client.player.getYaw());
-                double forward = 0;
-                double side = leftStrafe ? 1 : -1;
-
-                // Удерживаем идеальный радиус
-                if (dist > kaRange - 0.5) forward = 1;
-                else if (dist < kaRange - 1.2) forward = -1;
-
-                // Вычисление вектора закручивания
-                double moveX = forward * Math.cos(yaw) + side * Math.sin(yaw);
-                double moveZ = forward * Math.sin(yaw) - side * Math.cos(yaw);
+                // Вычисляем угол между игроком и целью
+                double diffX = target.getX() - client.player.getX();
+                double diffZ = target.getZ() - client.player.getZ();
+                float yawToTarget = (float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90F;
                 
-                double speed = 0.22;
-                client.player.setVelocity(moveX * speed, client.player.getVelocity().y, moveZ * speed);
+                // Увеличиваем угол вращения
+                strafeAngle += 0.13f; 
+                
+                // Вычисляем "желаемую" позицию на круге
+                double radius = kaRange - 0.7;
+                double targetX = target.getX() + Math.cos(strafeAngle) * radius;
+                double targetZ = target.getZ() + Math.sin(strafeAngle) * radius;
+                
+                // Вместо addVelocity мы плавно корректируем движение через yaw
+                Vec3d moveVec = new Vec3d(targetX - client.player.getX(), 0, targetZ - client.player.getZ()).normalize().multiply(0.23);
+                
+                if (client.player.isOnGround()) {
+                    client.player.setVelocity(moveVec.x, client.player.getVelocity().y, moveVec.z);
+                }
+            } else if (autoRun) {
+                client.options.sprintKey.setPressed(true);
             }
 
             // Удар
@@ -137,7 +141,8 @@ public class ExampleMod implements ModInitializer {
                 }
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
-                nextAttackThreshold = 0.92f + (random.nextFloat() * 0.06f);
+                // Рандомизация КД для обхода анти-кликера
+                nextAttackThreshold = 0.92f + (random.nextFloat() * 0.07f);
             }
         }
     }
@@ -147,8 +152,10 @@ public class ExampleMod implements ModInitializer {
         double diffXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.70f);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.70f);
+        
+        // Ограничение скорости поворота головы (Silent Rotation style)
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.55f);
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.55f);
     }
 
     private void runTriggerbot(MinecraftClient client) {
@@ -182,7 +189,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI (Полностью сохранено) ---
+    // --- GUI (Без изменений функций) ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
