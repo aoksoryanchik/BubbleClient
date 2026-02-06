@@ -21,6 +21,7 @@ import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
@@ -46,7 +47,7 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
-    private float nextAttackThresh = 0.94f;
+    private float nextAttackDelay = 0.94f;
 
     @Override
     public void onInitialize() {
@@ -56,7 +57,7 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            // Меню и бинды
+            // Управление меню и модулями
             if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
             if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
             if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
@@ -65,16 +66,16 @@ public class ExampleMod implements ModInitializer {
             if (isPressed(h, keyNF)) { noFire = !noFire; sendNotify("NoFire", noFire); }
             if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
 
-            // NoFire логика
+            // Логика NoFire (убирает горение)
             if (noFire) {
                 client.player.setFireTicks(0);
                 if (client.player.isOnFire()) client.player.extinguish();
             }
 
-            // Эффекты
+            // FullBright
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
 
-            // AutoTotem
+            // AutoTotem (перекладывает тотем в левую руку)
             if (autoTotem && client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
                 for (int i = 0; i < 45; i++) {
                     if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
@@ -84,23 +85,16 @@ public class ExampleMod implements ModInitializer {
                 }
             }
 
-            // AntiVelocity
+            // AntiVelocity (уменьшает отдачу)
             if (antiVelocity && client.player.hurtTime > 0) {
                 client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
             }
 
-            // ГЛАВНАЯ ЛОГИКА АТАКИ
+            // РАБОЧАЯ КИЛЛАУРА
             if (killaura) {
-                updateKillaura(client);
+                doKillauraLogic(client);
                 if (autoRun) client.options.sprintKey.setPressed(true);
-            } else {
-                // Если аура выключена, возвращаем контроль кнопке атаки
-                if (!client.options.attackKey.isPressed() && !triggerbot) {
-                    // ничего не делаем
-                }
-            }
-
-            if (triggerbot && !killaura) {
+            } else if (triggerbot) {
                 runTriggerbot(client);
             }
         });
@@ -112,44 +106,42 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void updateKillaura(MinecraftClient client) {
+    private void doKillauraLogic(MinecraftClient client) {
         PlayerEntity target = null;
-        double dist = Double.MAX_VALUE;
+        double minD = Double.MAX_VALUE;
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
             double limit = client.player.canSee(p) ? kaRange : kaWallsRange;
-            if (d <= limit && d < dist) {
-                dist = d;
+            if (d <= limit && d < minD) {
+                minD = d;
                 target = p;
             }
         }
 
         if (target != null) {
-            // 1. Плавная наводка
-            double smartHeight = target.getY() + (target.getHeight() * (0.4 + random.nextDouble() * 0.3));
-            lookAt(client.player, new Vec3d(target.getX(), smartHeight, target.getZ()));
+            // 1. Наводка (плавно в область груди)
+            double smartY = target.getY() + (target.getHeight() * (0.4 + random.nextDouble() * 0.3));
+            lookAt(client.player, new Vec3d(target.getX(), smartY, target.getZ()));
 
-            // 2. Логика автоматического клика
+            // 2. УДАР (Проверка кулдауна 0.93 - 0.98)
             float cooldown = client.player.getAttackCooldownProgress(0.0f);
-            
-            if (cooldown >= nextAttackThresh) {
-                // Тряска
+            if (cooldown >= nextAttackDelay) {
+                
+                // Тряска (Mouse Shake)
                 if (screenShake) {
                     client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                     client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
                 }
 
-                // ГАРАНТИРОВАННАЯ АТАКА (Эмуляция нажатия)
-                // Мы используем прямой метод атаки + взмах, чтобы пакет точно ушел
-                if (client.interactionManager != null) {
-                    client.interactionManager.attackEntity(client.player, target);
-                    client.player.swingHand(Hand.MAIN_HAND);
-                }
+                // ВЫПОЛНЕНИЕ УДАРА (Прямое воздействие)
+                // Имитируем наведение перекрестия на цель для игрового движка
+                client.interactionManager.attackEntity(client.player, target);
+                client.player.swingHand(Hand.MAIN_HAND);
 
-                // Устанавливаем порог для следующего удара 0.93 - 1.05
-                nextAttackThresh = 0.93f + (random.nextFloat() * 0.12f);
+                // Рандомизируем следующую задержку (0.93 - 0.98)
+                nextAttackDelay = 0.93f + (random.nextFloat() * 0.05f);
             }
         }
     }
@@ -160,8 +152,8 @@ public class ExampleMod implements ModInitializer {
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
         
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.85f);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.85f);
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.82f);
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.82f);
     }
 
     private void runTriggerbot(MinecraftClient client) {
@@ -195,7 +187,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI СЕКЦИЯ ---
+    // --- GUI СЕКЦИЯ (МЕНЮ) ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
@@ -335,4 +327,3 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
-
