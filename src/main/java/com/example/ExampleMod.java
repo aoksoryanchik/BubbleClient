@@ -37,7 +37,7 @@ public class ExampleMod implements ModInitializer {
     public static double kaRange = 3.8, kaWallsRange = 3.0, wpX = 0, wpY = 64, wpZ = 0;
     public static float handX = 0.0f, handY = 0.0f, handZ = 0.0f;
 
-    // Клавиши управления
+    // Клавиши
     public static int menuKey = GLFW.GLFW_KEY_0;
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
@@ -50,17 +50,17 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null) return;
             long h = client.getWindow().getHandle();
             
-            // Открытие меню
+            // Меню
             if (isPressed(h, menuKey) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
-            // 1. FullBright
+            // FullBright
             if (fullbright) {
                 client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             }
 
-            // 2. Auto-Totem (Умная проверка)
+            // Auto-Totem
             if (autoTotem && client.player.getHealth() <= 4.0f) {
                 if (client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
                     for (int i = 0; i < 45; i++) {
@@ -73,30 +73,30 @@ public class ExampleMod implements ModInitializer {
                 }
             }
 
-            // 3. NoFire (Исправлено для 1.21.4)
+            // NoFire (ИСПРАВЛЕНО ДЛЯ 1.21.x)
             if (noFire && client.player.isOnFire()) {
                 client.player.clearFireTicks();
             }
 
-            // 4. KillAura (С проверкой дистанции и видимости)
+            // KillAura
             if (killaura) {
                 runKillaura(client);
             }
 
-            // 5. TriggerBot (Работает, если киллаура выключена)
+            // TriggerBot
             if (triggerbot && !killaura) {
                 runTriggerbot(client);
             }
         });
 
-        // Рендер 3D метки в мире
+        // 3D Waypoint
         WorldRenderEvents.LAST.register(context -> {
             if (!waypointActive) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
             double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
-            if (dist > 500) return; // Ограничение видимости 3D текста
+            if (dist > 500) return;
 
             MatrixStack matrices = context.matrixStack();
             matrices.push();
@@ -116,7 +116,7 @@ public class ExampleMod implements ModInitializer {
             matrices.pop();
         });
 
-        // Рендер Навигатора на HUD (если цель далеко)
+        // HUD Навигатор
         HudRenderCallback.EVENT.register((drawContext, tick) -> {
             if (!waypointActive) return;
             MinecraftClient client = MinecraftClient.getInstance();
@@ -156,21 +156,15 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- ИНТЕРФЕЙС МЕНЮ ---
-
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
-
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
-            ctx.fill(0, 0, width, height, 0x85000000); // Фон
+            ctx.fill(0, 0, width, height, 0x85000000);
             int x = width / 2 - 85, y = height / 2 - 100;
-            
-            ctx.fill(x, y, x + 170, y + 190, 0xFF101010); // Окно
+            ctx.fill(x, y, x + 170, y + 190, 0xFF101010);
             ctx.drawBorder(x, y, 170, 190, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width / 2, y + 8, -1);
-
-            // Кнопки
             drawBtn(ctx, x + 10, y + 30, "KillAura", killaura, mx, my);
             drawBtn(ctx, x + 10, y + 50, "TriggerBot", triggerbot, mx, my);
             drawBtn(ctx, x + 10, y + 70, "FullBright", fullbright, mx, my);
@@ -178,26 +172,22 @@ public class ExampleMod implements ModInitializer {
             drawBtn(ctx, x + 10, y + 110, "NoFire", noFire, mx, my);
             drawBtn(ctx, x + 10, y + 130, "Waypoint", waypointActive, mx, my);
             drawBtn(ctx, x + 10, y + 150, "ViewModel", viewModelActive, mx, my);
-
             ctx.drawCenteredTextWithShadow(textRenderer, "§7[ Настроить модули ]", width / 2, y + 175, -1);
         }
-
         private void drawBtn(DrawContext ctx, int x, int y, String name, boolean enabled, int mx, int my) {
             boolean hover = mx >= x && mx <= x + 150 && my >= y && my <= y + 16;
             ctx.fill(x, y, x + 150, y + 16, hover ? 0xFF202020 : 0xFF151515);
             ctx.drawTextWithShadow(textRenderer, name, x + 10, y + 4, enabled ? 0xFF00FF00 : 0xFFFF3333);
             ctx.drawTextWithShadow(textRenderer, "§b⚙", x + 135, y + 4, -1);
         }
-
         @Override
         public boolean mouseClicked(double mx, double my, int button) {
             int x = width / 2 - 85, y = height / 2 - 100;
-            
-            if (mx >= x + 130 && mx <= x + 155) { // Клики по шестеренкам
+            if (mx >= x + 130 && mx <= x + 155) {
                 if (my >= y + 30 && my <= y + 46) client.setScreen(new ConfigScreen(this, "KA"));
                 if (my >= y + 130 && my <= y + 146) client.setScreen(new ConfigScreen(this, "WP"));
                 if (my >= y + 150 && my <= y + 166) client.setScreen(new ConfigScreen(this, "VM"));
-            } else if (mx >= x + 10 && mx <= x + 130) { // Клики по названиям
+            } else if (mx >= x + 10 && mx <= x + 130) {
                 if (my >= y + 30 && my <= y + 46) killaura = !killaura;
                 if (my >= y + 50 && my <= y + 66) triggerbot = !triggerbot;
                 if (my >= y + 70 && my <= y + 86) fullbright = !fullbright;
@@ -211,40 +201,26 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // Универсальное окно настроек (ViewModel, Waypoint, KillAura)
     public static class ConfigScreen extends Screen {
-        private final Screen parent;
-        private final String type;
-        private TextFieldWidget f1, f2, f3;
-
-        public ConfigScreen(Screen parent, String type) { 
-            super(Text.literal("Settings")); 
-            this.parent = parent; 
-            this.type = type; 
-        }
-
+        private final Screen parent; private final String type; private TextFieldWidget f1, f2, f3;
+        public ConfigScreen(Screen parent, String type) { super(Text.literal("S")); this.parent = parent; this.type = type; }
         @Override
         protected void init() {
             f1 = new TextFieldWidget(textRenderer, width/2 - 40, height/2 - 30, 80, 14, Text.literal(""));
             f2 = new TextFieldWidget(textRenderer, width/2 - 40, height/2 - 10, 80, 14, Text.literal(""));
             f3 = new TextFieldWidget(textRenderer, width/2 - 40, height/2 + 10, 80, 14, Text.literal(""));
-            
             if (type.equals("VM")) { f1.setText(String.valueOf(handX)); f2.setText(String.valueOf(handY)); f3.setText(String.valueOf(handZ)); }
             if (type.equals("WP")) { f1.setText(String.valueOf(wpX)); f2.setText(String.valueOf(wpY)); f3.setText(String.valueOf(wpZ)); }
             if (type.equals("KA")) { f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange)); f3.setVisible(false); }
-
             addSelectableChild(f1); addSelectableChild(f2); addSelectableChild(f3);
         }
-
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             ctx.fill(0, 0, width, height, 0xCC000000);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Настройки: " + type, width/2, height/2 - 50, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "Settings: " + type, width/2, height/2 - 50, 0xFF00AAFF);
             f1.render(ctx, mx, my, delta); f2.render(ctx, mx, my, delta);
             if (f3.isVisible()) f3.render(ctx, mx, my, delta);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§7[ESC] Сохранить", width/2, height/2 + 40, -1);
         }
-
         @Override
         public boolean keyPressed(int k, int s, int m) {
             if (k == GLFW.GLFW_KEY_ESCAPE) {
@@ -259,8 +235,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- ВСПОМОГАТЕЛЬНЫЕ СИСТЕМЫ ---
-
     private boolean isPressed(long h, int k) {
         boolean down = InputUtil.isKeyPressed(h, k);
         if (down && !keyStates[k]) { keyStates[k] = true; return true; }
@@ -269,10 +243,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println("kaRange:" + kaRange); w.println("kaWalls:" + kaWallsRange);
-            w.println("wpX:" + wpX); w.println("wpY:" + wpY); w.println("wpZ:" + wpZ);
-            w.println("handX:" + handX); w.println("handY:" + handY); w.println("handZ:" + handZ);
-            w.println("at:" + autoTotem); w.println("nf:" + noFire); w.println("vm:" + viewModelActive);
+            w.println("kaRange:" + kaRange + "\nkaWalls:" + kaWallsRange + "\nwpX:" + wpX + "\nwpY:" + wpY + "\nwpZ:" + wpZ + "\nhandX:" + handX + "\nhandY:" + handY + "\nhandZ:" + handZ);
         } catch (Exception ignored) {}
     }
 
@@ -285,8 +256,8 @@ public class ExampleMod implements ModInitializer {
                 if (p[0].equals("kaRange")) kaRange = Double.parseDouble(p[1]);
                 if (p[0].equals("wpX")) wpX = Double.parseDouble(p[1]);
                 if (p[0].equals("handX")) handX = Float.parseFloat(p[1]);
-                // ... и остальные аналогично
             }
         } catch (Exception ignored) {}
     }
 }
+
