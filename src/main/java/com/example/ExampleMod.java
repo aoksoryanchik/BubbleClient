@@ -117,7 +117,6 @@ public class ExampleMod implements ModInitializer {
             context.fill(x, y, x + 140, y + 16, h ? 0xFF252525 : 0xFF181818);
             context.fill(x + 2, y + 4, x + 10, y + 12, on ? 0xFF00FF00 : 0xFFFF0000);
             context.drawTextWithShadow(textRenderer, name + " §7[" + kName.toUpperCase() + "]", x + 15, y + 4, -1);
-            
             if (settings) {
                 boolean hSet = mx >= x + 125 && mx <= x + 140 && my >= y && my <= y + 16;
                 context.drawTextWithShadow(textRenderer, hSet ? "§f⚙" : "§b⚙", x + 130, y + 4, -1);
@@ -127,17 +126,13 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int btn) {
             int x = width/2 - 80, y = height/2 - 50;
-            
-            // Проверка клика по KillAura (включая шестеренку)
             if (mx >= x + 10 && mx <= x + 150 && my >= y + 25 && my <= y + 41) {
-                if (mx >= x + 125 && btn == 1) { // ПКМ по области шестеренки
+                if (mx >= x + 125 && btn == 1) {
                     MinecraftClient.getInstance().setScreen(new KillAuraSettings(this));
                     return true;
                 }
-                handle(btn, "ka");
-                return true;
+                handle(btn, "ka"); return true;
             }
-            
             if (mx >= x + 10 && mx <= x + 150) {
                 if (my >= y + 50 && my <= y + 66) { handle(btn, "tb"); return true; }
                 if (my >= y + 75 && my <= y + 91) { handle(btn, "fb"); return true; }
@@ -182,7 +177,6 @@ public class ExampleMod implements ModInitializer {
             rangeField.setText(String.valueOf(kaRange));
             wallsField = new TextFieldWidget(textRenderer, x + 80, height/2 - 12, 40, 12, Text.literal(""));
             wallsField.setText(String.valueOf(kaWallsRange));
-            
             this.addSelectableChild(rangeField);
             this.addSelectableChild(wallsField);
         }
@@ -190,25 +184,40 @@ public class ExampleMod implements ModInitializer {
         @Override
         public void render(DrawContext context, int mx, int my, float delta) {
             context.fill(0, 0, width, height, 0x90000000);
-            int x = width/2 - 80, y = height/2 - 50;
-            context.fill(x, y, x + 160, y + 100, 0xFF121212);
-            context.drawBorder(x, y, 160, 100, 0xFF00AAFF);
-            context.drawCenteredTextWithShadow(textRenderer, "§bKillAura Settings", width/2, y + 6, -1);
-
-            context.drawTextWithShadow(textRenderer, "Range:", x + 10, y + 20, -1);
-            context.drawTextWithShadow(textRenderer, "Walls:", x + 10, y + 40, -1);
-            context.drawTextWithShadow(textRenderer, "Auto Run:", x + 10, y + 65, -1);
-
-            drawSlider(context, x + 10, y + 30, kaRange / 6.0);
-            drawSlider(context, x + 10, y + 50, kaWallsRange / 6.0);
             
-            context.fill(x + 130, y + 63, x + 142, y + 75, 0xFF181818);
-            context.drawBorder(x + 130, y + 63, 12, 12, 0xFF00AAFF);
-            if (kaAutoRun) context.drawCenteredTextWithShadow(textRenderer, "✔", x + 136, y + 65, 0xFF00FF00);
+            // Основная панель настроек
+            int x = width/2 - 60, y = height/2 - 60;
+            context.fill(x, y, x + 150, y + 110, 0xFF121212);
+            context.drawBorder(x, y, 150, 110, 0xFF00AAFF);
+            context.drawCenteredTextWithShadow(textRenderer, "§bSettings", x + 75, y + 6, -1);
+
+            // Панель пресета Aresmine (СЛЕВА)
+            int px = x - 90;
+            context.fill(px, y, px + 85, y + 110, 0xFF121212);
+            context.drawBorder(px, y, 85, 110, 0xFF00AAFF);
+            context.drawCenteredTextWithShadow(textRenderer, "§eПод Aresmine", px + 42, y + 15, -1);
+            
+            // Кнопка "Поставить"
+            boolean hAres = mx >= px + 10 && mx <= px + 75 && my >= y + 40 && my <= y + 56;
+            context.fill(px + 10, y + 40, px + 75, y + 56, hAres ? 0xFF252525 : 0xFF181818);
+            context.drawBorder(px + 10, y + 40, 65, 16, 0xFF00AAFF);
+            context.drawCenteredTextWithShadow(textRenderer, "Поставить", px + 42, y + 44, -1);
+
+            // Рендер полей и текста
+            context.drawTextWithShadow(textRenderer, "Range:", x + 10, y + 25, -1);
+            context.drawTextWithShadow(textRenderer, "Walls:", x + 10, y + 45, -1);
+            context.drawTextWithShadow(textRenderer, "Auto Run:", x + 10, y + 70, -1);
+
+            drawSlider(context, x + 10, y + 35, kaRange / 6.0);
+            drawSlider(context, x + 10, y + 55, kaWallsRange / 6.0);
+            
+            context.fill(x + 120, y + 68, x + 132, y + 80, 0xFF181818);
+            context.drawBorder(x + 120, y + 68, 12, 12, 0xFF00AAFF);
+            if (kaAutoRun) context.drawCenteredTextWithShadow(textRenderer, "✔", x + 126, y + 70, 0xFF00FF00);
 
             rangeField.render(context, mx, my, delta);
             wallsField.render(context, mx, my, delta);
-            context.drawTextWithShadow(textRenderer, "§7[ESC] Назад", x + 10, y + 85, 0xFFAAAAAA);
+            context.drawTextWithShadow(textRenderer, "§7[ESC] Назад", x + 10, y + 95, 0xFFAAAAAA);
         }
 
         private void drawSlider(DrawContext context, int x, int y, double progress) {
@@ -218,21 +227,34 @@ public class ExampleMod implements ModInitializer {
 
         @Override
         public boolean mouseClicked(double mx, double my, int btn) {
-            int x = width/2 - 80, y = height/2 - 50;
-            if (mx >= x+130 && mx <= x+142 && my >= y+63 && my <= y+75) {
-                kaAutoRun = !kaAutoRun;
+            int x = width/2 - 60, y = height/2 - 60;
+            int px = x - 90;
+
+            // Клик по кнопке "Поставить"
+            if (mx >= px + 10 && mx <= px + 75 && my >= y + 40 && my <= y + 56) {
+                kaRange = 3.8;
+                kaWallsRange = 3.0;
+                kaAutoRun = true;
+                rangeField.setText("3.8");
+                wallsField.setText("3.0");
                 return true;
             }
-            if (mx >= x+10 && mx <= x+70) {
-                if (my >= y+30 && my <= y+34) {
-                    kaRange = Math.round(((mx - (x+10)) / 60.0) * 6.0 * 10.0) / 10.0;
+
+            if (mx >= x + 120 && mx <= x + 132 && my >= y + 68 && my <= y + 80) {
+                kaAutoRun = !kaAutoRun; return true;
+            }
+
+            if (mx >= x + 10 && mx <= x + 70) {
+                if (my >= y + 35 && my <= y + 39) {
+                    kaRange = Math.round(((mx - (x + 10)) / 60.0) * 6.0 * 10.0) / 10.0;
                     rangeField.setText(String.valueOf(kaRange));
                 }
-                if (my >= y+50 && my <= y+54) {
-                    kaWallsRange = Math.round(((mx - (x+10)) / 60.0) * 6.0 * 10.0) / 10.0;
+                if (my >= y + 55 && my <= y + 59) {
+                    kaWallsRange = Math.round(((mx - (x + 10)) / 60.0) * 6.0 * 10.0) / 10.0;
                     wallsField.setText(String.valueOf(kaWallsRange));
                 }
             }
+
             rangeField.setFocused(rangeField.isMouseOver(mx, my));
             wallsField.setFocused(wallsField.isMouseOver(mx, my));
             return super.mouseClicked(mx, my, btn);
@@ -240,10 +262,7 @@ public class ExampleMod implements ModInitializer {
 
         @Override
         public boolean keyPressed(int k, int s, int m) {
-            if (k == GLFW.GLFW_KEY_ESCAPE) {
-                MinecraftClient.getInstance().setScreen(parent);
-                return true;
-            }
+            if (k == GLFW.GLFW_KEY_ESCAPE) { MinecraftClient.getInstance().setScreen(parent); return true; }
             boolean r = rangeField.keyPressed(k, s, m) || wallsField.keyPressed(k, s, m);
             updateVals();
             return r || super.keyPressed(k, s, m);
@@ -252,8 +271,7 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean charTyped(char chr, int modifiers) {
             boolean r = rangeField.charTyped(chr, modifiers) || wallsField.charTyped(chr, modifiers);
-            updateVals();
-            return r;
+            updateVals(); return r;
         }
 
         private void updateVals() {
@@ -263,4 +281,3 @@ public class ExampleMod implements ModInitializer {
         @Override public boolean shouldPause() { return false; }
     }
 }
-
