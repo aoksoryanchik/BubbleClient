@@ -12,6 +12,7 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
@@ -45,9 +46,7 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
-    
-    // Переменная для хранения случайного порога КД
-    private float currentTargetCD = 0.94f;
+    private float nextAttackThresh = 0.93f;
 
     @Override
     public void onInitialize() {
@@ -108,35 +107,41 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runSmartKillaura(MinecraftClient client) {
-        for (PlayerEntity target : client.world.getPlayers()) {
-            if (target == client.player || !target.isAlive() || target.isInvisible() || target.isCreative()) continue;
+        Entity targetEntity = null;
+        double closestDist = Double.MAX_VALUE;
+
+        // Поиск ближайшей цели
+        for (PlayerEntity p : client.world.getPlayers()) {
+            if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
+            double d = client.player.distanceTo(p);
+            double limit = client.player.canSee(p) ? kaRange : kaWallsRange;
+            if (d <= limit && d < closestDist) {
+                closestDist = d;
+                targetEntity = p;
+            }
+        }
+
+        if (targetEntity != null) {
+            // Наводка
+            double smartHeight = targetEntity.getY() + (targetEntity.getHeight() * (0.45 + random.nextDouble() * 0.25));
+            lookAt(client.player, new Vec3d(targetEntity.getX(), smartHeight, targetEntity.getZ()));
+
+            // ГАРАНТИРОВАННЫЙ УДАР
+            // Используем 0.0f для получения актуального кулдауна
+            float progress = client.player.getAttackCooldownProgress(0.0f);
             
-            double d = client.player.distanceTo(target);
-            double limit = client.player.canSee(target) ? kaRange : kaWallsRange;
-
-            if (d <= limit) {
-                // Наводка в тело (0.4 - 0.7 высоты)
-                double smartHeight = target.getY() + (target.getHeight() * (0.4 + random.nextDouble() * 0.3));
-                lookAt(client.player, new Vec3d(target.getX(), smartHeight, target.getZ()));
-
-                // АВТОМАТИЧЕСКИЙ УДАР
-                // Проверяем прогресс атаки игрока (1.0 = полный заряд)
-                if (client.player.getAttackCooldownProgress(0.5f) >= currentTargetCD) {
-                    
-                    // Тряска перед ударом для "беспалевности"
-                    if (screenShake && shakeIntensity > 0) {
-                        client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
-                        client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
-                    }
-
-                    // Сам удар
-                    client.interactionManager.attackEntity(client.player, target);
-                    client.player.swingHand(Hand.MAIN_HAND);
-                    
-                    // Устанавливаем новый случайный порог КД для следующего удара (0.93 - 1.05)
-                    currentTargetCD = 0.93f + (random.nextFloat() * 0.12f);
-                    break; 
+            if (progress >= nextAttackThresh) {
+                if (screenShake) {
+                    client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
+                    client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
                 }
+
+                // Выполняем атаку через interactionManager
+                client.interactionManager.attackEntity(client.player, targetEntity);
+                client.player.swingHand(Hand.MAIN_HAND);
+                
+                // Рандомим следующий порог
+                nextAttackThresh = 0.93f + (random.nextFloat() * 0.11f); 
             }
         }
     }
@@ -147,9 +152,8 @@ public class ExampleMod implements ModInitializer {
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
         
-        // Плавная доводка
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.82f);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.82f);
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.85f);
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.85f);
     }
 
     private void runTriggerbot(MinecraftClient client) {
@@ -321,3 +325,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
