@@ -16,12 +16,8 @@ import net.minecraft.util.hit.EntityHitResult;
 import org.lwjgl.glfw.GLFW;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния модулей
     public static boolean killaura = false, triggerbot = false, fullbright = false;
-    
-    // Настройки Киллауры (сохраняются)
-    public static double kaRange = 3.8;
-    public static double kaWallsRange = 3.0;
+    public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static boolean kaAutoRun = true;
 
     public static int killauraKey = GLFW.GLFW_KEY_P, triggerbotKey = GLFW.GLFW_KEY_R, fbKey = GLFW.GLFW_KEY_M, menuKey = GLFW.GLFW_KEY_0;
@@ -34,7 +30,6 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null) return;
             long h = client.getWindow().getHandle();
 
-            // Открытие меню (фикс чата)
             if (isPressed(h, menuKey) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -45,7 +40,6 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, fbKey)) toggle(client, "FullBright", !fullbright);
             }
 
-            // Логика FullBright
             if (fullbright) {
                 client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             } else if (client.player.hasStatusEffect(StatusEffects.NIGHT_VISION)) {
@@ -100,9 +94,9 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- МЕНЮ ---
     public static class BubbleMenu extends Screen {
-        public BubbleMenu() { super(Text.literal("")); }
+        public BubbleMenu() { super(Text.literal("Bubble")); }
+
         @Override
         public void render(DrawContext context, int mx, int my, float delta) {
             context.fill(0, 0, width, height, 0x90000000);
@@ -123,21 +117,32 @@ public class ExampleMod implements ModInitializer {
             context.fill(x, y, x + 140, y + 16, h ? 0xFF252525 : 0xFF181818);
             context.fill(x + 2, y + 4, x + 10, y + 12, on ? 0xFF00FF00 : 0xFFFF0000);
             context.drawTextWithShadow(textRenderer, name + " §7[" + kName.toUpperCase() + "]", x + 15, y + 4, -1);
-            if (settings) context.drawTextWithShadow(textRenderer, "§b⚙", x + 130, y + 4, -1);
+            
+            if (settings) {
+                boolean hSet = mx >= x + 125 && mx <= x + 140 && my >= y && my <= y + 16;
+                context.drawTextWithShadow(textRenderer, hSet ? "§f⚙" : "§b⚙", x + 130, y + 4, -1);
+            }
         }
 
         @Override
         public boolean mouseClicked(double mx, double my, int btn) {
             int x = width/2 - 80, y = height/2 - 50;
-            if (mx >= x+10 && mx <= x+140) {
-                if (my >= y+25 && my <= y+41) { 
-                    if (mx >= x+125 && btn == 1) client.setScreen(new KillAuraSettings(this));
-                    else handle(btn, "ka");
+            
+            // Проверка клика по KillAura (включая шестеренку)
+            if (mx >= x + 10 && mx <= x + 150 && my >= y + 25 && my <= y + 41) {
+                if (mx >= x + 125 && btn == 1) { // ПКМ по области шестеренки
+                    MinecraftClient.getInstance().setScreen(new KillAuraSettings(this));
+                    return true;
                 }
-                if (my >= y+50 && my <= y+66) handle(btn, "tb");
-                if (my >= y+75 && my <= y+91) handle(btn, "fb");
+                handle(btn, "ka");
+                return true;
             }
-            return true;
+            
+            if (mx >= x + 10 && mx <= x + 150) {
+                if (my >= y + 50 && my <= y + 66) { handle(btn, "tb"); return true; }
+                if (my >= y + 75 && my <= y + 91) { handle(btn, "fb"); return true; }
+            }
+            return super.mouseClicked(mx, my, btn);
         }
 
         private void handle(int btn, String id) {
@@ -156,19 +161,17 @@ public class ExampleMod implements ModInitializer {
                 if (bindingFor.equals("fb")) fbKey = k;
                 bindingFor = ""; return true;
             }
-            if (k == GLFW.GLFW_KEY_ESCAPE || k == menuKey) { this.close(); return true; }
+            if (k == GLFW.GLFW_KEY_ESCAPE) { this.close(); return true; }
             return super.keyPressed(k, s, m);
         }
-        @Override public boolean shouldPause() { return false; }
     }
 
-    // --- НАСТРОЙКИ КИЛЛАУРЫ ---
     public static class KillAuraSettings extends Screen {
         private final Screen parent;
         private TextFieldWidget rangeField, wallsField;
 
         public KillAuraSettings(Screen parent) {
-            super(Text.literal("Settings"));
+            super(Text.literal("KA Settings"));
             this.parent = parent;
         }
 
@@ -179,8 +182,9 @@ public class ExampleMod implements ModInitializer {
             rangeField.setText(String.valueOf(kaRange));
             wallsField = new TextFieldWidget(textRenderer, x + 80, height/2 - 12, 40, 12, Text.literal(""));
             wallsField.setText(String.valueOf(kaWallsRange));
-            addSelectableChild(rangeField);
-            addSelectableChild(wallsField);
+            
+            this.addSelectableChild(rangeField);
+            this.addSelectableChild(wallsField);
         }
 
         @Override
@@ -195,34 +199,39 @@ public class ExampleMod implements ModInitializer {
             context.drawTextWithShadow(textRenderer, "Walls:", x + 10, y + 40, -1);
             context.drawTextWithShadow(textRenderer, "Auto Run:", x + 10, y + 65, -1);
 
-            // "Ползунки" (визуальные)
             drawSlider(context, x + 10, y + 30, kaRange / 6.0);
             drawSlider(context, x + 10, y + 50, kaWallsRange / 6.0);
             
-            // Чекбокс Auto Run
             context.fill(x + 130, y + 63, x + 142, y + 75, 0xFF181818);
             context.drawBorder(x + 130, y + 63, 12, 12, 0xFF00AAFF);
             if (kaAutoRun) context.drawCenteredTextWithShadow(textRenderer, "✔", x + 136, y + 65, 0xFF00FF00);
 
             rangeField.render(context, mx, my, delta);
             wallsField.render(context, mx, my, delta);
+            context.drawTextWithShadow(textRenderer, "§7[ESC] Назад", x + 10, y + 85, 0xFFAAAAAA);
         }
 
         private void drawSlider(DrawContext context, int x, int y, double progress) {
             context.fill(x, y, x + 60, y + 4, 0xFF181818);
-            context.fill(x, y, x + (int)(60 * progress), y + 4, 0xFF00AAFF);
+            context.fill(x, y, x + (int)(60 * Math.min(progress, 1.0)), y + 4, 0xFF00AAFF);
         }
 
         @Override
         public boolean mouseClicked(double mx, double my, int btn) {
             int x = width/2 - 80, y = height/2 - 50;
-            // Клик по Auto Run
-            if (mx >= x+130 && mx <= x+142 && my >= y+63 && my <= y+75) kaAutoRun = !kaAutoRun;
-            
-            // Изменение через ползунок (упрощенно)
+            if (mx >= x+130 && mx <= x+142 && my >= y+63 && my <= y+75) {
+                kaAutoRun = !kaAutoRun;
+                return true;
+            }
             if (mx >= x+10 && mx <= x+70) {
-                if (my >= y+30 && my <= y+34) { kaRange = Math.round(((mx - (x+10)) / 60.0) * 6.0 * 10.0) / 10.0; rangeField.setText(String.valueOf(kaRange)); }
-                if (my >= y+50 && my <= y+54) { kaWallsRange = Math.round(((mx - (x+10)) / 60.0) * 6.0 * 10.0) / 10.0; wallsField.setText(String.valueOf(kaWallsRange)); }
+                if (my >= y+30 && my <= y+34) {
+                    kaRange = Math.round(((mx - (x+10)) / 60.0) * 6.0 * 10.0) / 10.0;
+                    rangeField.setText(String.valueOf(kaRange));
+                }
+                if (my >= y+50 && my <= y+54) {
+                    kaWallsRange = Math.round(((mx - (x+10)) / 60.0) * 6.0 * 10.0) / 10.0;
+                    wallsField.setText(String.valueOf(kaWallsRange));
+                }
             }
             rangeField.setFocused(rangeField.isMouseOver(mx, my));
             wallsField.setFocused(wallsField.isMouseOver(mx, my));
@@ -230,21 +239,28 @@ public class ExampleMod implements ModInitializer {
         }
 
         @Override
-        public boolean charTyped(char chr, int modifiers) {
-            boolean r = rangeField.charTyped(chr, modifiers) || wallsField.charTyped(chr, modifiers);
-            updateVals(); return r;
+        public boolean keyPressed(int k, int s, int m) {
+            if (k == GLFW.GLFW_KEY_ESCAPE) {
+                MinecraftClient.getInstance().setScreen(parent);
+                return true;
+            }
+            boolean r = rangeField.keyPressed(k, s, m) || wallsField.keyPressed(k, s, m);
+            updateVals();
+            return r || super.keyPressed(k, s, m);
         }
 
         @Override
-        public boolean keyPressed(int k, int s, int m) {
-            if (k == GLFW.GLFW_KEY_ESCAPE) { client.setScreen(parent); return true; }
-            boolean r = rangeField.keyPressed(k, s, m) || wallsField.keyPressed(k, s, m);
-            updateVals(); return r;
+        public boolean charTyped(char chr, int modifiers) {
+            boolean r = rangeField.charTyped(chr, modifiers) || wallsField.charTyped(chr, modifiers);
+            updateVals();
+            return r;
         }
 
         private void updateVals() {
             try { kaRange = Double.parseDouble(rangeField.getText()); } catch (Exception ignored) {}
             try { kaWallsRange = Double.parseDouble(wallsField.getText()); } catch (Exception ignored) {}
         }
+        @Override public boolean shouldPause() { return false; }
     }
 }
+
