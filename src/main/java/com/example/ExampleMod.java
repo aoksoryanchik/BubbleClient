@@ -1,3 +1,4 @@
+
 package com.example;
 
 import net.fabricmc.api.ModInitializer;
@@ -17,7 +18,6 @@ public class ExampleMod implements ModInitializer {
     private static KeyBinding toggleKey;
     private static boolean enabled = false;
     private final Random random = new Random();
-    private int attackDelay = 0;
 
     @Override
     public void onInitialize() {
@@ -33,68 +33,62 @@ public class ExampleMod implements ModInitializer {
 
             while (toggleKey.wasPressed()) {
                 enabled = !enabled;
-                client.player.sendMessage(Text.literal("§b[Bubble] §fKillaura: " + (enabled ? "§aON" : "§cOFF")), true);
+                client.player.sendMessage(Text.literal("§6§l[Bubble] §fKillaura: " + (enabled ? "§aREADY" : "§cOFF")), true);
             }
 
             if (!enabled) return;
 
-            PlayerEntity target = null;
-            // Уменьшил до 2.8 для обхода античита на дистанцию
-            double range = 2.8;
-
-            for (PlayerEntity p : client.world.getPlayers()) {
-                if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= range) {
-                    target = p;
-                    break;
-                }
-            }
+            PlayerEntity target = getClosestTarget(client, 3.0);
 
             if (target != null) {
-                // Оставляем ту самую классную наводку
+                // Плотная наводка (Stick Aim)
                 updateRotation(client, target);
 
-                // Новая логика ударов
-                if (attackDelay > 0) {
-                    attackDelay--;
-                } else {
-                    float cooldown = client.player.getAttackCooldownProgress(0.5f);
-                    
-                    // Бьем, если кулдаун почти заряжен (0.9+)
-                    if (cooldown >= 0.9f) {
-                        // Пытаемся ударить. Больше не ждем "идеального падения", 
-                        // просто проверяем, что мы не лезем по лестнице.
-                        if (!client.player.isClimbing() && !client.player.isSwimming()) {
-                            
-                            // Сама атака через InteractionManager (самый надежный способ)
-                            client.interactionManager.attackEntity(client.player, target);
-                            client.player.swingHand(Hand.MAIN_HAND);
-                            
-                            // Добавляем случайную паузу между ударами (от 1 до 3 тиков)
-                            // Это сбивает античит с толку
-                            attackDelay = 1 + random.nextInt(2);
-                        }
-                    }
+                // Агрессивные удары (без лишних задержек)
+                float cooldown = client.player.getAttackCooldownProgress(0f);
+                
+                // Бьем сразу, как только кулдаун позволяет нанести нормальный урон (от 0.9)
+                if (cooldown >= 0.92f) {
+                    client.interactionManager.attackEntity(client.player, target);
+                    client.player.swingHand(Hand.MAIN_HAND);
                 }
             }
         });
     }
 
+    private PlayerEntity getClosestTarget(MinecraftClient client, double range) {
+        PlayerEntity closest = null;
+        double dist = range;
+        for (PlayerEntity p : client.world.getPlayers()) {
+            if (p != client.player && p.isAlive() && !p.isInvisible()) {
+                double d = client.player.distanceTo(p);
+                if (d < dist) {
+                    dist = d;
+                    closest = p;
+                }
+            }
+        }
+        return closest;
+    }
+
     private void updateRotation(MinecraftClient client, PlayerEntity target) {
-        // ... (код наводки остается таким же, он крутой)
+        // Наводимся чуть выше центра (в область шеи)
         double diffX = target.getX() - client.player.getX();
-        double diffY = (target.getY() + target.getStandingEyeHeight() * 0.75) - (client.player.getY() + client.player.getStandingEyeHeight());
+        double diffY = (target.getY() + target.getStandingEyeHeight() * 0.7) - (client.player.getY() + client.player.getStandingEyeHeight());
         double diffZ = target.getZ() - client.player.getZ();
         double diffXZ = Math.sqrt(diffX * diffX + diffZ * diffZ);
 
         float targetYaw = (float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90;
         float targetPitch = (float) -Math.toDegrees(Math.atan2(diffY, diffXZ));
 
-        // Jitter (дрожание) для легитности
-        targetYaw += (random.nextFloat() - 0.5f) * 1.5f;
-        targetPitch += (random.nextFloat() - 0.5f) * 1.5f;
+        // Минимальное дрожание только внутри хитбокса
+        float jitter = (random.nextFloat() - 0.5f) * 0.8f; 
+        targetYaw += jitter;
+        targetPitch += jitter;
 
-        client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 18f + random.nextFloat() * 5f));
-        client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 18f + random.nextFloat() * 5f));
+        // Повысил скорость доводки (было 18, стало 35) для "мертвой хватки"
+        client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 35f));
+        client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 35f));
     }
 
     private float lerpAngle(float start, float end, float step) {
