@@ -46,8 +46,8 @@ public class ExampleMod implements ModInitializer {
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
     
-    // Порог КД для стабильного урона
-    private float nextAttackThreshold = 0.98f;
+    // Стабильный порог КД 0.93 - 0.98
+    private float nextAttackThreshold = 0.95f;
 
     @Override
     public void onInitialize() {
@@ -57,12 +57,11 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            // Открытие меню (запрещено, если открыт другой экран)
             if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
             
-            // Работа биндов (запрещено в чате/инвентаре)
+            // Запрет биндов в чате
             if (client.currentScreen == null) {
                 if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
                 if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
@@ -72,7 +71,6 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
             }
 
-            // Фоновые модули
             if (noFire) {
                 client.player.setFireTicks(0);
                 if (client.player.isOnFire()) client.player.extinguish();
@@ -94,7 +92,7 @@ public class ExampleMod implements ModInitializer {
             }
 
             if (killaura) {
-                runSimpleKillaura(client);
+                runStableKillaura(client);
                 if (autoRun) client.options.sprintKey.setPressed(true);
             } else if (triggerbot) {
                 runTriggerbot(client);
@@ -108,7 +106,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void runSimpleKillaura(MinecraftClient client) {
+    private void runStableKillaura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
@@ -123,13 +121,13 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // Наводка
             double targetY = target.getY() + (target.getHeight() * (0.42 + random.nextDouble() * 0.25));
             lookAt(client.player, new Vec3d(target.getX(), targetY, target.getZ()));
 
-            // Прямой удар по КД без лишних пауз
+            // Берем текущий прогресс кулдауна
             float progress = client.player.getAttackCooldownProgress(0.0f);
             
+            // Если прогресс дошел до случайно выбранного порога
             if (progress >= nextAttackThreshold) {
                 if (screenShake) {
                     client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
@@ -139,8 +137,8 @@ public class ExampleMod implements ModInitializer {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
                 
-                // Ставим КД (0.98 - 1.02) для 100% эффективности
-                nextAttackThreshold = 0.98f + (random.nextFloat() * 0.04f);
+                // Генерируем новый порог 0.93 - 0.98. Это никогда не превысит 1.0, так что аура не "встанет".
+                nextAttackThreshold = 0.93f + (random.nextFloat() * 0.05f);
             }
         }
     }
@@ -156,7 +154,7 @@ public class ExampleMod implements ModInitializer {
 
     private void runTriggerbot(MinecraftClient client) {
         if (client.crosshairTarget instanceof EntityHitResult res && res.getEntity() instanceof PlayerEntity target) {
-            if (target.isAlive() && client.player.getAttackCooldownProgress(0) >= 0.99f) {
+            if (target.isAlive() && client.player.getAttackCooldownProgress(0) >= 0.98f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
