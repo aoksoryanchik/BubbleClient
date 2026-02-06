@@ -43,10 +43,7 @@ public class ExampleMod implements ModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
             long h = client.getWindow().getHandle();
-            
-            if (isPressed(h, menuKey) && client.currentScreen == null) {
-                client.setScreen(new BubbleMenu());
-            }
+            if (isPressed(h, menuKey) && client.currentScreen == null) client.setScreen(new BubbleMenu());
 
             if (client.currentScreen == null) {
                 if (isPressed(h, killauraKey)) toggle(client, "Killaura", !killaura);
@@ -55,10 +52,7 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, wpKey)) toggle(client, "Waypoint", !waypointActive);
             }
 
-            if (fullbright) {
-                client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
-            }
-            
+            if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (killaura) runKillaura(client);
             if (triggerbot && !killaura) runTriggerbot(client);
         });
@@ -73,30 +67,36 @@ public class ExampleMod implements ModInitializer {
             double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
 
             matrices.push();
-            // Смещение метки
-            matrices.translate(wpX - camPos.x, (wpY - camPos.y) + 1.2, wpZ - camPos.z);
+            // Смещаем к координатам метки
+            matrices.translate(wpX - camPos.x, (wpY - camPos.y) + 1.5, wpZ - camPos.z);
+            
+            // Поворот к игроку
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
             
-            // Настройка размера (сделал меньше)
-            float scale = (float) (dist * 0.008); // Было 0.015
-            if (scale < 0.01f) scale = 0.01f;
-            if (scale > 0.15f) scale = 0.15f; // Максимальный размер стал значительно меньше
+            // НОВАЯ ЛОГИКА РАЗМЕРА: 
+            // Метка всегда видна: и вблизи, и вдали.
+            float scale = (float) (dist * 0.01); 
+            if (scale < 0.03f) scale = 0.03f; // Не дает стать слишком мелкой вблизи
+            if (scale > 0.8f) scale = 0.8f;   // Не дает стать гигантской на 10к блоков
+            
             matrices.scale(-scale, -scale, scale);
 
             VertexConsumerProvider consumers = context.consumers();
             if (consumers != null) {
                 Matrix4f posMat = matrices.peek().getPositionMatrix();
-                String t1 = "§b[!] ИВЕНТ §f(" + (int)dist + "m)";
+                String t1 = "§b[!] ЦЕЛЬ §f(" + (int)dist + "m)";
                 String t2 = "§7" + (int)wpX + " " + (int)wpY + " " + (int)wpZ;
                 
-                // Отрисовка текста (SEE_THROUGH позволяет видеть через блоки)
-                client.textRenderer.draw(t1, -client.textRenderer.getWidth(t1)/2f, 0, -1, true, posMat, consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
-                client.textRenderer.draw(t2, -client.textRenderer.getWidth(t2)/2f, 10, -1, true, posMat, consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
+                // Рендерим текст с приоритетом над блоками
+                client.textRenderer.draw(t1, -client.textRenderer.getWidth(t1)/2f, 0, -1, false, posMat, consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
+                client.textRenderer.draw(t2, -client.textRenderer.getWidth(t2)/2f, 10, -1, false, posMat, consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
             }
             matrices.pop();
         });
     }
+
+    // --- Дальнейший код (Toggle, Config, Menu, Settings) остается без изменений, чтобы сохранить твою структуру ---
 
     private void toggle(MinecraftClient c, String n, boolean s) {
         if(n.equals("Killaura")) killaura = s;
