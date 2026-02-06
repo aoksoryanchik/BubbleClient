@@ -12,7 +12,6 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.Entity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
@@ -47,8 +46,8 @@ public class ExampleMod implements ModInitializer {
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
     
-    // Переменная для хранения порога КД
-    private float currentCooldownThreshold = 0.95f;
+    // Порог КД для следующего удара
+    private float nextAttackThreshold = 0.95f;
 
     @Override
     public void onInitialize() {
@@ -88,8 +87,10 @@ public class ExampleMod implements ModInitializer {
             }
 
             if (killaura) {
-                runSmartKillaura(client);
+                runUniversalKillaura(client);
                 if (autoRun) client.options.sprintKey.setPressed(true);
+            } else if (triggerbot) {
+                runTriggerbot(client);
             }
         });
 
@@ -100,10 +101,11 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void runSmartKillaura(MinecraftClient client) {
+    private void runUniversalKillaura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
+        // Поиск ближайшей цели
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
@@ -115,31 +117,26 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // 1. Наводка
-            double smartHeight = target.getY() + (target.getHeight() * (0.45 + random.nextDouble() * 0.2));
-            lookAt(client.player, new Vec3d(target.getX(), smartHeight, target.getZ()));
+            // 1. Наводка (в тело)
+            double targetY = target.getY() + (target.getHeight() * (0.42 + random.nextDouble() * 0.25));
+            lookAt(client.player, new Vec3d(target.getX(), targetY, target.getZ()));
 
-            // 2. Умный удар с приоритетом прыжков
+            // 2. Удар по кулдауну (0.93 - 0.98 для всех состояний)
             float progress = client.player.getAttackCooldownProgress(0.0f);
             
-            // Условие удара: КД накоплен И (мы на земле ИЛИ мы падаем в прыжке для крита)
-            boolean isFalling = client.player.fallDistance > 0.0f && !client.player.isOnGround() && !client.player.isClimbing() && !client.player.isSwimming();
-            boolean canHit = progress >= currentCooldownThreshold;
-
-            if (canHit) {
-                // Если мы в воздухе, ждем начала падения для крита, иначе просто бьем на земле
-                if (!client.player.isOnGround() && !isFalling) return; 
-
+            if (progress >= nextAttackThreshold) {
+                // Рандомная тряска для обхода проверок
                 if (screenShake) {
                     client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                     client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
                 }
 
+                // Выполнение атаки
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
                 
-                // Установка новой случайной задержки 0.93 - 0.98
-                currentCooldownThreshold = 0.93f + (random.nextFloat() * 0.05f);
+                // Генерируем новый порог для следующего удара
+                nextAttackThreshold = 0.93f + (random.nextFloat() * 0.05f);
             }
         }
     }
@@ -149,11 +146,9 @@ public class ExampleMod implements ModInitializer {
         double diffXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.85f);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.85f);
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.84f);
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.84f);
     }
-
-    // --- Остальные функции (без изменений) ---
 
     private void runTriggerbot(MinecraftClient client) {
         if (client.crosshairTarget instanceof EntityHitResult res && res.getEntity() instanceof PlayerEntity target) {
@@ -185,6 +180,8 @@ public class ExampleMod implements ModInitializer {
         if (vcp != null) client.textRenderer.draw("§b[!] TARGET", -client.textRenderer.getWidth("[!] TARGET")/2f, 0, -1, false, ms.peek().getPositionMatrix(), vcp, net.minecraft.client.font.TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
         ms.pop();
     }
+
+    // --- GUI И КОНФИГ ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
