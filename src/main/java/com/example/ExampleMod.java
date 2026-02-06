@@ -17,6 +17,7 @@ public class ExampleMod implements ModInitializer {
     private static KeyBinding toggleKey;
     private static boolean enabled = false;
     private final Random random = new Random();
+    private int attackDelay = 0;
 
     @Override
     public void onInitialize() {
@@ -38,7 +39,8 @@ public class ExampleMod implements ModInitializer {
             if (!enabled) return;
 
             PlayerEntity target = null;
-            double range = 3.0;
+            // Уменьшил до 2.8 для обхода античита на дистанцию
+            double range = 2.8;
 
             for (PlayerEntity p : client.world.getPlayers()) {
                 if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= range) {
@@ -48,18 +50,29 @@ public class ExampleMod implements ModInitializer {
             }
 
             if (target != null) {
-                // Плавная наводка с небольшим "дрожанием" (Random jitter)
+                // Оставляем ту самую классную наводку
                 updateRotation(client, target);
 
-                // ЛОГИКА КРИТОВ И УДАРОВ
-                boolean isFalling = client.player.fallDistance > 0.0f && !client.player.isOnGround() && !client.player.isClimbing();
-                float cooldown = client.player.getAttackCooldownProgress(0.5f); // Берем прогресс с небольшим запасом
-
-                // Бьем только если кулдаун прошел И мы в прыжке (падаем) для крита
-                if (cooldown >= 0.95f + (random.nextFloat() * 0.1f)) { 
-                    if (isFalling || client.player.isInSneakingPose()) {
-                        client.interactionManager.attackEntity(client.player, target);
-                        client.player.swingHand(Hand.MAIN_HAND);
+                // Новая логика ударов
+                if (attackDelay > 0) {
+                    attackDelay--;
+                } else {
+                    float cooldown = client.player.getAttackCooldownProgress(0.5f);
+                    
+                    // Бьем, если кулдаун почти заряжен (0.9+)
+                    if (cooldown >= 0.9f) {
+                        // Пытаемся ударить. Больше не ждем "идеального падения", 
+                        // просто проверяем, что мы не лезем по лестнице.
+                        if (!client.player.isClimbing() && !client.player.isSwimming()) {
+                            
+                            // Сама атака через InteractionManager (самый надежный способ)
+                            client.interactionManager.attackEntity(client.player, target);
+                            client.player.swingHand(Hand.MAIN_HAND);
+                            
+                            // Добавляем случайную паузу между ударами (от 1 до 3 тиков)
+                            // Это сбивает античит с толку
+                            attackDelay = 1 + random.nextInt(2);
+                        }
                     }
                 }
             }
@@ -67,20 +80,21 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void updateRotation(MinecraftClient client, PlayerEntity target) {
+        // ... (код наводки остается таким же, он крутой)
         double diffX = target.getX() - client.player.getX();
-        double diffY = (target.getY() + target.getStandingEyeHeight() * 0.8) - (client.player.getY() + client.player.getStandingEyeHeight());
+        double diffY = (target.getY() + target.getStandingEyeHeight() * 0.75) - (client.player.getY() + client.player.getStandingEyeHeight());
         double diffZ = target.getZ() - client.player.getZ();
         double diffXZ = Math.sqrt(diffX * diffX + diffZ * diffZ);
 
         float targetYaw = (float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90;
         float targetPitch = (float) -Math.toDegrees(Math.atan2(diffY, diffXZ));
 
-        // Рандомное смещение прицела (чтобы не было идеальной точки)
-        targetYaw += (random.nextFloat() - 0.5f) * 1.2f;
-        targetPitch += (random.nextFloat() - 0.5f) * 1.2f;
+        // Jitter (дрожание) для легитности
+        targetYaw += (random.nextFloat() - 0.5f) * 1.5f;
+        targetPitch += (random.nextFloat() - 0.5f) * 1.5f;
 
-        client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 15f + random.nextFloat() * 10f));
-        client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 15f + random.nextFloat() * 10f));
+        client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 18f + random.nextFloat() * 5f));
+        client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 18f + random.nextFloat() * 5f));
     }
 
     private float lerpAngle(float start, float end, float step) {
