@@ -46,7 +46,8 @@ public class ExampleMod implements ModInitializer {
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
     
-    private float nextAttackThreshold = 0.95f;
+    // Порог КД для стабильного урона
+    private float nextAttackThreshold = 0.98f;
 
     @Override
     public void onInitialize() {
@@ -56,12 +57,12 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            // Открытие меню на '0' (только если экран пуст)
+            // Открытие меню (запрещено, если открыт другой экран)
             if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
             
-            // ПРОВЕРКА: Если открыт любой экран (чат, инвентарь), бинды не работают
+            // Работа биндов (запрещено в чате/инвентаре)
             if (client.currentScreen == null) {
                 if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
                 if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
@@ -71,7 +72,7 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
             }
 
-            // Логика модулей (работает всегда, если включены)
+            // Фоновые модули
             if (noFire) {
                 client.player.setFireTicks(0);
                 if (client.player.isOnFire()) client.player.extinguish();
@@ -93,7 +94,7 @@ public class ExampleMod implements ModInitializer {
             }
 
             if (killaura) {
-                runUniversalKillaura(client);
+                runSimpleKillaura(client);
                 if (autoRun) client.options.sprintKey.setPressed(true);
             } else if (triggerbot) {
                 runTriggerbot(client);
@@ -107,7 +108,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void runUniversalKillaura(MinecraftClient client) {
+    private void runSimpleKillaura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
@@ -122,9 +123,11 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
+            // Наводка
             double targetY = target.getY() + (target.getHeight() * (0.42 + random.nextDouble() * 0.25));
             lookAt(client.player, new Vec3d(target.getX(), targetY, target.getZ()));
 
+            // Прямой удар по КД без лишних пауз
             float progress = client.player.getAttackCooldownProgress(0.0f);
             
             if (progress >= nextAttackThreshold) {
@@ -132,9 +135,12 @@ public class ExampleMod implements ModInitializer {
                     client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                     client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
                 }
+                
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
-                nextAttackThreshold = 0.93f + (random.nextFloat() * 0.05f);
+                
+                // Ставим КД (0.98 - 1.02) для 100% эффективности
+                nextAttackThreshold = 0.98f + (random.nextFloat() * 0.04f);
             }
         }
     }
@@ -150,7 +156,7 @@ public class ExampleMod implements ModInitializer {
 
     private void runTriggerbot(MinecraftClient client) {
         if (client.crosshairTarget instanceof EntityHitResult res && res.getEntity() instanceof PlayerEntity target) {
-            if (target.isAlive() && client.player.getAttackCooldownProgress(0) >= 0.98f) {
+            if (target.isAlive() && client.player.getAttackCooldownProgress(0) >= 0.99f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -179,7 +185,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI СЕКЦИЯ ---
+    // --- GUI И КОНФИГ ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
