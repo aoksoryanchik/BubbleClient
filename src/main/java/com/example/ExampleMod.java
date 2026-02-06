@@ -15,6 +15,8 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.Items;
+import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
@@ -29,9 +31,17 @@ import java.nio.file.Paths;
 import java.util.List;
 
 public class ExampleMod implements ModInitializer {
-    public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
+    // Состояния функций
+    public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false, autoTotem = true, noFire = true, viewModelActive = true;
+    
+    // Параметры
     public static double kaRange = 3.8, kaWallsRange = 3.0, wpX = 0, wpY = 64, wpZ = 0;
     public static boolean kaAutoRun = true;
+    
+    // ViewModel (Руки)
+    public static float handX = 0.0f, handY = 0.0f, handZ = 0.0f;
+
+    // Клавиши
     public static int killauraKey = GLFW.GLFW_KEY_P, triggerbotKey = GLFW.GLFW_KEY_R, fbKey = GLFW.GLFW_KEY_M, wpKey = GLFW.GLFW_KEY_V, menuKey = GLFW.GLFW_KEY_0;
     public static String bindingFor = "";
     private static final boolean[] keyStates = new boolean[512];
@@ -44,26 +54,36 @@ public class ExampleMod implements ModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
             long h = client.getWindow().getHandle();
-            if (isPressed(h, menuKey) && client.currentScreen == null) client.setScreen(new BubbleMenu());
+            
+            // Открытие меню
+            if (isPressed(h, menuKey) && client.currentScreen == null) {
+                client.setScreen(new BubbleMenu());
+            }
+
+            // Хоткеи вне меню
             if (client.currentScreen == null) {
                 if (isPressed(h, killauraKey)) toggle(client, "Killaura", !killaura);
                 if (isPressed(h, triggerbotKey)) toggle(client, "Triggerbot", !triggerbot);
                 if (isPressed(h, fbKey)) toggle(client, "FullBright", !fullbright);
                 if (isPressed(h, wpKey)) toggle(client, "Waypoint", !waypointActive);
             }
+
+            // Фоновая работа функций
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
+            if (autoTotem) runAutoTotem(client);
+            if (noFire && client.player.isOnFire()) client.player.setExtinguished(true);
             if (killaura) runKillaura(client);
             if (triggerbot && !killaura) runTriggerbot(client);
         });
 
-        // 1. РЕНДЕР В МИРЕ (для дистанций до 400м)
+        // 3D Метка (до 400 метров)
         WorldRenderEvents.LAST.register(context -> {
             if (!waypointActive) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
             double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
-            if (dist > 400) return; // В мире рисуем только если близко
+            if (dist > 400) return;
 
             MatrixStack matrices = context.matrixStack();
             Vec3d camPos = context.camera().getPos();
@@ -72,91 +92,43 @@ public class ExampleMod implements ModInitializer {
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
             
-            float scale = (float) (dist * 0.01); 
-            if (scale < 0.03f) scale = 0.03f;
+            float scale = (float) Math.max(0.03, dist * 0.01);
             matrices.scale(-scale, -scale, scale);
 
             VertexConsumerProvider consumers = context.consumers();
             if (consumers != null) {
                 Matrix4f posMat = matrices.peek().getPositionMatrix();
-                String t1 = "§b[!] ЦЕЛЬ §f(" + (int)dist + "m)";
-                client.textRenderer.draw(t1, -client.textRenderer.getWidth(t1)/2f, 0, -1, false, posMat, consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
+                String t = "§b[!] ИВЕНТ §f(" + (int)dist + "m)";
+                client.textRenderer.draw(t, -client.textRenderer.getWidth(t)/2f, 0, -1, false, posMat, consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
             }
             matrices.pop();
         });
 
-        // 2. HUD РЕНДЕР (Для бесконечной дистанции - висит на экране)
-        HudRenderCallback.EVENT.register((drawContext, tickCounter) -> {
+        // HUD Навигатор (если дальше 400м)
+        HudRenderCallback.EVENT.register((drawContext, tick) -> {
             if (!waypointActive) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
             double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
-            
-            // Если цель далеко, рисуем текст вверху экрана, чтобы всегда знать направление
             if (dist > 400) {
-                String info = String.format("§b➔ §lEVENT: §f[%.0f, %.0f, %.0f] §e(%.0f m)", wpX, wpY, wpZ, dist);
+                String info = String.format("§b➔ EVENT: §f[%.0f, %.0f, %.0f] §e(%.0f m)", wpX, wpY, wpZ, dist);
                 drawContext.drawCenteredTextWithShadow(client.textRenderer, info, drawContext.getScaledWindowWidth() / 2, 10, -1);
-                
-                // Стрелочка-подсказка куда крутить головой
-                double angle = Math.toDegrees(Math.atan2(wpZ - client.player.getZ(), wpX - client.player.getX())) - 90.0;
-                double yaw = client.player.getYaw();
-                double diff = (angle - yaw + 180) % 360 - 180;
-                
-                String arrow = diff > 10 ? "§eПОВОРАЧИВАЙ НАПРАВО ➔" : (diff < -10 ? "§e⬅ ПОВОРАЧИВАЙ НАЛЕВО" : "§a§lПРЯМО ПО КУРСУ!");
-                drawContext.drawCenteredTextWithShadow(client.textRenderer, arrow, drawContext.getScaledWindowWidth() / 2, 25, -1);
             }
         });
     }
 
-    // --- (Toggle, Save/Load, Killaura, Menu, Settings - без изменений) ---
-    // Скопируй эти методы из предыдущего сообщения, так как они работают стабильно.
-    
-    private void toggle(MinecraftClient c, String n, boolean s) {
-        if(n.equals("Killaura")) killaura = s;
-        if(n.equals("Triggerbot")) triggerbot = s;
-        if(n.equals("FullBright")) fullbright = s;
-        if(n.equals("Waypoint")) waypointActive = s;
-        saveConfig();
-        c.player.sendMessage(Text.literal("§bBubble §8» §f" + n + ": " + (s ? "§aON" : "§cOFF")), true);
-    }
-
-    public static void saveConfig() {
-        try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println("kaRange:" + kaRange); w.println("kaWallsRange:" + kaWallsRange);
-            w.println("kaAutoRun:" + kaAutoRun); w.println("wpX:" + wpX);
-            w.println("wpY:" + wpY); w.println("wpZ:" + wpZ);
-            w.println("kaKey:" + killauraKey); w.println("tbKey:" + triggerbotKey);
-            w.println("fbKey:" + fbKey); w.println("wpKey:" + wpKey);
-        } catch (Exception ignored) {}
-    }
-
-    private void loadConfig() {
-        if (!Files.exists(Paths.get(CONFIG_FILE))) return;
-        try {
-            List<String> lines = Files.readAllLines(Paths.get(CONFIG_FILE));
-            for (String l : lines) {
-                String[] p = l.split(":");
-                if (p[0].equals("kaRange")) kaRange = Double.parseDouble(p[1]);
-                if (p[0].equals("kaWallsRange")) kaWallsRange = Double.parseDouble(p[1]);
-                if (p[0].equals("kaAutoRun")) kaAutoRun = Boolean.parseBoolean(p[1]);
-                if (p[0].equals("wpX")) wpX = Double.parseDouble(p[1]);
-                if (p[0].equals("wpY")) wpY = Double.parseDouble(p[1]);
-                if (p[0].equals("wpZ")) wpZ = Double.parseDouble(p[1]);
-                if (p[0].equals("kaKey")) killauraKey = Integer.parseInt(p[1]);
-                if (p[0].equals("tbKey")) triggerbotKey = Integer.parseInt(p[1]);
-                if (p[0].equals("fbKey")) fbKey = Integer.parseInt(p[1]);
-                if (p[0].equals("wpKey")) wpKey = Integer.parseInt(p[1]);
+    private void runAutoTotem(MinecraftClient client) {
+        // Если здоровья меньше 2 сердец и в левой руке не тотем
+        if (client.player.getHealth() <= 4.0f && client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
+            for (int i = 0; i < 45; i++) {
+                if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
+                    int slot = i < 9 ? i + 36 : i;
+                    client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, slot, 45, SlotActionType.SWAP, client.player);
+                    break;
+                }
             }
-        } catch (Exception ignored) {}
-    }
-
-    private boolean isPressed(long h, int k) {
-        if (k <= 0 || k >= 512) return false;
-        boolean down = InputUtil.isKeyPressed(h, k);
-        if (down && !keyStates[k]) { keyStates[k] = true; return true; }
-        if (!down) keyStates[k] = false;
-        return false;
+        }
     }
 
     private void runKillaura(MinecraftClient client) {
@@ -186,117 +158,95 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    private void toggle(MinecraftClient c, String n, boolean s) {
+        if(n.equals("Killaura")) killaura = s;
+        if(n.equals("Triggerbot")) triggerbot = s;
+        if(n.equals("FullBright")) fullbright = s;
+        if(n.equals("Waypoint")) waypointActive = s;
+        saveConfig();
+        c.player.sendMessage(Text.literal("§bBubble §8» §f" + n + ": " + (s ? "§aON" : "§cOFF")), true);
+    }
+
+    // --- СИСТЕМА МЕНЮ ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
-        public void render(DrawContext context, int mx, int my, float delta) {
-            context.fill(0, 0, width, height, 0x90000000);
-            int x = width/2 - 80, y = height/2 - 60;
-            context.fill(x, y, x + 160, y + 120, 0xFF121212);
-            context.drawBorder(x, y, 160, 120, 0xFF00AAFF);
-            context.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width/2, y + 6, -1);
-            drawBtn(context, x+10, y+25, "KillAura", killaura, killauraKey, "ka", mx, my, true);
-            drawBtn(context, x+10, y+50, "TriggerBot", triggerbot, triggerbotKey, "tb", mx, my, false);
-            drawBtn(context, x+10, y+75, "FullBright", fullbright, fbKey, "fb", mx, my, false);
-            drawBtn(context, x+10, y+100, "Waypoint", waypointActive, wpKey, "wp", mx, my, true);
+        public void render(DrawContext ctx, int mx, int my, float delta) {
+            ctx.fill(0, 0, width, height, 0x90000000);
+            int x = width/2 - 80, y = height/2 - 90;
+            ctx.fill(x, y, x + 160, y + 180, 0xFF121212);
+            ctx.drawBorder(x, y, 160, 180, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width/2, y + 6, -1);
+            
+            drawBtn(ctx, x+10, y+25, "KillAura", killaura, "ka", mx, my, true);
+            drawBtn(ctx, x+10, y+45, "TriggerBot", triggerbot, "tb", mx, my, false);
+            drawBtn(ctx, x+10, y+65, "AutoTotem", autoTotem, "at", mx, my, false);
+            drawBtn(ctx, x+10, y+85, "NoFire", noFire, "nf", mx, my, false);
+            drawBtn(ctx, x+10, y+105, "FullBright", fullbright, "fb", mx, my, false);
+            drawBtn(ctx, x+10, y+125, "Waypoint", waypointActive, "wp", mx, my, true);
+            drawBtn(ctx, x+10, y+145, "ViewModel", viewModelActive, "vm", mx, my, true);
         }
-        private void drawBtn(DrawContext ctx, int x, int y, String n, boolean on, int k, String id, int mx, int my, boolean s) {
+
+        private void drawBtn(DrawContext ctx, int x, int y, String n, boolean on, String id, int mx, int my, boolean settings) {
             boolean h = mx >= x && mx <= x + 140 && my >= y && my <= y + 16;
-            String kn = bindingFor.equals(id) ? "???" : GLFW.glfwGetKeyName(k, 0);
-            if (kn == null) kn = "K_" + k;
             ctx.fill(x, y, x + 140, y + 16, h ? 0xFF252525 : 0xFF181818);
             ctx.fill(x + 2, y + 4, x + 10, y + 12, on ? 0xFF00FF00 : 0xFFFF0000);
-            ctx.drawTextWithShadow(textRenderer, n + " §7[" + kn.toUpperCase() + "]", x + 15, y + 4, -1);
-            if (s) {
+            ctx.drawTextWithShadow(textRenderer, n, x + 15, y + 4, -1);
+            if (settings) {
                 boolean hs = mx >= x + 125 && mx <= x + 140 && my >= y && my <= y + 16;
                 ctx.drawTextWithShadow(textRenderer, hs ? "§f⚙" : "§b⚙", x + 130, y + 4, -1);
             }
         }
+
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
-            int x = width/2 - 80, y = height/2 - 60;
-            if (mx >= x + 125 && mx <= x + 150) {
-                if (my >= y + 25 && my <= y + 41 && b == 1) { client.setScreen(new KillAuraSettings(this)); return true; }
-                if (my >= y + 100 && my <= y + 116 && b == 1) { client.setScreen(new WaypointSettings(this)); return true; }
+            int x = width/2 - 80, y = height/2 - 90;
+            // Клики по шестеренкам (ПКМ)
+            if (b == 1 || (b == 0 && mx >= x + 125)) {
+                if (my >= y + 25 && my <= y + 41) client.setScreen(new KillAuraSettings(this));
+                if (my >= y + 125 && my <= y + 141) client.setScreen(new WaypointSettings(this));
+                if (my >= y + 145 && my <= y + 161) client.setScreen(new HandSettings(this));
+            } 
+            // Обычные включения
+            else if (mx >= x + 10 && mx <= x + 125) {
+                if (my >= y + 25 && my <= y + 41) killaura = !killaura;
+                if (my >= y + 45 && my <= y + 61) triggerbot = !triggerbot;
+                if (my >= y + 65 && my <= y + 81) autoTotem = !autoTotem;
+                if (my >= y + 85 && my <= y + 101) noFire = !noFire;
+                if (my >= y + 105 && my <= y + 121) fullbright = !fullbright;
+                if (my >= y + 125 && my <= y + 141) waypointActive = !waypointActive;
+                if (my >= y + 145 && my <= y + 161) viewModelActive = !viewModelActive;
             }
-            if (mx >= x + 10 && mx <= x + 125) {
-                if (my >= y + 25 && my <= y + 41) handle(b, "ka");
-                if (my >= y + 50 && my <= y + 66) handle(b, "tb");
-                if (my >= y + 75 && my <= y + 91) handle(b, "fb");
-                if (my >= y + 100 && my <= y + 116) handle(b, "wp");
-            }
+            saveConfig();
             return super.mouseClicked(mx, my, b);
-        }
-        private void handle(int b, String id) {
-            if (b == 0) {
-                if(id.equals("ka")) killaura = !killaura;
-                if(id.equals("tb")) triggerbot = !triggerbot;
-                if(id.equals("fb")) fullbright = !fullbright;
-                if(id.equals("wp")) waypointActive = !waypointActive;
-                saveConfig();
-            } else if (b == 1) bindingFor = id;
-        }
-        @Override
-        public boolean keyPressed(int k, int s, int m) {
-            if (!bindingFor.isEmpty()) {
-                if (bindingFor.equals("ka")) killauraKey = k;
-                if (bindingFor.equals("tb")) triggerbotKey = k;
-                if (bindingFor.equals("fb")) fbKey = k;
-                if (bindingFor.equals("wp")) wpKey = k;
-                bindingFor = ""; saveConfig(); return true;
-            }
-            if (k == GLFW.GLFW_KEY_ESCAPE) { this.close(); return true; }
-            return super.keyPressed(k, s, m);
         }
     }
 
-    public static class KillAuraSettings extends Screen {
-        private final Screen p; private TextFieldWidget rF, wF;
-        public KillAuraSettings(Screen p) { super(Text.literal("KA")); this.p = p; }
+    // --- ОКНА НАСТРОЕК ---
+
+    public static class HandSettings extends Screen {
+        private final Screen parent;
+        private TextFieldWidget fX, fY, fZ;
+        public HandSettings(Screen p) { super(Text.literal("Hands")); this.parent = p; }
         @Override
         protected void init() {
-            rF = new TextFieldWidget(textRenderer, width/2 + 10, height/2 - 32, 40, 12, Text.literal(""));
-            rF.setText(String.valueOf(kaRange));
-            wF = new TextFieldWidget(textRenderer, width/2 + 10, height/2 - 12, 40, 12, Text.literal(""));
-            wF.setText(String.valueOf(kaWallsRange));
-            addSelectableChild(rF); addSelectableChild(wF);
+            fX = new TextFieldWidget(textRenderer, width/2 - 30, height/2 - 40, 60, 12, Text.literal("")); fX.setText(String.valueOf(handX));
+            fY = new TextFieldWidget(textRenderer, width/2 - 30, height/2 - 20, 60, 12, Text.literal("")); fY.setText(String.valueOf(handY));
+            fZ = new TextFieldWidget(textRenderer, width/2 - 30, height/2, 60, 12, Text.literal("")); fZ.setText(String.valueOf(handZ));
+            addSelectableChild(fX); addSelectableChild(fY); addSelectableChild(fZ);
         }
         @Override
-        public void render(DrawContext ctx, int mx, int my, float d) {
+        public void render(DrawContext ctx, int mx, int my, float delta) {
             ctx.fill(0, 0, width, height, 0x90000000);
-            int x = width/2 - 60, y = height/2 - 60;
-            ctx.fill(x, y, x + 150, y + 110, 0xFF121212);
-            ctx.drawBorder(x, y, 150, 110, 0xFF00AAFF);
-            int px = x - 90;
-            ctx.fill(px, y, px + 85, y + 110, 0xFF121212);
-            ctx.drawBorder(px, y, 85, 110, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§eAresmine", px + 42, y + 15, -1);
-            boolean hA = mx >= px+10 && mx <= px+75 && my >= y+40 && my <= y+56;
-            ctx.fill(px+10, y+40, px+75, y+56, hA ? 0xFF252525 : 0xFF181818);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Поставить", px + 42, y + 44, -1);
-            ctx.drawTextWithShadow(textRenderer, "Range:", x+10, y+25, -1);
-            ctx.drawTextWithShadow(textRenderer, "Walls:", x+10, y+45, -1);
-            ctx.drawTextWithShadow(textRenderer, "Auto Run:", x+10, y+70, -1);
-            if (kaAutoRun) ctx.drawTextWithShadow(textRenderer, "✔", x+120, y+70, 0xFF00FF00);
-            rF.render(ctx, mx, my, d); wF.render(ctx, mx, my, d);
-        }
-        @Override
-        public boolean mouseClicked(double mx, double my, int b) {
-            int x = width/2 - 60, y = height/2 - 60;
-            int px = x - 90;
-            if (mx >= px+10 && mx <= px+75 && my >= y+40 && my <= y+56) {
-                kaRange = 3.8; kaWallsRange = 3.0; kaAutoRun = true;
-                rF.setText("3.8"); wF.setText("3.0"); saveConfig(); return true;
-            }
-            if (mx >= x+120 && mx <= x+135 && my >= y+70 && my <= y+85) { kaAutoRun = !kaAutoRun; saveConfig(); return true; }
-            rF.setFocused(rF.isMouseOver(mx, my)); wF.setFocused(wF.isMouseOver(mx, my));
-            return super.mouseClicked(mx, my, b);
+            ctx.drawCenteredTextWithShadow(textRenderer, "ViewModel X / Y / Z", width/2, height/2 - 60, -1);
+            fX.render(ctx, mx, my, delta); fY.render(ctx, mx, my, delta); fZ.render(ctx, mx, my, delta);
         }
         @Override
         public boolean keyPressed(int k, int s, int m) {
-            if (k == GLFW.GLFW_KEY_ESCAPE) { client.setScreen(p); return true; }
-            rF.keyPressed(k, s, m); wF.keyPressed(k, s, m);
-            try { kaRange = Double.parseDouble(rF.getText()); kaWallsRange = Double.parseDouble(wF.getText()); saveConfig(); } catch (Exception ignored) {}
+            if (k == GLFW.GLFW_KEY_ESCAPE) {
+                try { handX = Float.parseFloat(fX.getText()); handY = Float.parseFloat(fY.getText()); handZ = Float.parseFloat(fZ.getText()); } catch (Exception ignored) {}
+                saveConfig(); client.setScreen(parent); return true;
+            }
             return super.keyPressed(k, s, m);
         }
     }
@@ -306,18 +256,15 @@ public class ExampleMod implements ModInitializer {
         public WaypointSettings(Screen p) { super(Text.literal("WP")); this.p = p; }
         @Override
         protected void init() {
-            eX = new TextFieldWidget(textRenderer, width/2 - 30, height/2 - 30, 60, 12, Text.literal(""));
-            eX.setText(String.valueOf(wpX));
-            eY = new TextFieldWidget(textRenderer, width/2 - 30, height/2 - 10, 60, 12, Text.literal(""));
-            eY.setText(String.valueOf(wpY));
-            eZ = new TextFieldWidget(textRenderer, width/2 - 30, height/2 + 10, 60, 12, Text.literal(""));
-            eZ.setText(String.valueOf(wpZ));
+            eX = new TextFieldWidget(textRenderer, width/2 - 30, height/2 - 30, 60, 12, Text.literal("")); eX.setText(String.valueOf(wpX));
+            eY = new TextFieldWidget(textRenderer, width/2 - 30, height/2 - 10, 60, 12, Text.literal("")); eY.setText(String.valueOf(wpY));
+            eZ = new TextFieldWidget(textRenderer, width/2 - 30, height/2 + 10, 60, 12, Text.literal("")); eZ.setText(String.valueOf(wpZ));
             addSelectableChild(eX); addSelectableChild(eY); addSelectableChild(eZ);
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0x90000000);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§bКоординаты метки", width/2, height/2 - 50, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "Координаты метки", width/2, height/2 - 50, -1);
             eX.render(ctx, mx, my, d); eY.render(ctx, mx, my, d); eZ.render(ctx, mx, my, d);
         }
         @Override
@@ -328,6 +275,68 @@ public class ExampleMod implements ModInitializer {
             }
             return super.keyPressed(k, s, m);
         }
+    }
+
+    public static class KillAuraSettings extends Screen {
+        private final Screen p; private TextFieldWidget rF, wF;
+        public KillAuraSettings(Screen p) { super(Text.literal("KA")); this.p = p; }
+        @Override
+        protected void init() {
+            rF = new TextFieldWidget(textRenderer, width/2 + 10, height/2 - 20, 40, 12, Text.literal("")); rF.setText(String.valueOf(kaRange));
+            wF = new TextFieldWidget(textRenderer, width/2 + 10, height/2, 40, 12, Text.literal("")); wF.setText(String.valueOf(kaWallsRange));
+            addSelectableChild(rF); addSelectableChild(wF);
+        }
+        @Override
+        public void render(DrawContext ctx, int mx, int my, float d) {
+            ctx.fill(0, 0, width, height, 0x90000000);
+            ctx.drawTextWithShadow(textRenderer, "Range:", width/2-40, height/2-20, -1);
+            ctx.drawTextWithShadow(textRenderer, "Through Walls:", width/2-40, height/2, -1);
+            rF.render(ctx, mx, my, d); wF.render(ctx, mx, my, d);
+        }
+        @Override
+        public boolean keyPressed(int k, int s, int m) {
+            if (k == GLFW.GLFW_KEY_ESCAPE) {
+                try { kaRange = Double.parseDouble(rF.getText()); kaWallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {}
+                saveConfig(); client.setScreen(p); return true;
+            }
+            return super.keyPressed(k, s, m);
+        }
+    }
+
+    // --- ВСПОМОГАТЕЛЬНЫЕ ---
+
+    private boolean isPressed(long h, int k) {
+        if (k <= 0 || k >= 512) return false;
+        boolean down = InputUtil.isKeyPressed(h, k);
+        if (down && !keyStates[k]) { keyStates[k] = true; return true; }
+        if (!down) keyStates[k] = false; return false;
+    }
+
+    public static void saveConfig() {
+        try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
+            w.println("kaRange:" + kaRange); w.println("wpX:" + wpX); w.println("wpY:" + wpY); w.println("wpZ:" + wpZ);
+            w.println("handX:" + handX); w.println("handY:" + handY); w.println("handZ:" + handZ);
+            w.println("autoTotem:" + autoTotem); w.println("noFire:" + noFire);
+        } catch (Exception ignored) {}
+    }
+
+    private void loadConfig() {
+        if (!Files.exists(Paths.get(CONFIG_FILE))) return;
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(CONFIG_FILE));
+            for (String l : lines) {
+                String[] p = l.split(":");
+                if (p[0].equals("kaRange")) kaRange = Double.parseDouble(p[1]);
+                if (p[0].equals("wpX")) wpX = Double.parseDouble(p[1]);
+                if (p[0].equals("wpY")) wpY = Double.parseDouble(p[1]);
+                if (p[0].equals("wpZ")) wpZ = Double.parseDouble(p[1]);
+                if (p[0].equals("handX")) handX = Float.parseFloat(p[1]);
+                if (p[0].equals("handY")) handY = Float.parseFloat(p[1]);
+                if (p[0].equals("handZ")) handZ = Float.parseFloat(p[1]);
+                if (p[0].equals("autoTotem")) autoTotem = Boolean.parseBoolean(p[1]);
+                if (p[0].equals("noFire")) noFire = Boolean.parseBoolean(p[1]);
+            }
+        } catch (Exception ignored) {}
     }
 }
 
