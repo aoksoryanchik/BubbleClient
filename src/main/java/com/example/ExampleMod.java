@@ -9,13 +9,14 @@ import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
+import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
     private static KeyBinding toggleKey;
     private static boolean enabled = false;
+    private final Random random = new Random();
 
     @Override
     public void onInitialize() {
@@ -31,56 +32,59 @@ public class ExampleMod implements ModInitializer {
 
             while (toggleKey.wasPressed()) {
                 enabled = !enabled;
-                client.player.sendMessage(Text.literal("§l[Bubble] §fKillaura: " + (enabled ? "§aEnabled" : "§cDisabled")), true);
+                client.player.sendMessage(Text.literal("§b[Bubble] §fKillaura: " + (enabled ? "§aON" : "§cOFF")), true);
             }
 
             if (!enabled) return;
 
             PlayerEntity target = null;
-            double closestDistance = 3.1; // Радиус 3 блока + запас
+            double range = 3.0;
 
             for (PlayerEntity p : client.world.getPlayers()) {
-                if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= closestDistance) {
+                if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= range) {
                     target = p;
-                    closestDistance = client.player.distanceTo(p);
+                    break;
                 }
             }
 
             if (target != null) {
-                // ЛОГИКА АВТО-НАВОДКИ (Aimbot)
-                lookAtEntity(client, target);
+                // Плавная наводка с небольшим "дрожанием" (Random jitter)
+                updateRotation(client, target);
 
-                // ЛОГИКА УДАРА
-                if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                    client.interactionManager.attackEntity(client.player, target);
-                    client.player.swingHand(Hand.MAIN_HAND);
+                // ЛОГИКА КРИТОВ И УДАРОВ
+                boolean isFalling = client.player.fallDistance > 0.0f && !client.player.isOnGround() && !client.player.isClimbing();
+                float cooldown = client.player.getAttackCooldownProgress(0.5f); // Берем прогресс с небольшим запасом
+
+                // Бьем только если кулдаун прошел И мы в прыжке (падаем) для крита
+                if (cooldown >= 0.95f + (random.nextFloat() * 0.1f)) { 
+                    if (isFalling || client.player.isInSneakingPose()) {
+                        client.interactionManager.attackEntity(client.player, target);
+                        client.player.swingHand(Hand.MAIN_HAND);
+                    }
                 }
             }
         });
     }
 
-    private void lookAtEntity(MinecraftClient client, PlayerEntity target) {
-        // Вычисляем вектор до хитбокса (грудь/голова)
-        Vec3d targetPos = target.getPos().add(0, target.getStandingEyeHeight() / 1.5, 0);
-        Vec3d playerPos = client.player.getEyePos();
-
-        double diffX = targetPos.x - playerPos.x;
-        double diffY = targetPos.y - playerPos.y;
-        double diffZ = targetPos.z - playerPos.z;
+    private void updateRotation(MinecraftClient client, PlayerEntity target) {
+        double diffX = target.getX() - client.player.getX();
+        double diffY = (target.getY() + target.getStandingEyeHeight() * 0.8) - (client.player.getY() + client.player.getStandingEyeHeight());
+        double diffZ = target.getZ() - client.player.getZ();
         double diffXZ = Math.sqrt(diffX * diffX + diffZ * diffZ);
 
         float targetYaw = (float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90;
         float targetPitch = (float) -Math.toDegrees(Math.atan2(diffY, diffXZ));
 
-        // Плавность наводки (чтобы античит не кикнул)
-        client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 25f)); // Скорость 25
-        client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 25f));
+        // Рандомное смещение прицела (чтобы не было идеальной точки)
+        targetYaw += (random.nextFloat() - 0.5f) * 1.2f;
+        targetPitch += (random.nextFloat() - 0.5f) * 1.2f;
+
+        client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 15f + random.nextFloat() * 10f));
+        client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 15f + random.nextFloat() * 10f));
     }
 
     private float lerpAngle(float start, float end, float step) {
         float diff = MathHelper.wrapDegrees(end - start);
-        if (diff > step) diff = step;
-        if (diff < -step) diff = -step;
-        return start + diff;
+        return start + MathHelper.clamp(diff, -step, step);
     }
 }
