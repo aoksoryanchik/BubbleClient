@@ -226,14 +226,18 @@ public class ExampleMod implements ModInitializer {
         
         @Override
         protected void init() {
+            // ИСПРАВЛЕНИЕ: Делаем поля видимыми и с фоном
             f1 = new TextFieldWidget(textRenderer, width/2-50, height/2-45, 100, 16, Text.literal(""));
             f2 = new TextFieldWidget(textRenderer, width/2-50, height/2-20, 100, 16, Text.literal(""));
             f3 = new TextFieldWidget(textRenderer, width/2-50, height/2+5, 100, 16, Text.literal(""));
             
+            f1.setEditableColor(-1);
+            f2.setEditableColor(-1);
+            f3.setEditableColor(-1);
+            
             if(t.equals("KA")){ f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange)); f3.setText(String.valueOf(shakeIntensity)); }
             if(t.equals("WP")){ f1.setText(String.valueOf(wpX)); f2.setText(String.valueOf(wpY)); f3.setText(String.valueOf(wpZ)); }
             
-            // ИСПРАВЛЕНИЕ: Добавляем поля в список дочерних элементов, чтобы на них можно было нажать
             this.addDrawableChild(f1);
             this.addDrawableChild(f2);
             this.addDrawableChild(f3);
@@ -247,13 +251,12 @@ public class ExampleMod implements ModInitializer {
                 ctx.drawTextWithShadow(textRenderer, "Range:", width/2-95, height/2-41, -1);
                 ctx.drawTextWithShadow(textRenderer, "Walls:", width/2-95, height/2-16, -1);
                 ctx.drawTextWithShadow(textRenderer, "Shake:", width/2-95, height/2+9, -1);
+                
+                renderCheck(ctx, "AutoRun", autoRun, height/2+35, mx, my);
+                renderCheck(ctx, "AntiVelocity", antiVelocity, height/2+55, mx, my);
+                renderCheck(ctx, "ScreenShake", screenShake, height/2+75, mx, my);
             }
-            // Поля рендерятся автоматически через addDrawableChild
-            if(t.equals("KA")) {
-                renderCheck(ctx, "AutoRun", autoRun, height/2+30, mx, my);
-                renderCheck(ctx, "AntiVelocity", antiVelocity, height/2+50, mx, my);
-                renderCheck(ctx, "ScreenShake", screenShake, height/2+70, mx, my);
-            }
+            super.render(ctx, mx, my, d);
         }
 
         private void renderCheck(DrawContext ctx, String n, boolean s, int y, int mx, int my) {
@@ -264,9 +267,9 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             if(t.equals("KA") && mx>=width/2-60 && mx<=width/2+60) {
-                if(my>=height/2+30 && my<=height/2+44) autoRun=!autoRun;
-                if(my>=height/2+50 && my<=height/2+64) antiVelocity=!antiVelocity;
-                if(my>=height/2+70 && my<=height/2+84) screenShake=!screenShake;
+                if(my>=height/2+35 && my<=height/2+49) autoRun=!autoRun;
+                if(my>=height/2+55 && my<=height/2+69) antiVelocity=!antiVelocity;
+                if(my>=height/2+75 && my<=height/2+89) screenShake=!screenShake;
             }
             return super.mouseClicked(mx, my, b);
         }
