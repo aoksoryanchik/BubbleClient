@@ -47,7 +47,7 @@ public class ExampleMod implements ModInitializer {
     private final Random random = new Random();
     
     private float nextAttackThreshold = 0.94f;
-    private double currentRotation = 0;
+    private float strafeYaw = 0;
 
     @Override
     public void onInitialize() {
@@ -81,20 +81,17 @@ public class ExampleMod implements ModInitializer {
             }
 
             if (killaura) {
-                runNursultanStyleAura(client);
-            } else if (triggerbot) {
-                runTriggerbot(client);
+                run360Aura(client);
             }
         });
 
         WorldRenderEvents.LAST.register(this::renderWaypoint);
-
         HudRenderCallback.EVENT.register((ctx, t) -> {
             if (waypointActive) ctx.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, String.format("§bTarget: §f%.0f %.0f %.0f", wpX, wpY, wpZ), ctx.getScaledWindowWidth()/2, 10, -1);
         });
     }
 
-    private void runNursultanStyleAura(MinecraftClient client) {
+    private void run360Aura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
@@ -106,32 +103,37 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // 1. Поворот головы к цели
-            double tY = target.getY() + (target.getHeight() * 0.45);
+            // 1. Улучшенная наводка (LERP)
+            double tY = target.getY() + (target.getHeight() * 0.5);
             lookAt(client.player, new Vec3d(target.getX(), tY, target.getZ()));
 
-            // 2. Логика 360 (TargetStrafe) - работает только когда Киллаура нашла цель
+            // 2. Логика Закручивания (360)
             if (mode360) {
                 client.player.setSprinting(true);
-                currentRotation += 0.12; // Скорость закручивания
                 
-                double radius = kaRange - 0.6;
-                double x = target.getX() + Math.cos(currentRotation) * radius;
-                double z = target.getZ() + Math.sin(currentRotation) * radius;
+                // Если нас бьют, гасим отдачу, чтобы не улетать и продолжать закрут
+                if (client.player.hurtTime > 0) {
+                    client.player.setVelocity(client.player.getVelocity().multiply(0.45, 0.8, 0.45));
+                }
+
+                strafeYaw += 0.15f; // Скорость вращения
+                double radius = kaRange - 0.8;
                 
-                // Рассчитываем вектор движения в точку на круге
-                Vec3d targetPos = new Vec3d(x, client.player.getY(), z);
-                Vec3d moveDir = targetPos.subtract(client.player.getPos()).normalize().multiply(0.24);
+                double x = target.getX() + Math.sin(strafeYaw) * radius;
+                double z = target.getZ() + Math.cos(strafeYaw) * radius;
                 
-                // Применяем скорость только если мы не слишком близко к точке
-                if (client.player.getPos().distanceTo(targetPos) > 0.3) {
-                    client.player.addVelocity(moveDir.x, 0, moveDir.z);
+                Vec3d targetVec = new Vec3d(x, client.player.getY(), z);
+                Vec3d diff = targetVec.subtract(client.player.getPos());
+                
+                if (diff.length() > 0.2) {
+                    diff = diff.normalize().multiply(0.24); // Скорость стрейфа
+                    client.player.addVelocity(diff.x, 0, diff.z);
                 }
             } else if (autoRun) {
                 client.options.sprintKey.setPressed(true);
             }
 
-            // 3. Удар по КД (0.93 - 0.98)
+            // 3. Удар
             float progress = client.player.getAttackCooldownProgress(0.0f);
             if (progress >= nextAttackThreshold) {
                 if (screenShake) {
@@ -150,8 +152,10 @@ public class ExampleMod implements ModInitializer {
         double diffXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.70f);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.70f);
+        
+        // Плавное следование за целью (Ares-friendly)
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.65f);
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.65f);
     }
 
     private void runTriggerbot(MinecraftClient client) {
