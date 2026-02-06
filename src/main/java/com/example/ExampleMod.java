@@ -37,7 +37,7 @@ public class ExampleMod implements ModInitializer {
 
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
-    public static float shakeIntensity = 0.1f; // Новая переменная для настройки тряски
+    public static float shakeIntensity = 0.1f;
     
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
     public static int keyAT = GLFW.GLFW_KEY_UNKNOWN, keyNF = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
@@ -147,6 +147,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // ИСПРАВЛЕНО: Заменен WorldRenderEvents.Context на WorldRenderContext
     private void renderWaypoint(WorldRenderContext context) {
         if (!waypointActive) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -239,7 +240,7 @@ public class ExampleMod implements ModInitializer {
             if(t.equals("KA")) {
                 ctx.drawTextWithShadow(textRenderer, "Range:", width/2-95, height/2-41, -1);
                 ctx.drawTextWithShadow(textRenderer, "Walls:", width/2-95, height/2-16, -1);
-                ctx.drawTextWithShadow(textRenderer, "Shake:", width/2-95, height/2+9, -1); // Подпись для тряски
+                ctx.drawTextWithShadow(textRenderer, "Shake:", width/2-95, height/2+9, -1);
             }
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
             if(t.equals("KA")) {
@@ -298,7 +299,7 @@ public class ExampleMod implements ModInitializer {
                 autoRun=Boolean.parseBoolean(p[8]);
                 keyKA=Integer.parseInt(p[9]); keyTB=Integer.parseInt(p[10]); keyFB=Integer.parseInt(p[11]);
                 keyAT=Integer.parseInt(p[12]); keyNF=Integer.parseInt(p[13]); keyWP=Integer.parseInt(p[14]);
-                shakeIntensity=Float.parseFloat(p[15]); // Загрузка интенсивности тряски
+                shakeIntensity=Float.parseFloat(p[15]);
                 antiVelocity=Boolean.parseBoolean(p[16]); screenShake=Boolean.parseBoolean(p[17]);
             }
         } catch (Exception ignored) {}
