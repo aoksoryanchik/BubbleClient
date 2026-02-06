@@ -22,7 +22,7 @@ import org.lwjgl.glfw.GLFW;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false;
     public static boolean triggerbot = false;
-    public static boolean esp = false; // По умолчанию выключен
+    public static boolean esp = false;
     
     public static int killauraKey = GLFW.GLFW_KEY_P;
     public static int triggerbotKey = GLFW.GLFW_KEY_R;
@@ -39,19 +39,16 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long handle = client.getWindow().getHandle();
             
-            // Меню
-            boolean menuDown = InputUtil.isKeyPressed(handle, menuKey);
-            if (menuDown && !menuPressed) client.setScreen(new BubbleMenu());
-            menuPressed = menuDown;
+            if (isPressed(handle, menuKey)) {
+                if (!(client.currentScreen instanceof BubbleMenu)) client.setScreen(new BubbleMenu());
+            }
 
-            // Бинды
             if (client.currentScreen == null) {
                 if (isPressed(handle, killauraKey)) killaura = !killaura;
                 if (isPressed(handle, triggerbotKey)) triggerbot = !triggerbot;
                 if (isPressed(handle, espKey)) esp = !esp;
             }
 
-            // Статус в Actionbar
             String status = "§bBubble §7| " + 
                 (killaura ? "§aKA " : "§cKA ") + 
                 (triggerbot ? "§aTB " : "§cTB ") + 
@@ -62,61 +59,68 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot && !killaura) runTriggerbot(client);
         });
 
-        // Исправленный рендер ESP
         WorldRenderEvents.LAST.register(context -> {
             if (!esp) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
+            // СУТЬ ТУТ: Используем RenderLayer который рисуется поверх (DEBUG_LINE_STRIP или аналоги)
+            // Но самый надежный метод для просвечивания — прямая манипуляция RenderSystem
             for (PlayerEntity entity : client.world.getPlayers()) {
                 if (entity == client.player || !entity.isAlive() || entity.isInvisible()) continue;
                 
                 MatrixStack matrices = context.matrixStack();
                 Vec3d camPos = context.camera().getPos();
                 
-                // Используем специальный слой, который рисуется поверх всего
-                VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
-
                 matrices.push();
                 double x = entity.prevX + (entity.getX() - entity.prevX) * context.tickCounter().getTickDelta(true) - camPos.x;
                 double y = entity.prevY + (entity.getY() - entity.prevY) * context.tickCounter().getTickDelta(true) - camPos.y;
                 double z = entity.prevZ + (entity.getZ() - entity.prevZ) * context.tickCounter().getTickDelta(true) - camPos.z;
                 matrices.translate(x, y, z);
 
-                Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
+                Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ()).expand(0.02);
                 
-                // Отключаем глубину только на момент отрисовки линий
+                // ВКЛЮЧАЕМ РЕЖИМ "СКВОЗЬ СТЕНЫ"
                 RenderSystem.disableDepthTest();
-                drawBoxLines(buffer, matrices.peek(), b);
+                RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+                
+                Tessellator tessellator = Tessellator.getInstance();
+                BufferBuilder bufferBuilder = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+                
+                drawEspBox(matrices, bufferBuilder, b);
+                
+                BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
                 RenderSystem.enableDepthTest();
-
                 matrices.pop();
             }
         });
     }
 
-    private void drawBoxLines(VertexConsumer buffer, MatrixStack.Entry entry, Box b) {
+    private void drawEspBox(MatrixStack matrices, BufferBuilder buffer, Box b) {
+        MatrixStack.Entry entry = matrices.peek();
         float r = 1, g = 1, b1 = 1, a = 1;
-        // Нижний контур
+        
+        // Рисуем 12 линий бокса вручную в буфер
+        // Нижний
         line(buffer, entry, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.minY, b.maxZ, b.minX, b.minY, b.maxZ, r, g, b1, a);
         line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.minY, b.minZ, r, g, b1, a);
-        // Верхний контур
+        // Верхний
         line(buffer, entry, b.minX, b.maxY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.maxY, b.minZ, b.maxX, b.maxY, b.maxZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.maxY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, b1, a);
         line(buffer, entry, b.minX, b.maxY, b.maxZ, b.minX, b.maxY, b.minZ, r, g, b1, a);
-        // Вертикальные стойки
+        // Стойки
         line(buffer, entry, b.minX, b.minY, b.minZ, b.minX, b.maxY, b.minZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, b1, a);
         line(buffer, entry, b.maxX, b.minY, b.maxZ, b.maxX, b.maxY, b.maxZ, r, g, b1, a);
         line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, b1, a);
     }
 
-    private void line(VertexConsumer buffer, MatrixStack.Entry e, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float b, float a) {
-        buffer.vertex(e, (float)x1, (float)y1, (float)z1).color(r, g, b, a).normal(e, 0, 1, 0);
-        buffer.vertex(e, (float)x2, (float)y2, (float)z2).color(r, g, b, a).normal(e, 0, 1, 0);
+    private void line(BufferBuilder b, MatrixStack.Entry e, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float bl, float a) {
+        b.vertex(e, (float)x1, (float)y1, (float)z1).color(r, g, bl, a);
+        b.vertex(e, (float)x2, (float)y2, (float)z2).color(r, g, bl, a);
     }
 
     private boolean isPressed(long handle, int key) {
@@ -133,7 +137,7 @@ public class ExampleMod implements ModInitializer {
     private void runKillaura(MinecraftClient client) {
         PlayerEntity target = null;
         for (PlayerEntity p : client.world.getPlayers()) {
-            if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= 3.2) {
+            if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= 3.3) {
                 target = p; break;
             }
         }
@@ -172,7 +176,6 @@ public class ExampleMod implements ModInitializer {
             drawBtn(context, x + 10, y + 50, "TriggerBot", triggerbot, triggerbotKey, "tb", mouseX, mouseY);
             drawBtn(context, x + 10, y + 75, "ESP", esp, espKey, "esp", mouseX, mouseY);
         }
-
         private void drawBtn(DrawContext context, int x, int y, String name, boolean on, int key, String id, int mx, int my) {
             boolean hover = mx >= x && mx <= x + 140 && my >= y && my <= y + 16;
             String kName = bindingFor.equals(id) ? "???" : GLFW.glfwGetKeyName(key, 0);
@@ -181,7 +184,6 @@ public class ExampleMod implements ModInitializer {
             context.fill(x + 2, y + 4, x + 10, y + 12, on ? 0xFF00FF00 : 0xFFFF0000);
             context.drawTextWithShadow(textRenderer, name + " §7[" + kName.toUpperCase() + "]", x + 15, y + 4, -1);
         }
-
         @Override
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
             int x = width / 2 - 80, y = height / 2 - 50;
@@ -190,7 +192,6 @@ public class ExampleMod implements ModInitializer {
             if (isOver(mouseX, mouseY, x + 10, y + 75)) { if (button == 0) esp = !esp; else if (button == 1) bindingFor = "esp"; }
             return super.mouseClicked(mouseX, mouseY, button);
         }
-
         @Override
         public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
             if (!bindingFor.isEmpty() && keyCode != GLFW.GLFW_KEY_ESCAPE) {
