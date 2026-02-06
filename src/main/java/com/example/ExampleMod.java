@@ -1,4 +1,3 @@
-
 package com.example;
 
 import net.fabricmc.api.ModInitializer;
@@ -10,6 +9,7 @@ import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 import java.util.Random;
@@ -33,24 +33,32 @@ public class ExampleMod implements ModInitializer {
 
             while (toggleKey.wasPressed()) {
                 enabled = !enabled;
-                client.player.sendMessage(Text.literal("§6§l[Bubble] §fKillaura: " + (enabled ? "§aREADY" : "§cOFF")), true);
+                client.player.sendMessage(Text.literal("§d§l[Bubble] §fMode: " + (enabled ? "§bDOMINATION" : "§7OFF")), true);
             }
 
             if (!enabled) return;
 
-            PlayerEntity target = getClosestTarget(client, 3.0);
+            // 1. АНТИ-ОТДАЧА (Velocity) - тебя сложнее откинуть
+            if (client.player.hurtTime > 0) {
+                client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
+            }
+
+            PlayerEntity target = getClosestTarget(client, 3.1);
 
             if (target != null) {
-                // Плотная наводка (Stick Aim)
+                // 2. МЕРТВАЯ ХВАТКА (Наводка без шансов на промах)
                 updateRotation(client, target);
 
-                // Агрессивные удары (без лишних задержек)
+                // 3. УМНЫЕ УДАРЫ (Максимальный DPS)
                 float cooldown = client.player.getAttackCooldownProgress(0f);
-                
-                // Бьем сразу, как только кулдаун позволяет нанести нормальный урон (от 0.9)
-                if (cooldown >= 0.92f) {
+                if (cooldown >= 0.93f) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
+                }
+                
+                // 4. СТРЕЙФ-ПОМОЩЬ (заставляет врага промахиваться)
+                if (client.player.isOnGround() && client.player.distanceTo(target) < 2.0) {
+                   client.player.updateVelocity(0.02f, new Vec3d(1, 0, 0));
                 }
             }
         });
@@ -72,23 +80,18 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void updateRotation(MinecraftClient client, PlayerEntity target) {
-        // Наводимся чуть выше центра (в область шеи)
+        // Наводка в верхнюю часть хитбокса (голова/шея) для точности
         double diffX = target.getX() - client.player.getX();
-        double diffY = (target.getY() + target.getStandingEyeHeight() * 0.7) - (client.player.getY() + client.player.getStandingEyeHeight());
+        double diffY = (target.getY() + target.getStandingEyeHeight() * 0.85) - (client.player.getY() + client.player.getStandingEyeHeight());
         double diffZ = target.getZ() - client.player.getZ();
         double diffXZ = Math.sqrt(diffX * diffX + diffZ * diffZ);
 
         float targetYaw = (float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90;
         float targetPitch = (float) -Math.toDegrees(Math.atan2(diffY, diffXZ));
 
-        // Минимальное дрожание только внутри хитбокса
-        float jitter = (random.nextFloat() - 0.5f) * 0.8f; 
-        targetYaw += jitter;
-        targetPitch += jitter;
-
-        // Повысил скорость доводки (было 18, стало 35) для "мертвой хватки"
-        client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 35f));
-        client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 35f));
+        // Стабильная доводка без лишнего вылета за хитбокс
+        client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 45f));
+        client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 45f));
     }
 
     private float lerpAngle(float start, float end, float step) {
