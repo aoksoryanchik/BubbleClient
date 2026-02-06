@@ -10,6 +10,8 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -36,41 +38,44 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null) return;
             long h = client.getWindow().getHandle();
 
-            // Открытие меню (строгий фикс чата)
+            // Открытие меню (не работает, если открыт чат)
             if (isPressed(h, menuKey) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Обработка биндов и вывод в чат (Overlay)
             if (client.currentScreen == null) {
                 if (isPressed(h, killauraKey)) {
                     killaura = !killaura;
-                    sendMsg(client, "Killaura", killaura);
+                    client.player.sendMessage(Text.literal("§bBubble §8» §fKillaura: " + (killaura ? "§aON" : "§cOFF")), true);
                 }
                 if (isPressed(h, triggerbotKey)) {
                     triggerbot = !triggerbot;
-                    sendMsg(client, "Triggerbot", triggerbot);
+                    client.player.sendMessage(Text.literal("§bBubble §8» §fTriggerbot: " + (triggerbot ? "§aON" : "§cOFF")), true);
                 }
                 if (isPressed(h, espKey)) {
                     esp = !esp;
-                    sendMsg(client, "ESP", esp);
+                    client.player.sendMessage(Text.literal("§bBubble §8» §fESP: " + (esp ? "§aON" : "§cOFF")), true);
+                    if (!esp) client.player.removeStatusEffect(StatusEffects.NIGHT_VISION);
                 }
+            }
+
+            if (esp) {
+                client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             }
 
             if (killaura) runKillaura(client);
             if (triggerbot && !killaura) runTriggerbot(client);
         });
 
-        // ESP через LINES (X-Ray эффект)
+        // ESP Рендеринг (X-Ray линии)
         WorldRenderEvents.LAST.register(context -> {
             if (!esp) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null || client.world == null) return;
 
-            // В 1.21.4 используем RenderLayer.getLines() для стабильности
-            VertexConsumerProvider.Immediate consumers = context.consumers();
-            VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
-
+            // Используем стандартный слой линий, который точно есть в 1.21.4
+            VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
+            
             RenderSystem.disableDepthTest(); // Видим сквозь стены
 
             for (PlayerEntity entity : client.world.getPlayers()) {
@@ -88,18 +93,36 @@ public class ExampleMod implements ModInitializer {
                 matrices.translate(x, y, z);
                 Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
                 
-                // Рисуем бокс через современный буфер
-                WorldRenderer.drawBox(matrices, buffer, b, 0f, 0.8f, 1f, 1f);
+                // Рисуем бокс вручную, чтобы избежать ошибок "symbol not found"
+                drawCustomBox(matrices, buffer, b, 0f, 0.8f, 1f, 1f);
                 matrices.pop();
             }
-            
-            consumers.draw(); // Принудительно рисуем линии сейчас
             RenderSystem.enableDepthTest();
         });
     }
 
-    private void sendMsg(MinecraftClient client, String name, boolean state) {
-        client.player.sendMessage(Text.literal("§bBubble §8» §f" + name + ": " + (state ? "§aON" : "§cOFF")), true);
+    private void drawCustomBox(MatrixStack matrices, VertexConsumer buffer, Box b, float r, float g, float bl, float a) {
+        MatrixStack.Entry entry = matrices.peek();
+        // Нижние ребра
+        line(buffer, entry, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.minX, b.minY, b.maxZ, r, g, bl, a);
+        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.minY, b.minZ, r, g, bl, a);
+        // Верхние ребра
+        line(buffer, entry, b.minX, b.maxY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.maxY, b.minZ, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.maxY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, bl, a);
+        line(buffer, entry, b.minX, b.maxY, b.maxZ, b.minX, b.maxY, b.minZ, r, g, bl, a);
+        // Вертикальные ребра
+        line(buffer, entry, b.minX, b.minY, b.minZ, b.minX, b.maxY, b.minZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, bl, a);
+        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
+        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, bl, a);
+    }
+
+    private void line(VertexConsumer b, MatrixStack.Entry e, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float bl, float a) {
+        b.vertex(e, (float)x1, (float)y1, (float)z1).color(r, g, bl, a).normal(e, 0, 1, 0);
+        b.vertex(e, (float)x2, (float)y2, (float)z2).color(r, g, bl, a).normal(e, 0, 1, 0);
     }
 
     private boolean isPressed(long h, int k) {
@@ -118,10 +141,8 @@ public class ExampleMod implements ModInitializer {
             }
         }
         if (target != null) {
-            // ФИКС БЕГА: принудительно зажимаем спринт при наличии цели
-            if (client.player.input.movementForward > 0) {
-                client.player.setSprinting(true);
-            }
+            // ФИКС БЕГА: принудительно зажимаем спринт
+            if (client.player.input.movementForward > 0) client.player.setSprinting(true);
             
             client.player.setYaw((float) Math.toDegrees(Math.atan2(target.getZ() - client.player.getZ(), target.getX() - client.player.getX())) - 90);
             if (client.player.getAttackCooldownProgress(0) >= 0.9f) {
@@ -162,3 +183,4 @@ public class ExampleMod implements ModInitializer {
         @Override public boolean shouldPause() { return false; }
     }
 }
+
