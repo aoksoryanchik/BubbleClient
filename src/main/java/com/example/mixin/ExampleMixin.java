@@ -14,12 +14,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(HeldItemRenderer.class)
 public class ExampleMixin {
-
     @Inject(method = "renderFirstPersonItem", at = @At("HEAD"))
     private void onRenderItem(AbstractClientPlayerEntity player, float tickDelta, float pitch, Hand hand, float swingProgress, ItemStack item, float equipProgress, MatrixStack matrices, VertexConsumerProvider consumers, int light, CallbackInfo ci) {
-        // Если функция ViewModel включена в меню мода
         if (ExampleMod.viewModelActive) {
-            // Смещаем руку по координатам из нашего меню (handX, handY, handZ)
             matrices.translate(ExampleMod.handX, ExampleMod.handY, ExampleMod.handZ);
         }
     }
