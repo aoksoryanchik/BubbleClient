@@ -2,6 +2,7 @@ package com.example;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -44,60 +45,73 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null) return;
             long h = client.getWindow().getHandle();
             if (isPressed(h, menuKey) && client.currentScreen == null) client.setScreen(new BubbleMenu());
-
             if (client.currentScreen == null) {
                 if (isPressed(h, killauraKey)) toggle(client, "Killaura", !killaura);
                 if (isPressed(h, triggerbotKey)) toggle(client, "Triggerbot", !triggerbot);
                 if (isPressed(h, fbKey)) toggle(client, "FullBright", !fullbright);
                 if (isPressed(h, wpKey)) toggle(client, "Waypoint", !waypointActive);
             }
-
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (killaura) runKillaura(client);
             if (triggerbot && !killaura) runTriggerbot(client);
         });
 
+        // 1. РЕНДЕР В МИРЕ (для дистанций до 400м)
         WorldRenderEvents.LAST.register(context -> {
             if (!waypointActive) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
+            double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
+            if (dist > 400) return; // В мире рисуем только если близко
+
             MatrixStack matrices = context.matrixStack();
             Vec3d camPos = context.camera().getPos();
-            double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
-
             matrices.push();
-            // Смещаем к координатам метки
             matrices.translate(wpX - camPos.x, (wpY - camPos.y) + 1.5, wpZ - camPos.z);
-            
-            // Поворот к игроку
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
             
-            // НОВАЯ ЛОГИКА РАЗМЕРА: 
-            // Метка всегда видна: и вблизи, и вдали.
             float scale = (float) (dist * 0.01); 
-            if (scale < 0.03f) scale = 0.03f; // Не дает стать слишком мелкой вблизи
-            if (scale > 0.8f) scale = 0.8f;   // Не дает стать гигантской на 10к блоков
-            
+            if (scale < 0.03f) scale = 0.03f;
             matrices.scale(-scale, -scale, scale);
 
             VertexConsumerProvider consumers = context.consumers();
             if (consumers != null) {
                 Matrix4f posMat = matrices.peek().getPositionMatrix();
                 String t1 = "§b[!] ЦЕЛЬ §f(" + (int)dist + "m)";
-                String t2 = "§7" + (int)wpX + " " + (int)wpY + " " + (int)wpZ;
-                
-                // Рендерим текст с приоритетом над блоками
                 client.textRenderer.draw(t1, -client.textRenderer.getWidth(t1)/2f, 0, -1, false, posMat, consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
-                client.textRenderer.draw(t2, -client.textRenderer.getWidth(t2)/2f, 10, -1, false, posMat, consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
             }
             matrices.pop();
         });
+
+        // 2. HUD РЕНДЕР (Для бесконечной дистанции - висит на экране)
+        HudRenderCallback.EVENT.register((drawContext, tickCounter) -> {
+            if (!waypointActive) return;
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.player == null) return;
+
+            double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
+            
+            // Если цель далеко, рисуем текст вверху экрана, чтобы всегда знать направление
+            if (dist > 400) {
+                String info = String.format("§b➔ §lEVENT: §f[%.0f, %.0f, %.0f] §e(%.0f m)", wpX, wpY, wpZ, dist);
+                drawContext.drawCenteredTextWithShadow(client.textRenderer, info, drawContext.getScaledWindowWidth() / 2, 10, -1);
+                
+                // Стрелочка-подсказка куда крутить головой
+                double angle = Math.toDegrees(Math.atan2(wpZ - client.player.getZ(), wpX - client.player.getX())) - 90.0;
+                double yaw = client.player.getYaw();
+                double diff = (angle - yaw + 180) % 360 - 180;
+                
+                String arrow = diff > 10 ? "§eПОВОРАЧИВАЙ НАПРАВО ➔" : (diff < -10 ? "§e⬅ ПОВОРАЧИВАЙ НАЛЕВО" : "§a§lПРЯМО ПО КУРСУ!");
+                drawContext.drawCenteredTextWithShadow(client.textRenderer, arrow, drawContext.getScaledWindowWidth() / 2, 25, -1);
+            }
+        });
     }
 
-    // --- Дальнейший код (Toggle, Config, Menu, Settings) остается без изменений, чтобы сохранить твою структуру ---
-
+    // --- (Toggle, Save/Load, Killaura, Menu, Settings - без изменений) ---
+    // Скопируй эти методы из предыдущего сообщения, так как они работают стабильно.
+    
     private void toggle(MinecraftClient c, String n, boolean s) {
         if(n.equals("Killaura")) killaura = s;
         if(n.equals("Triggerbot")) triggerbot = s;
