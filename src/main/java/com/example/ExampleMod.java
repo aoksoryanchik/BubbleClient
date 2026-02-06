@@ -33,7 +33,7 @@ import java.util.Random;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, noFire = true, autoRun = false;
-    public static boolean antiVelocity = true, screenShake = true;
+    public static boolean antiVelocity = true, screenShake = true, mode360 = false;
 
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
@@ -46,8 +46,8 @@ public class ExampleMod implements ModInitializer {
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
     
-    // Стабильный порог КД 0.93 - 0.98
     private float nextAttackThreshold = 0.95f;
+    private float strafeAngle = 0; // Для режима 360
 
     @Override
     public void onInitialize() {
@@ -57,11 +57,8 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
-                client.setScreen(new BubbleMenu());
-            }
+            if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
             
-            // Запрет биндов в чате
             if (client.currentScreen == null) {
                 if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
                 if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
@@ -71,11 +68,7 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
             }
 
-            if (noFire) {
-                client.player.setFireTicks(0);
-                if (client.player.isOnFire()) client.player.extinguish();
-            }
-
+            if (noFire) { client.player.setFireTicks(0); if (client.player.isOnFire()) client.player.extinguish(); }
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
 
             if (autoTotem && client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
@@ -92,8 +85,7 @@ public class ExampleMod implements ModInitializer {
             }
 
             if (killaura) {
-                runStableKillaura(client);
-                if (autoRun) client.options.sprintKey.setPressed(true);
+                runNursultanKillaura(client);
             } else if (triggerbot) {
                 runTriggerbot(client);
             }
@@ -106,7 +98,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void runStableKillaura(MinecraftClient client) {
+    private void runNursultanKillaura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
@@ -114,30 +106,38 @@ public class ExampleMod implements ModInitializer {
             if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
             double limit = client.player.canSee(p) ? kaRange : kaWallsRange;
-            if (d <= limit && d < bestDist) {
-                bestDist = d;
-                target = p;
-            }
+            if (d <= limit && d < bestDist) { bestDist = d; target = p; }
         }
 
         if (target != null) {
+            // 1. Наводка
             double targetY = target.getY() + (target.getHeight() * (0.42 + random.nextDouble() * 0.25));
             lookAt(client.player, new Vec3d(target.getX(), targetY, target.getZ()));
 
-            // Берем текущий прогресс кулдауна
+            // 2. Режим 360 (Strafe вокруг цели)
+            if (mode360) {
+                client.options.sprintKey.setPressed(true);
+                strafeAngle += 0.15f; // Скорость вращения
+                double radius = kaRange - 0.5; // Держимся чуть ближе радиуса удара
+                double posX = target.getX() + Math.cos(strafeAngle) * radius;
+                double posZ = target.getZ() + Math.sin(strafeAngle) * radius;
+                
+                // Двигаем игрока в нужную точку круга
+                Vec3d moveVec = new Vec3d(posX - client.player.getX(), 0, posZ - client.player.getZ()).normalize().multiply(0.25);
+                client.player.addVelocity(moveVec.x, 0, moveVec.z);
+            } else if (autoRun) {
+                client.options.sprintKey.setPressed(true);
+            }
+
+            // 3. Удар по КД (0.93 - 0.98)
             float progress = client.player.getAttackCooldownProgress(0.0f);
-            
-            // Если прогресс дошел до случайно выбранного порога
             if (progress >= nextAttackThreshold) {
                 if (screenShake) {
                     client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                     client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
                 }
-                
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
-                
-                // Генерируем новый порог 0.93 - 0.98. Это никогда не превысит 1.0, так что аура не "встанет".
                 nextAttackThreshold = 0.93f + (random.nextFloat() * 0.05f);
             }
         }
@@ -264,7 +264,7 @@ public class ExampleMod implements ModInitializer {
                 ctx.drawTextWithShadow(textRenderer, "Shake:", width/2-95, height/2+9, -1);
                 renderCheck(ctx, "AutoRun", autoRun, height/2+35, mx, my);
                 renderCheck(ctx, "AntiVelocity", antiVelocity, height/2+50, mx, my);
-                renderCheck(ctx, "ScreenShake", screenShake, height/2+65, mx, my);
+                renderCheck(ctx, "360 Mode", mode360, height/2+65, mx, my); // КНОПКА 360
             }
             super.render(ctx, mx, my, d);
         }
@@ -277,7 +277,7 @@ public class ExampleMod implements ModInitializer {
             if(t.equals("KA") && mx>=width/2-60 && mx<=width/2+60) {
                 if(my>=height/2+35 && my<=height/2+47) autoRun=!autoRun;
                 if(my>=height/2+50 && my<=height/2+62) antiVelocity=!antiVelocity;
-                if(my>=height/2+65 && my<=height/2+77) screenShake=!screenShake;
+                if(my>=height/2+65 && my<=height/2+77) mode360=!mode360;
             }
             return super.mouseClicked(mx, my, b);
         }
@@ -303,7 +303,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange+":"+kaWallsRange+":"+wpX+":"+wpY+":"+wpZ+":0:0:0:"+autoRun+":"+keyKA+":"+keyTB+":"+keyFB+":"+keyAT+":"+keyNF+":"+keyWP+":"+shakeIntensity+":"+antiVelocity+":"+screenShake);
+            w.println(kaRange+":"+kaWallsRange+":"+wpX+":"+wpY+":"+wpZ+":0:0:0:"+autoRun+":"+keyKA+":"+keyTB+":"+keyFB+":"+keyAT+":"+keyNF+":"+keyWP+":"+shakeIntensity+":"+antiVelocity+":"+mode360);
         } catch (Exception ignored) {}
     }
 
@@ -318,9 +318,8 @@ public class ExampleMod implements ModInitializer {
                 keyKA=Integer.parseInt(p[9]); keyTB=Integer.parseInt(p[10]); keyFB=Integer.parseInt(p[11]);
                 keyAT=Integer.parseInt(p[12]); keyNF=Integer.parseInt(p[13]); keyWP=Integer.parseInt(p[14]);
                 shakeIntensity=Float.parseFloat(p[15]);
-                antiVelocity=Boolean.parseBoolean(p[16]); screenShake=Boolean.parseBoolean(p[17]);
+                antiVelocity=Boolean.parseBoolean(p[16]); mode360=Boolean.parseBoolean(p[17]);
             }
         } catch (Exception ignored) {}
     }
 }
-
