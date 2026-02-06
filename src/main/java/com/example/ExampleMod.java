@@ -45,7 +45,9 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
-    private float nextRandomCD = 0.95f;
+    
+    // Переменная для хранения случайного порога КД
+    private float currentTargetCD = 0.94f;
 
     @Override
     public void onInitialize() {
@@ -113,25 +115,27 @@ public class ExampleMod implements ModInitializer {
             double limit = client.player.canSee(target) ? kaRange : kaWallsRange;
 
             if (d <= limit) {
-                // Наводка в область тела с небольшим "живым" отклонением
-                double jitter = screenShake ? (random.nextDouble() - 0.5) * 0.1 : 0;
-                double smartHeight = target.getY() + (target.getHeight() * (0.4 + random.nextDouble() * 0.3)) + jitter;
+                // Наводка в тело (0.4 - 0.7 высоты)
+                double smartHeight = target.getY() + (target.getHeight() * (0.4 + random.nextDouble() * 0.3));
                 lookAt(client.player, new Vec3d(target.getX(), smartHeight, target.getZ()));
 
-                // Бьем и на земле, и в прыжке, когда кулдаун готов (с рандомизацией 0.93 - 1.05)
-                if (client.player.getAttackCooldownProgress(0.5f) >= nextRandomCD) {
-                    // Добавляем микро-тряску в момент самого удара
-                    if (screenShake) {
+                // АВТОМАТИЧЕСКИЙ УДАР
+                // Проверяем прогресс атаки игрока (1.0 = полный заряд)
+                if (client.player.getAttackCooldownProgress(0.5f) >= currentTargetCD) {
+                    
+                    // Тряска перед ударом для "беспалевности"
+                    if (screenShake && shakeIntensity > 0) {
                         client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                         client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
                     }
 
+                    // Сам удар
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                     
-                    // Генерируем новый случайный порог для следующего удара
-                    nextRandomCD = 0.93f + (random.nextFloat() * 0.12f);
-                    break;
+                    // Устанавливаем новый случайный порог КД для следующего удара (0.93 - 1.05)
+                    currentTargetCD = 0.93f + (random.nextFloat() * 0.12f);
+                    break; 
                 }
             }
         }
@@ -143,9 +147,9 @@ public class ExampleMod implements ModInitializer {
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
         
-        // Плавность наводки (0.8f - достаточно быстро, но не мгновенно)
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.8f);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.8f);
+        // Плавная доводка
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.82f);
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.82f);
     }
 
     private void runTriggerbot(MinecraftClient client) {
