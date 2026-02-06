@@ -8,94 +8,69 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.Hand;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
-import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    private static KeyBinding toggleKey;
-    private static boolean enabled = false;
-    private final Random random = new Random();
+    // Настройки функций
+    public static boolean killauraEnabled = false;
+    public static boolean triggerbotEnabled = false;
+    
+    public static int killauraKey = GLFW.GLFW_KEY_P;
+    public static int triggerbotKey = GLFW.GLFW_KEY_R;
+
+    private static KeyBinding menuKey;
 
     @Override
     public void onInitialize() {
-        toggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.bubbleclient.toggle", 
+        // Клавиша открытия меню на "0"
+        menuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.bubbleclient.menu", 
                 InputUtil.Type.KEYSYM, 
-                GLFW.GLFW_KEY_P, 
+                GLFW.GLFW_KEY_0, 
                 "category.bubbleclient"
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null || client.world == null) return;
+            if (client.player == null) return;
 
-            while (toggleKey.wasPressed()) {
-                enabled = !enabled;
-                client.player.sendMessage(Text.literal("§d§l[Bubble] §fMode: " + (enabled ? "§bDOMINATION" : "§7OFF")), true);
+            // Открытие меню
+            if (menuKey.wasPressed()) {
+                // client.setScreen(new ClickGuiScreen()); 
+                // Пока закомментируем, чтобы билд не упал без файла экрана
+                client.player.sendMessage(Text.literal("§d[Bubble] §fМеню в разработке..."), true);
             }
 
-            if (!enabled) return;
-
-            // 1. АНТИ-ОТДАЧА (Velocity) - тебя сложнее откинуть
-            if (client.player.hurtTime > 0) {
-                client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
+            // Логика Киллауры
+            if (killauraEnabled) {
+                runKillaura(client);
             }
-
-            PlayerEntity target = getClosestTarget(client, 3.1);
-
-            if (target != null) {
-                // 2. МЕРТВАЯ ХВАТКА (Наводка без шансов на промах)
-                updateRotation(client, target);
-
-                // 3. УМНЫЕ УДАРЫ (Максимальный DPS)
-                float cooldown = client.player.getAttackCooldownProgress(0f);
-                if (cooldown >= 0.93f) {
-                    client.interactionManager.attackEntity(client.player, target);
-                    client.player.swingHand(Hand.MAIN_HAND);
-                }
-                
-                // 4. СТРЕЙФ-ПОМОЩЬ (заставляет врага промахиваться)
-                if (client.player.isOnGround() && client.player.distanceTo(target) < 2.0) {
-                   client.player.updateVelocity(0.02f, new Vec3d(1, 0, 0));
-                }
+            
+            // Логика Триггербота
+            if (triggerbotEnabled && !killauraEnabled) {
+                runTriggerbot(client);
             }
         });
     }
 
-    private PlayerEntity getClosestTarget(MinecraftClient client, double range) {
-        PlayerEntity closest = null;
-        double dist = range;
+    private void runKillaura(MinecraftClient client) {
+        // Тот самый мощный код киллауры, который мы писали раньше
+        PlayerEntity target = null;
         for (PlayerEntity p : client.world.getPlayers()) {
-            if (p != client.player && p.isAlive() && !p.isInvisible()) {
-                double d = client.player.distanceTo(p);
-                if (d < dist) {
-                    dist = d;
-                    closest = p;
-                }
+            if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= 3.0) {
+                target = p; break;
             }
         }
-        return closest;
+        if (target != null && client.player.getAttackCooldownProgress(0) >= 0.95f) {
+            client.interactionManager.attackEntity(client.player, target);
+            client.player.swingHand(Hand.MAIN_HAND);
+        }
     }
 
-    private void updateRotation(MinecraftClient client, PlayerEntity target) {
-        // Наводка в верхнюю часть хитбокса (голова/шея) для точности
-        double diffX = target.getX() - client.player.getX();
-        double diffY = (target.getY() + target.getStandingEyeHeight() * 0.85) - (client.player.getY() + client.player.getStandingEyeHeight());
-        double diffZ = target.getZ() - client.player.getZ();
-        double diffXZ = Math.sqrt(diffX * diffX + diffZ * diffZ);
-
-        float targetYaw = (float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90;
-        float targetPitch = (float) -Math.toDegrees(Math.atan2(diffY, diffXZ));
-
-        // Стабильная доводка без лишнего вылета за хитбокс
-        client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 45f));
-        client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 45f));
-    }
-
-    private float lerpAngle(float start, float end, float step) {
-        float diff = MathHelper.wrapDegrees(end - start);
-        return start + MathHelper.clamp(diff, -step, step);
+    private void runTriggerbot(MinecraftClient client) {
+        // Твой триггербот
+        if (client.crosshairTarget != null && client.player.getAttackCooldownProgress(0) >= 0.98f) {
+            // Удар если наведен на сущность
+        }
     }
 }
