@@ -33,11 +33,11 @@ import java.util.Random;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, noFire = true, autoRun = false;
-    public static boolean antiVelocity = true, screenShake = true, critOnly = true;
+    public static boolean antiVelocity = true, screenShake = true;
 
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
-    public static float shakeIntensity = 0.15f; // Чуть увеличил для естественности
+    public static float shakeIntensity = 0.12f;
     
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
     public static int keyAT = GLFW.GLFW_KEY_UNKNOWN, keyNF = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
@@ -45,6 +45,7 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
+    private float nextRandomCD = 0.95f;
 
     @Override
     public void onInitialize() {
@@ -56,7 +57,6 @@ public class ExampleMod implements ModInitializer {
 
             if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
             
-            // Обработка клавиш
             if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
             if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
             if (isPressed(h, keyFB)) { fullbright = !fullbright; sendNotify("FullBright", fullbright); }
@@ -64,18 +64,13 @@ public class ExampleMod implements ModInitializer {
             if (isPressed(h, keyNF)) { noFire = !noFire; sendNotify("NoFire", noFire); }
             if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
 
-            // NoFire логика
             if (noFire) {
                 client.player.setFireTicks(0);
-                // Чтобы убрать эффект "огня в глазах", принудительно гасим его каждый тик
-                if (client.player.isOnFire()) {
-                    client.player.extinguish();
-                }
+                if (client.player.isOnFire()) client.player.extinguish();
             }
 
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
 
-            // AutoTotem
             if (autoTotem && client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
                 for (int i = 0; i < 45; i++) {
                     if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
@@ -118,27 +113,25 @@ public class ExampleMod implements ModInitializer {
             double limit = client.player.canSee(target) ? kaRange : kaWallsRange;
 
             if (d <= limit) {
-                // Наводка строго в тело (от 0.4 до 1.2 высоты — это грудь и живот)
-                double smartHeight = target.getY() + (target.getHeight() * (0.4 + random.nextDouble() * 0.4));
+                // Наводка в область тела с небольшим "живым" отклонением
+                double jitter = screenShake ? (random.nextDouble() - 0.5) * 0.1 : 0;
+                double smartHeight = target.getY() + (target.getHeight() * (0.4 + random.nextDouble() * 0.3)) + jitter;
                 lookAt(client.player, new Vec3d(target.getX(), smartHeight, target.getZ()));
 
-                // Проверка на КРИТ (игрок должен падать и не быть в воде/на лестнице)
-                boolean isFalling = client.player.fallDistance > 0.0f && !client.player.isOnGround() && !client.player.isClimbing() && !client.player.isInSwimming();
-                float coolDown = client.player.getAttackCooldownProgress(0.5f);
-
-                // Если включены криты - ждем падения, если нет - бьем по КД
-                if (coolDown >= 0.92f) {
-                    if (!critOnly || isFalling) {
-                        // Легкая тряска перед ударом для обхода античитов
-                        if (screenShake && shakeIntensity > 0) {
-                            client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
-                            client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
-                        }
-                        
-                        client.interactionManager.attackEntity(client.player, target);
-                        client.player.swingHand(Hand.MAIN_HAND);
-                        break;
+                // Бьем и на земле, и в прыжке, когда кулдаун готов (с рандомизацией 0.93 - 1.05)
+                if (client.player.getAttackCooldownProgress(0.5f) >= nextRandomCD) {
+                    // Добавляем микро-тряску в момент самого удара
+                    if (screenShake) {
+                        client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
+                        client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
                     }
+
+                    client.interactionManager.attackEntity(client.player, target);
+                    client.player.swingHand(Hand.MAIN_HAND);
+                    
+                    // Генерируем новый случайный порог для следующего удара
+                    nextRandomCD = 0.93f + (random.nextFloat() * 0.12f);
+                    break;
                 }
             }
         }
@@ -150,22 +143,20 @@ public class ExampleMod implements ModInitializer {
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
         
-        // Плавное сглаживание поворота (чтобы не было мгновенных щелчков)
+        // Плавность наводки (0.8f - достаточно быстро, но не мгновенно)
         player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.8f);
         player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.8f);
     }
 
     private void runTriggerbot(MinecraftClient client) {
         if (client.crosshairTarget instanceof EntityHitResult res && res.getEntity() instanceof PlayerEntity target) {
-            if (target.isAlive() && client.player.getAttackCooldownProgress(0) >= 0.95f) {
+            if (target.isAlive() && client.player.getAttackCooldownProgress(0) >= 0.98f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
         }
     }
 
-    // --- РЕНДЕР И МЕНЮ (БЕЗ ИЗМЕНЕНИЙ В СТРУКТУРЕ) ---
-    
     private void renderWaypoint(WorldRenderContext context) {
         if (!waypointActive) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -265,7 +256,6 @@ public class ExampleMod implements ModInitializer {
                 renderCheck(ctx, "AutoRun", autoRun, height/2+35, mx, my);
                 renderCheck(ctx, "AntiVelocity", antiVelocity, height/2+50, mx, my);
                 renderCheck(ctx, "ScreenShake", screenShake, height/2+65, mx, my);
-                renderCheck(ctx, "CritOnly (1.9+)", critOnly, height/2+80, mx, my);
             }
             super.render(ctx, mx, my, d);
         }
@@ -281,7 +271,6 @@ public class ExampleMod implements ModInitializer {
                 if(my>=height/2+35 && my<=height/2+47) autoRun=!autoRun;
                 if(my>=height/2+50 && my<=height/2+62) antiVelocity=!antiVelocity;
                 if(my>=height/2+65 && my<=height/2+77) screenShake=!screenShake;
-                if(my>=height/2+80 && my<=height/2+92) critOnly=!critOnly;
             }
             return super.mouseClicked(mx, my, b);
         }
@@ -308,7 +297,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange+":"+kaWallsRange+":"+wpX+":"+wpY+":"+wpZ+":0:0:0:"+autoRun+":"+keyKA+":"+keyTB+":"+keyFB+":"+keyAT+":"+keyNF+":"+keyWP+":"+shakeIntensity+":"+antiVelocity+":"+screenShake+":"+critOnly);
+            w.println(kaRange+":"+kaWallsRange+":"+wpX+":"+wpY+":"+wpZ+":0:0:0:"+autoRun+":"+keyKA+":"+keyTB+":"+keyFB+":"+keyAT+":"+keyNF+":"+keyWP+":"+shakeIntensity+":"+antiVelocity+":"+screenShake);
         } catch (Exception ignored) {}
     }
 
@@ -316,7 +305,7 @@ public class ExampleMod implements ModInitializer {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":");
-            if(p.length >= 19) {
+            if(p.length >= 18) {
                 kaRange=Double.parseDouble(p[0]); kaWallsRange=Double.parseDouble(p[1]);
                 wpX=Double.parseDouble(p[2]); wpY=Double.parseDouble(p[3]); wpZ=Double.parseDouble(p[4]);
                 autoRun=Boolean.parseBoolean(p[8]);
@@ -324,9 +313,7 @@ public class ExampleMod implements ModInitializer {
                 keyAT=Integer.parseInt(p[12]); keyNF=Integer.parseInt(p[13]); keyWP=Integer.parseInt(p[14]);
                 shakeIntensity=Float.parseFloat(p[15]);
                 antiVelocity=Boolean.parseBoolean(p[16]); screenShake=Boolean.parseBoolean(p[17]);
-                critOnly=Boolean.parseBoolean(p[18]);
             }
         } catch (Exception ignored) {}
     }
 }
-
