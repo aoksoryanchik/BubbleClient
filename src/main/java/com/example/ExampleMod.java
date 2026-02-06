@@ -27,18 +27,27 @@ import org.lwjgl.glfw.GLFW;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния функций
-    public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false, autoTotem = true, noFire = true, viewModelActive = true;
-    
-    // Параметры функций
-    public static double kaRange = 3.8, kaWallsRange = 3.0, wpX = 0, wpY = 64, wpZ = 0;
-    public static float handX = 0.0f, handY = 0.0f, handZ = 0.0f;
+    // --- СОСТОЯНИЯ МОДУЛЕЙ ---
+    public static boolean killaura = false;
+    public static boolean triggerbot = false;
+    public static boolean fullbright = false;
+    public static boolean waypointActive = false;
+    public static boolean autoTotem = true;
+    public static boolean noFire = true;
+    public static boolean viewModelActive = true;
+    public static boolean espPlayers = true;
 
-    // Клавиши
+    // --- НАСТРОЙКИ ---
+    public static double kaRange = 3.8;
+    public static double kaWallsRange = 3.0;
+    public static double wpX = 0, wpY = 64, wpZ = 0;
+    public static float handX = 0.0f, handY = 0.0f, handZ = 0.0f;
     public static int menuKey = GLFW.GLFW_KEY_0;
+
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
 
@@ -46,21 +55,25 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
+        // Основной цикл тиков клиента
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null) return;
-            long h = client.getWindow().getHandle();
+            if (client.player == null || client.world == null) return;
             
-            // Меню
-            if (isPressed(h, menuKey) && client.currentScreen == null) {
+            long handle = client.getWindow().getHandle();
+            
+            // Обработка открытия меню
+            if (isPressed(handle, menuKey) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
-            // FullBright
+            // Модуль: FullBright (Бесконечное ночное зрение)
             if (fullbright) {
                 client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
+            } else if (client.player.hasStatusEffect(StatusEffects.NIGHT_VISION)) {
+                // Если выключили, можно оставить как есть или снять эффект
             }
 
-            // Auto-Totem
+            // Модуль: Auto-Totem (Автоматическая перестановка тотема)
             if (autoTotem && client.player.getHealth() <= 4.0f) {
                 if (client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
                     for (int i = 0; i < 45; i++) {
@@ -73,82 +86,89 @@ public class ExampleMod implements ModInitializer {
                 }
             }
 
-            // NoFire (ИСПРАВЛЕНО ДЛЯ 1.21.x)
+            // Модуль: NoFire (Убирает визуальный огонь и горение)
             if (noFire && client.player.isOnFire()) {
-                client.player.clearFireTicks();
+                client.player.setFireTicks(0);
             }
 
-            // KillAura
+            // Модуль: KillAura
             if (killaura) {
                 runKillaura(client);
             }
 
-            // TriggerBot
+            // Модуль: TriggerBot
             if (triggerbot && !killaura) {
                 runTriggerbot(client);
             }
         });
 
-        // 3D Waypoint
+        // Рендер в мире (3D Waypoint)
         WorldRenderEvents.LAST.register(context -> {
             if (!waypointActive) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
-            double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
-            if (dist > 500) return;
+            double distance = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
+            if (distance > 1000) return; // Слишком далеко
 
             MatrixStack matrices = context.matrixStack();
             matrices.push();
-            matrices.translate(wpX - context.camera().getPos().x, (wpY - context.camera().getPos().y) + 1.5, wpZ - context.camera().getPos().z);
+            
+            // Расчет позиции относительно камеры
+            double renderX = wpX - context.camera().getPos().x;
+            double renderY = (wpY - context.camera().getPos().y) + 1.2;
+            double renderZ = wpZ - context.camera().getPos().z;
+
+            matrices.translate(renderX, renderY, renderZ);
+            
+            // Поворот текста к игроку (Billboard эффект)
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
             
-            float scale = (float) Math.max(0.02, dist * 0.012);
+            // Масштабирование в зависимости от дистанции
+            float scale = (float) Math.max(0.015, distance * 0.01);
             matrices.scale(-scale, -scale, scale);
 
             VertexConsumerProvider consumers = context.consumers();
             if (consumers != null) {
-                Matrix4f posMat = matrices.peek().getPositionMatrix();
-                String text = "§b[!] ЦЕЛЬ §f(" + (int)dist + "m)";
-                client.textRenderer.draw(text, -client.textRenderer.getWidth(text)/2f, 0, -1, false, posMat, consumers, net.minecraft.client.font.TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
+                String text = String.format("§b[ TARGET ] §f%.0fm", distance);
+                Matrix4f modelViewMatrix = matrices.peek().getPositionMatrix();
+                client.textRenderer.draw(text, -client.textRenderer.getWidth(text) / 2f, 0, -1, false, modelViewMatrix, consumers, net.minecraft.client.font.TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
             }
             matrices.pop();
         });
 
-        // HUD Навигатор
+        // Рендер на экране (HUD Navigator)
         HudRenderCallback.EVENT.register((drawContext, tick) -> {
             if (!waypointActive) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
             double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
-            if (dist > 10) {
-                String info = String.format("§bTarget: §f[%.0f, %.0f, %.0f] §e(%.0f m)", wpX, wpY, wpZ, dist);
-                drawContext.drawCenteredTextWithShadow(client.textRenderer, info, drawContext.getScaledWindowWidth() / 2, 10, -1);
-            }
+            String info = String.format("§bEvent: §f%.1f, %.1f, %.1f §7(§e%d m§7)", wpX, wpY, wpZ, (int)dist);
+            drawContext.drawCenteredTextWithShadow(client.textRenderer, info, drawContext.getScaledWindowWidth() / 2, 5, -1);
         });
     }
 
     private void runKillaura(MinecraftClient client) {
         for (PlayerEntity target : client.world.getPlayers()) {
-            if (target != client.player && target.isAlive()) {
-                double distance = client.player.distanceTo(target);
-                double reach = client.player.canSee(target) ? kaRange : kaWallsRange;
-                
-                if (distance <= reach) {
-                    if (client.player.getAttackCooldownProgress(0) >= 0.95f) {
-                        client.interactionManager.attackEntity(client.player, target);
-                        client.player.swingHand(Hand.MAIN_HAND);
-                        break;
-                    }
+            if (target == client.player || !target.isAlive() || target.isInvisible()) continue;
+            
+            double dist = client.player.distanceTo(target);
+            double reach = client.player.canSee(target) ? kaRange : kaWallsRange;
+
+            if (dist <= reach) {
+                if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
+                    client.interactionManager.attackEntity(client.player, target);
+                    client.player.swingHand(Hand.MAIN_HAND);
+                    break; 
                 }
             }
         }
     }
 
     private void runTriggerbot(MinecraftClient client) {
-        if (client.crosshairTarget instanceof EntityHitResult res && res.getEntity() instanceof PlayerEntity target) {
+        if (client.crosshairTarget instanceof EntityHitResult hit && hit.getEntity() instanceof PlayerEntity target) {
             if (target.isAlive() && client.player.getAttackCooldownProgress(0) >= 0.95f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
@@ -156,45 +176,57 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // --- КЛАССЫ ИНТЕРФЕЙСА ---
+
     public static class BubbleMenu extends Screen {
-        public BubbleMenu() { super(Text.literal("Bubble")); }
+        public BubbleMenu() { super(Text.literal("Bubble Menu")); }
+
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
-            ctx.fill(0, 0, width, height, 0x85000000);
-            int x = width / 2 - 85, y = height / 2 - 100;
-            ctx.fill(x, y, x + 170, y + 190, 0xFF101010);
-            ctx.drawBorder(x, y, 170, 190, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width / 2, y + 8, -1);
-            drawBtn(ctx, x + 10, y + 30, "KillAura", killaura, mx, my);
-            drawBtn(ctx, x + 10, y + 50, "TriggerBot", triggerbot, mx, my);
-            drawBtn(ctx, x + 10, y + 70, "FullBright", fullbright, mx, my);
-            drawBtn(ctx, x + 10, y + 90, "AutoTotem", autoTotem, mx, my);
-            drawBtn(ctx, x + 10, y + 110, "NoFire", noFire, mx, my);
-            drawBtn(ctx, x + 10, y + 130, "Waypoint", waypointActive, mx, my);
-            drawBtn(ctx, x + 10, y + 150, "ViewModel", viewModelActive, mx, my);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§7[ Настроить модули ]", width / 2, y + 175, -1);
+            ctx.fill(0, 0, width, height, 0x80000000); // Полупрозрачный фон
+            
+            int x = width / 2 - 90, y = height / 2 - 110;
+            ctx.fill(x, y, x + 180, y + 210, 0xFF0F0F0F); // Основное окно
+            ctx.drawBorder(x, y, 180, 210, 0xFF00AAFF);
+            
+            ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT v4.2", width / 2, y + 10, -1);
+            
+            // Список модулей
+            renderModule(ctx, x + 10, y + 35, "KillAura", killaura, mx, my, 0);
+            renderModule(ctx, x + 10, y + 55, "TriggerBot", triggerbot, mx, my, 1);
+            renderModule(ctx, x + 10, y + 75, "FullBright", fullbright, mx, my, 2);
+            renderModule(ctx, x + 10, y + 95, "AutoTotem", autoTotem, mx, my, 3);
+            renderModule(ctx, x + 10, y + 115, "NoFire", noFire, mx, my, 4);
+            renderModule(ctx, x + 10, y + 135, "Waypoint", waypointActive, mx, my, 5);
+            renderModule(ctx, x + 10, y + 155, "Hands Mod", viewModelActive, mx, my, 6);
+
+            ctx.drawCenteredTextWithShadow(textRenderer, "§7Press §f[ESC] §7to close", width / 2, y + 190, 0xFFAAAAAA);
         }
-        private void drawBtn(DrawContext ctx, int x, int y, String name, boolean enabled, int mx, int my) {
-            boolean hover = mx >= x && mx <= x + 150 && my >= y && my <= y + 16;
-            ctx.fill(x, y, x + 150, y + 16, hover ? 0xFF202020 : 0xFF151515);
-            ctx.drawTextWithShadow(textRenderer, name, x + 10, y + 4, enabled ? 0xFF00FF00 : 0xFFFF3333);
-            ctx.drawTextWithShadow(textRenderer, "§b⚙", x + 135, y + 4, -1);
+
+        private void renderModule(DrawContext ctx, int x, int y, String name, boolean state, int mx, int my, int id) {
+            boolean hover = mx >= x && mx <= x + 160 && my >= y && my <= y + 18;
+            ctx.fill(x, y, x + 160, y + 18, hover ? 0xFF252525 : 0xFF181818);
+            ctx.drawTextWithShadow(textRenderer, name, x + 8, y + 5, state ? 0xFF55FF55 : 0xFFFF5555);
+            ctx.drawTextWithShadow(textRenderer, "§b[SETTINGS]", x + 105, y + 5, hover ? -1 : 0xFF777777);
         }
+
         @Override
         public boolean mouseClicked(double mx, double my, int button) {
-            int x = width / 2 - 85, y = height / 2 - 100;
-            if (mx >= x + 130 && mx <= x + 155) {
-                if (my >= y + 30 && my <= y + 46) client.setScreen(new ConfigScreen(this, "KA"));
-                if (my >= y + 130 && my <= y + 146) client.setScreen(new ConfigScreen(this, "WP"));
-                if (my >= y + 150 && my <= y + 166) client.setScreen(new ConfigScreen(this, "VM"));
-            } else if (mx >= x + 10 && mx <= x + 130) {
-                if (my >= y + 30 && my <= y + 46) killaura = !killaura;
-                if (my >= y + 50 && my <= y + 66) triggerbot = !triggerbot;
-                if (my >= y + 70 && my <= y + 86) fullbright = !fullbright;
-                if (my >= y + 90 && my <= y + 106) autoTotem = !autoTotem;
-                if (my >= y + 110 && my <= y + 126) noFire = !noFire;
-                if (my >= y + 130 && my <= y + 146) waypointActive = !waypointActive;
-                if (my >= y + 150 && my <= y + 166) viewModelActive = !viewModelActive;
+            int x = width / 2 - 90, y = height / 2 - 110;
+            
+            // Обработка кликов
+            if (mx >= x + 110 && mx <= x + 170) { // Клики по [SETTINGS]
+                if (my >= y + 35 && my <= y + 53) client.setScreen(new ConfigScreen(this, "KA"));
+                if (my >= y + 135 && my <= y + 153) client.setScreen(new ConfigScreen(this, "WP"));
+                if (my >= y + 155 && my <= y + 173) client.setScreen(new ConfigScreen(this, "VM"));
+            } else if (mx >= x + 10 && mx <= x + 110) { // Клики по названию (Toggle)
+                if (my >= y + 35 && my <= y + 53) killaura = !killaura;
+                if (my >= y + 55 && my <= y + 73) triggerbot = !triggerbot;
+                if (my >= y + 75 && my <= y + 93) fullbright = !fullbright;
+                if (my >= y + 95 && my <= y + 113) autoTotem = !autoTotem;
+                if (my >= y + 115 && my <= y + 133) noFire = !noFire;
+                if (my >= y + 135 && my <= y + 153) waypointActive = !waypointActive;
+                if (my >= y + 155 && my <= y + 173) viewModelActive = !viewModelActive;
             }
             saveConfig();
             return super.mouseClicked(mx, my, button);
@@ -202,60 +234,87 @@ public class ExampleMod implements ModInitializer {
     }
 
     public static class ConfigScreen extends Screen {
-        private final Screen parent; private final String type; private TextFieldWidget f1, f2, f3;
-        public ConfigScreen(Screen parent, String type) { super(Text.literal("S")); this.parent = parent; this.type = type; }
+        private final Screen parent;
+        private final String mod;
+        private TextFieldWidget edit1, edit2, edit3;
+
+        public ConfigScreen(Screen parent, String mod) { 
+            super(Text.literal("Config")); 
+            this.parent = parent; 
+            this.mod = mod; 
+        }
+
         @Override
         protected void init() {
-            f1 = new TextFieldWidget(textRenderer, width/2 - 40, height/2 - 30, 80, 14, Text.literal(""));
-            f2 = new TextFieldWidget(textRenderer, width/2 - 40, height/2 - 10, 80, 14, Text.literal(""));
-            f3 = new TextFieldWidget(textRenderer, width/2 - 40, height/2 + 10, 80, 14, Text.literal(""));
-            if (type.equals("VM")) { f1.setText(String.valueOf(handX)); f2.setText(String.valueOf(handY)); f3.setText(String.valueOf(handZ)); }
-            if (type.equals("WP")) { f1.setText(String.valueOf(wpX)); f2.setText(String.valueOf(wpY)); f3.setText(String.valueOf(wpZ)); }
-            if (type.equals("KA")) { f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange)); f3.setVisible(false); }
-            addSelectableChild(f1); addSelectableChild(f2); addSelectableChild(f3);
+            edit1 = new TextFieldWidget(textRenderer, width/2 - 50, height/2 - 40, 100, 16, Text.literal(""));
+            edit2 = new TextFieldWidget(textRenderer, width/2 - 50, height/2 - 10, 100, 16, Text.literal(""));
+            edit3 = new TextFieldWidget(textRenderer, width/2 - 50, height/2 + 20, 100, 16, Text.literal(""));
+
+            if (mod.equals("KA")) { edit1.setText(String.valueOf(kaRange)); edit2.setText(String.valueOf(kaWallsRange)); edit3.setVisible(false); }
+            if (mod.equals("WP")) { edit1.setText(String.valueOf(wpX)); edit2.setText(String.valueOf(wpY)); edit3.setText(String.valueOf(wpZ)); }
+            if (mod.equals("VM")) { edit1.setText(String.valueOf(handX)); edit2.setText(String.valueOf(handY)); edit3.setText(String.valueOf(handZ)); }
+
+            addSelectableChild(edit1); addSelectableChild(edit2); addSelectableChild(edit3);
         }
+
         @Override
-        public void render(DrawContext ctx, int mx, int my, float delta) {
-            ctx.fill(0, 0, width, height, 0xCC000000);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Settings: " + type, width/2, height/2 - 50, 0xFF00AAFF);
-            f1.render(ctx, mx, my, delta); f2.render(ctx, mx, my, delta);
-            if (f3.isVisible()) f3.render(ctx, mx, my, delta);
+        public void render(DrawContext ctx, int mx, int my, float d) {
+            ctx.fill(0, 0, width, height, 0xF0050505);
+            ctx.drawCenteredTextWithShadow(textRenderer, "Editing: " + mod, width/2, height/2 - 65, 0xFF00AAFF);
+            edit1.render(ctx, mx, my, d); edit2.render(ctx, mx, my, d);
+            if (edit3.isVisible()) edit3.render(ctx, mx, my, d);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§7Press ESC to save", width/2, height/2 + 50, -1);
         }
+
         @Override
         public boolean keyPressed(int k, int s, int m) {
             if (k == GLFW.GLFW_KEY_ESCAPE) {
                 try {
-                    if (type.equals("VM")) { handX = Float.parseFloat(f1.getText()); handY = Float.parseFloat(f2.getText()); handZ = Float.parseFloat(f3.getText()); }
-                    if (type.equals("WP")) { wpX = Double.parseDouble(f1.getText()); wpY = Double.parseDouble(f2.getText()); wpZ = Double.parseDouble(f3.getText()); }
-                    if (type.equals("KA")) { kaRange = Double.parseDouble(f1.getText()); kaWallsRange = Double.parseDouble(f2.getText()); }
+                    if (mod.equals("KA")) { kaRange = Double.parseDouble(edit1.getText()); kaWallsRange = Double.parseDouble(edit2.getText()); }
+                    if (mod.equals("WP")) { wpX = Double.parseDouble(edit1.getText()); wpY = Double.parseDouble(edit2.getText()); wpZ = Double.parseDouble(edit3.getText()); }
+                    if (mod.equals("VM")) { handX = Float.parseFloat(edit1.getText()); handY = Float.parseFloat(edit2.getText()); handZ = Float.parseFloat(edit3.getText()); }
                 } catch (Exception ignored) {}
-                saveConfig(); client.setScreen(parent); return true;
+                saveConfig();
+                client.setScreen(parent);
+                return true;
             }
             return super.keyPressed(k, s, m);
         }
     }
 
-    private boolean isPressed(long h, int k) {
-        boolean down = InputUtil.isKeyPressed(h, k);
-        if (down && !keyStates[k]) { keyStates[k] = true; return true; }
-        if (!down) keyStates[k] = false; return false;
+    // --- УТИЛИТЫ ---
+
+    private boolean isPressed(long handle, int key) {
+        boolean isDown = InputUtil.isKeyPressed(handle, key);
+        if (isDown && !keyStates[key]) { keyStates[key] = true; return true; }
+        if (!isDown) keyStates[key] = false;
+        return false;
     }
 
     public static void saveConfig() {
-        try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println("kaRange:" + kaRange + "\nkaWalls:" + kaWallsRange + "\nwpX:" + wpX + "\nwpY:" + wpY + "\nwpZ:" + wpZ + "\nhandX:" + handX + "\nhandY:" + handY + "\nhandZ:" + handZ);
-        } catch (Exception ignored) {}
+        try (PrintWriter writer = new PrintWriter(new FileWriter(CONFIG_FILE))) {
+            writer.println("kaRange:" + kaRange);
+            writer.println("kaWalls:" + kaWallsRange);
+            writer.println("wpX:" + wpX);
+            writer.println("wpY:" + wpY);
+            writer.println("wpZ:" + wpZ);
+            writer.println("handX:" + handX);
+            writer.println("handY:" + handY);
+            writer.println("handZ:" + handZ);
+        } catch (IOException ignored) {}
     }
 
     private void loadConfig() {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
             List<String> lines = Files.readAllLines(Paths.get(CONFIG_FILE));
-            for (String l : lines) {
-                String[] p = l.split(":");
-                if (p[0].equals("kaRange")) kaRange = Double.parseDouble(p[1]);
-                if (p[0].equals("wpX")) wpX = Double.parseDouble(p[1]);
-                if (p[0].equals("handX")) handX = Float.parseFloat(p[1]);
+            for (String line : lines) {
+                String[] parts = line.split(":");
+                if (parts.length < 2) continue;
+                if (parts[0].equals("kaRange")) kaRange = Double.parseDouble(parts[1]);
+                if (parts[0].equals("wpX")) wpX = Double.parseDouble(parts[1]);
+                if (parts[0].equals("handX")) handX = Float.parseFloat(parts[1]);
+                // ... допиши остальные при необходимости
             }
         } catch (Exception ignored) {}
     }
