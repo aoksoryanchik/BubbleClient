@@ -48,67 +48,68 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot && !killaura) runTriggerbot(client);
         });
 
-        // Ивент LAST — лучший для ESP, так как он идет после всех сущностей
         WorldRenderEvents.LAST.register(context -> {
             if (!esp) return;
             MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player == null) return;
+            if (client.player == null || client.world == null) return;
 
-            // СУТЬ ТУТ: Отключаем тест глубины вручную для OpenGL
-            RenderSystem.disableDepthTest();
+            // Настройка рендеринга для 1.21.4
+            RenderSystem.disableDepthTest(); // Ключевой момент для X-Ray
             RenderSystem.enableBlend();
             RenderSystem.defaultBlendFunc();
-            RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+            RenderSystem.setShader(GameRenderer::getPositionColorStaticShader); // Правильный шейдер для 1.21.4
 
             Tessellator tessellator = Tessellator.getInstance();
             BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
+            Vec3d camPos = context.camera().getPos();
+            MatrixStack matrices = context.matrixStack();
+
             for (PlayerEntity entity : client.world.getPlayers()) {
                 if (entity == client.player || !entity.isAlive() || entity.isInvisible()) continue;
 
-                MatrixStack matrices = context.matrixStack();
-                Vec3d cam = context.camera().getPos();
-                
                 matrices.push();
-                // Используем координаты с учетом интерполяции для плавности (важно для 1.21.4)
-                double x = (entity.prevX + (entity.getX() - entity.prevX) * context.tickCounter().getTickDelta(true)) - cam.x;
-                double y = (entity.prevY + (entity.getY() - entity.prevY) * context.tickCounter().getTickDelta(true)) - cam.y;
-                double z = (entity.prevZ + (entity.getZ() - entity.prevZ) * context.tickCounter().getTickDelta(true)) - cam.z;
+                // Интерполяция для плавности
+                double x = (entity.prevX + (entity.getX() - entity.prevX) * context.tickCounter().getTickDelta(true)) - camPos.x;
+                double y = (entity.prevY + (entity.getY() - entity.prevY) * context.tickCounter().getTickDelta(true)) - camPos.y;
+                double z = (entity.prevZ + (entity.getZ() - entity.prevZ) * context.tickCounter().getTickDelta(true)) - camPos.z;
+                
                 matrices.translate(x, y, z);
-
                 Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ()).expand(0.02);
-                drawBoxLines(matrices, buffer, b);
+                
+                drawEspBox(matrices, buffer, b);
                 matrices.pop();
             }
 
             BufferRenderer.drawWithGlobalProgram(buffer.end());
             RenderSystem.enableDepthTest();
+            RenderSystem.disableBlend();
         });
     }
 
-    private void drawBoxLines(MatrixStack matrices, BufferBuilder buffer, Box b) {
+    private void drawEspBox(MatrixStack matrices, BufferBuilder buffer, Box b) {
         MatrixStack.Entry entry = matrices.peek();
-        // Красивый голубой цвет для ESP (R: 0, G: 0.7, B: 1)
-        float r=0f, g=0.7f, bl=1f, a=1f;
-        
-        // Рисуем 12 граней
-        line(buffer, entry, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.minX, b.minY, b.maxZ, r, g, bl, a);
-        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.minY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.minX, b.maxY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.maxY, b.minZ, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.maxY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, bl, a);
-        line(buffer, entry, b.minX, b.maxY, b.maxZ, b.minX, b.maxY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.minX, b.minY, b.minZ, b.minX, b.maxY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, bl, a);
-        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
-        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, bl, a);
+        float r = 0f, g = 0.8f, bl = 1f, a = 1f; // Яркий голубой цвет
+
+        // Рисуем грани (12 линий)
+        v(buffer, entry, b.minX, b.minY, b.minZ, r, g, bl, a); v(buffer, entry, b.maxX, b.minY, b.minZ, r, g, bl, a);
+        v(buffer, entry, b.maxX, b.minY, b.minZ, r, g, bl, a); v(buffer, entry, b.maxX, b.minY, b.maxZ, r, g, bl, a);
+        v(buffer, entry, b.maxX, b.minY, b.maxZ, r, g, bl, a); v(buffer, entry, b.minX, b.minY, b.maxZ, r, g, bl, a);
+        v(buffer, entry, b.minX, b.minY, b.maxZ, r, g, bl, a); v(buffer, entry, b.minX, b.minY, b.minZ, r, g, bl, a);
+
+        v(buffer, entry, b.minX, b.maxY, b.minZ, r, g, bl, a); v(buffer, entry, b.maxX, b.maxY, b.minZ, r, g, bl, a);
+        v(buffer, entry, b.maxX, b.maxY, b.minZ, r, g, bl, a); v(buffer, entry, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
+        v(buffer, entry, b.maxX, b.maxY, b.maxZ, r, g, bl, a); v(buffer, entry, b.minX, b.maxY, b.maxZ, r, g, bl, a);
+        v(buffer, entry, b.minX, b.maxY, b.maxZ, r, g, bl, a); v(buffer, entry, b.minX, b.maxY, b.minZ, r, g, bl, a);
+
+        v(buffer, entry, b.minX, b.minY, b.minZ, r, g, bl, a); v(buffer, entry, b.minX, b.maxY, b.minZ, r, g, bl, a);
+        v(buffer, entry, b.maxX, b.minY, b.minZ, r, g, bl, a); v(buffer, entry, b.maxX, b.maxY, b.minZ, r, g, bl, a);
+        v(buffer, entry, b.maxX, b.minY, b.maxZ, r, g, bl, a); v(buffer, entry, b.maxX, b.maxY, b.maxZ, r, g, bl, a);
+        v(buffer, entry, b.minX, b.minY, b.maxZ, r, g, bl, a); v(buffer, entry, b.minX, b.maxY, b.maxZ, r, g, bl, a);
     }
 
-    private void line(BufferBuilder b, MatrixStack.Entry e, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float bl, float a) {
-        b.vertex(e, (float)x1, (float)y1, (float)z1).color(r, g, bl, a);
-        b.vertex(e, (float)x2, (float)y2, (float)z2).color(r, g, bl, a);
+    private void v(BufferBuilder b, MatrixStack.Entry e, double x, double y, double z, float r, float g, float bl, float a) {
+        b.vertex(e, (float)x, (float)y, (float)z).color(r, g, bl, a);
     }
 
     private boolean isPressed(long h, int k) {
