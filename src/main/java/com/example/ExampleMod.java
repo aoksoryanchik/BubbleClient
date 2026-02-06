@@ -57,32 +57,53 @@ public class ExampleMod implements ModInitializer {
 
             for (PlayerEntity entity : client.world.getPlayers()) {
                 if (entity == client.player || !entity.isAlive() || entity.isInvisible()) continue;
-                renderBox(context, entity);
+                
+                MatrixStack matrices = context.matrixStack();
+                Vec3d camPos = context.camera().getPos();
+                VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
+
+                matrices.push();
+                double x = entity.prevX + (entity.getX() - entity.prevX) * context.tickCounter().getTickDelta(true) - camPos.x;
+                double y = entity.prevY + (entity.getY() - entity.prevY) * context.tickCounter().getTickDelta(true) - camPos.y;
+                double z = entity.prevZ + (entity.getZ() - entity.prevZ) * context.tickCounter().getTickDelta(true) - camPos.z;
+                matrices.translate(x, y, z);
+
+                Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
+                
+                // Рендерим линии бокса вручную, чтобы не было ошибок компиляции
+                renderBoxOutline(matrices, buffer, b, 1f, 1f, 1f, 1f);
+                
+                matrices.pop();
             }
         });
     }
 
-    private void renderBox(net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext context, PlayerEntity entity) {
-        MatrixStack matrices = context.matrixStack();
-        Vec3d camPos = context.camera().getPos();
-        VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
-
-        matrices.push();
-        double x = entity.prevX + (entity.getX() - entity.prevX) * context.tickCounter().getTickDelta(true) - camPos.x;
-        double y = entity.prevY + (entity.getY() - entity.prevY) * context.tickCounter().getTickDelta(true) - camPos.y;
-        double z = entity.prevZ + (entity.getZ() - entity.prevZ) * context.tickCounter().getTickDelta(true) - camPos.z;
-        matrices.translate(x, y, z);
-
-        Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
-        
-        // Рисуем рамку вручную, чтобы избежать ошибок с drawBox
-        drawOutline(matrices, buffer, b);
-        
-        matrices.pop();
-    }
-
-    private void drawOutline(MatrixStack matrices, VertexConsumer buffer, Box b) {
-        WorldRenderer.drawBox(matrices, buffer, b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ, 1f, 1f, 1f, 1f);
+    private void renderBoxOutline(MatrixStack matrices, VertexConsumer buffer, Box b, float r, float g, float b1, float a) {
+        MatrixStack.Entry entry = matrices.peek();
+        buffer.vertex(entry, (float)b.minX, (float)b.minY, (float)b.minZ).color(r, g, b1, a).normal(entry, 1, 0, 0);
+        buffer.vertex(entry, (float)b.maxX, (float)b.minY, (float)b.minZ).color(r, g, b1, a).normal(entry, 1, 0, 0);
+        buffer.vertex(entry, (float)b.minX, (float)b.minY, (float)b.minZ).color(r, g, b1, a).normal(entry, 0, 0, 1);
+        buffer.vertex(entry, (float)b.minX, (float)b.minY, (float)b.maxZ).color(r, g, b1, a).normal(entry, 0, 0, 1);
+        buffer.vertex(entry, (float)b.maxX, (float)b.minY, (float)b.maxZ).color(r, g, b1, a).normal(entry, -1, 0, 0);
+        buffer.vertex(entry, (float)b.minX, (float)b.minY, (float)b.maxZ).color(r, g, b1, a).normal(entry, -1, 0, 0);
+        buffer.vertex(entry, (float)b.maxX, (float)b.minY, (float)b.maxZ).color(r, g, b1, a).normal(entry, 0, 0, -1);
+        buffer.vertex(entry, (float)b.maxX, (float)b.minY, (float)b.minZ).color(r, g, b1, a).normal(entry, 0, 0, -1);
+        buffer.vertex(entry, (float)b.minX, (float)b.maxY, (float)b.minZ).color(r, g, b1, a).normal(entry, 1, 0, 0);
+        buffer.vertex(entry, (float)b.maxX, (float)b.maxY, (float)b.minZ).color(r, g, b1, a).normal(entry, 1, 0, 0);
+        buffer.vertex(entry, (float)b.minX, (float)b.maxY, (float)b.minZ).color(r, g, b1, a).normal(entry, 0, 0, 1);
+        buffer.vertex(entry, (float)b.minX, (float)b.maxY, (float)b.maxZ).color(r, g, b1, a).normal(entry, 0, 0, 1);
+        buffer.vertex(entry, (float)b.maxX, (float)b.maxY, (float)b.maxZ).color(r, g, b1, a).normal(entry, -1, 0, 0);
+        buffer.vertex(entry, (float)b.minX, (float)b.maxY, (float)b.maxZ).color(r, g, b1, a).normal(entry, -1, 0, 0);
+        buffer.vertex(entry, (float)b.maxX, (float)b.maxY, (float)b.maxZ).color(r, g, b1, a).normal(entry, 0, 0, -1);
+        buffer.vertex(entry, (float)b.maxX, (float)b.maxY, (float)b.minZ).color(r, g, b1, a).normal(entry, 0, 0, -1);
+        buffer.vertex(entry, (float)b.minX, (float)b.minY, (float)b.minZ).color(r, g, b1, a).normal(entry, 0, 1, 0);
+        buffer.vertex(entry, (float)b.minX, (float)b.maxY, (float)b.minZ).color(r, g, b1, a).normal(entry, 0, 1, 0);
+        buffer.vertex(entry, (float)b.maxX, (float)b.minY, (float)b.minZ).color(r, g, b1, a).normal(entry, 0, 1, 0);
+        buffer.vertex(entry, (float)b.maxX, (float)b.maxY, (float)b.minZ).color(r, g, b1, a).normal(entry, 0, 1, 0);
+        buffer.vertex(entry, (float)b.minX, (float)b.minY, (float)b.maxZ).color(r, g, b1, a).normal(entry, 0, 1, 0);
+        buffer.vertex(entry, (float)b.minX, (float)b.maxY, (float)b.maxZ).color(r, g, b1, a).normal(entry, 0, 1, 0);
+        buffer.vertex(entry, (float)b.maxX, (float)b.minY, (float)b.maxZ).color(r, g, b1, a).normal(entry, 0, 1, 0);
+        buffer.vertex(entry, (float)b.maxX, (float)b.maxY, (float)b.maxZ).color(r, g, b1, a).normal(entry, 0, 1, 0);
     }
 
     private boolean isPressed(long handle, int key) {
@@ -139,34 +160,4 @@ public class ExampleMod implements ModInitializer {
             drawBtn(context, x + 10, y + 75, "ESP", esp, -1, "esp", mouseX, mouseY);
         }
 
-        private void drawBtn(DrawContext context, int x, int y, String name, boolean on, int key, String id, int mx, int my) {
-            boolean hover = mx >= x && mx <= x + 140 && my >= y && my <= y + 16;
-            String kName = key == -1 ? "" : (bindingFor.equals(id) ? "???" : GLFW.glfwGetKeyName(key, 0));
-            if (kName == null) kName = "KEY_" + key;
-            context.fill(x, y, x + 140, y + 16, hover ? 0xFF252525 : 0xFF181818);
-            context.fill(x + 2, y + 4, x + 10, y + 12, on ? 0xFF00FF00 : 0xFFFF0000);
-            context.drawTextWithShadow(textRenderer, name + (key == -1 ? "" : " §7[" + kName.toUpperCase() + "]"), x + 15, y + 4, -1);
-        }
-
-        @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            int x = width / 2 - 80, y = height / 2 - 50;
-            if (isOver(mouseX, mouseY, x + 10, y + 25)) { if (button == 0) killaura = !killaura; else if (button == 1) bindingFor = "ka"; }
-            if (isOver(mouseX, mouseY, x + 10, y + 50)) { if (button == 0) triggerbot = !triggerbot; else if (button == 1) bindingFor = "tb"; }
-            if (isOver(mouseX, mouseY, x + 10, y + 75)) { if (button == 0) esp = !esp; }
-            return super.mouseClicked(mouseX, mouseY, button);
-        }
-
-        @Override
-        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-            if (!bindingFor.isEmpty() && keyCode != GLFW.GLFW_KEY_ESCAPE) {
-                if (bindingFor.equals("ka")) killauraKey = keyCode;
-                if (bindingFor.equals("tb")) triggerbotKey = keyCode;
-                bindingFor = ""; return true;
-            }
-            return super.keyPressed(keyCode, scanCode, modifiers);
-        }
-        private boolean isOver(double mx, double my, int x, int y) { return mx >= x && mx <= x + 140 && my >= y && my <= y + 16; }
-        @Override public boolean shouldPause() { return false; }
-    }
-}
+        private void drawBtn(DrawContext context, int x, int y, String name, boolean on,
