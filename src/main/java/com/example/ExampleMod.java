@@ -47,7 +47,7 @@ public class ExampleMod implements ModInitializer {
     private final Random random = new Random();
     
     private float nextAttackThreshold = 0.94f;
-    private float strafeYaw = 0;
+    private int strafeDir = 1; // 1 - вправо, -1 - влево
 
     @Override
     public void onInitialize() {
@@ -81,7 +81,9 @@ public class ExampleMod implements ModInitializer {
             }
 
             if (killaura) {
-                run360Aura(client);
+                runNursultan360(client);
+            } else {
+                if (mode360) resetMovement(client);
             }
         });
 
@@ -91,7 +93,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void run360Aura(MinecraftClient client) {
+    private void runNursultan360(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
@@ -103,39 +105,39 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // 1. Улучшенная наводка (LERP)
-            double tY = target.getY() + (target.getHeight() * 0.5);
-            lookAt(client.player, new Vec3d(target.getX(), tY, target.getZ()));
+            // Наводка
+            lookAt(client.player, target.getPos().add(0, target.getHeight() * 0.5, 0));
 
-            // 2. Логика Закручивания (360)
+            // Логика 360 (TargetStrafe через инпуты)
             if (mode360) {
-                client.player.setSprinting(true);
-                
-                // Если нас бьют, гасим отдачу, чтобы не улетать и продолжать закрут
-                if (client.player.hurtTime > 0) {
-                    client.player.setVelocity(client.player.getVelocity().multiply(0.45, 0.8, 0.45));
+                client.options.sprintKey.setPressed(true);
+                double distance = client.player.distanceTo(target);
+
+                // Смена направления при столкновении со стеной
+                if (client.player.horizontalCollision) strafeDir *= -1;
+
+                // Удержание дистанции
+                if (distance > kaRange - 0.3) {
+                    client.options.forwardKey.setPressed(true);
+                    client.options.backKey.setPressed(false);
+                } else if (distance < kaRange - 1.0) {
+                    client.options.forwardKey.setPressed(false);
+                    client.options.backKey.setPressed(true);
+                } else {
+                    client.options.forwardKey.setPressed(false);
+                    client.options.backKey.setPressed(false);
                 }
 
-                strafeYaw += 0.15f; // Скорость вращения
-                double radius = kaRange - 0.8;
-                
-                double x = target.getX() + Math.sin(strafeYaw) * radius;
-                double z = target.getZ() + Math.cos(strafeYaw) * radius;
-                
-                Vec3d targetVec = new Vec3d(x, client.player.getY(), z);
-                Vec3d diff = targetVec.subtract(client.player.getPos());
-                
-                if (diff.length() > 0.2) {
-                    diff = diff.normalize().multiply(0.24); // Скорость стрейфа
-                    client.player.addVelocity(diff.x, 0, diff.z);
-                }
+                // Сам закрут (A/D)
+                client.options.leftKey.setPressed(strafeDir == 1);
+                client.options.rightKey.setPressed(strafeDir == -1);
+
             } else if (autoRun) {
                 client.options.sprintKey.setPressed(true);
             }
 
-            // 3. Удар
-            float progress = client.player.getAttackCooldownProgress(0.0f);
-            if (progress >= nextAttackThreshold) {
+            // Удар по КД
+            if (client.player.getAttackCooldownProgress(0) >= nextAttackThreshold) {
                 if (screenShake) {
                     client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                     client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
@@ -144,7 +146,16 @@ public class ExampleMod implements ModInitializer {
                 client.player.swingHand(Hand.MAIN_HAND);
                 nextAttackThreshold = 0.93f + (random.nextFloat() * 0.05f);
             }
+        } else {
+            if (mode360) resetMovement(client);
         }
+    }
+
+    private void resetMovement(MinecraftClient client) {
+        client.options.forwardKey.setPressed(false);
+        client.options.backKey.setPressed(false);
+        client.options.leftKey.setPressed(false);
+        client.options.rightKey.setPressed(false);
     }
 
     private void lookAt(PlayerEntity player, Vec3d target) {
@@ -152,8 +163,6 @@ public class ExampleMod implements ModInitializer {
         double diffXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
-        
-        // Плавное следование за целью (Ares-friendly)
         player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.65f);
         player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.65f);
     }
