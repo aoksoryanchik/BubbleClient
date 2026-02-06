@@ -1,5 +1,6 @@
 package com.example;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
@@ -25,6 +26,7 @@ public class ExampleMod implements ModInitializer {
     
     public static int killauraKey = GLFW.GLFW_KEY_P;
     public static int triggerbotKey = GLFW.GLFW_KEY_R;
+    public static int espKey = GLFW.GLFW_KEY_M;
     public static int menuKey = GLFW.GLFW_KEY_0;
 
     public static String bindingFor = ""; 
@@ -37,14 +39,24 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long handle = client.getWindow().getHandle();
             
+            // Меню
             boolean menuDown = InputUtil.isKeyPressed(handle, menuKey);
             if (menuDown && !menuPressed) client.setScreen(new BubbleMenu());
             menuPressed = menuDown;
 
+            // Бинды и уведомления в Actionbar
             if (client.currentScreen == null) {
                 if (isPressed(handle, killauraKey)) killaura = !killaura;
                 if (isPressed(handle, triggerbotKey)) triggerbot = !triggerbot;
+                if (isPressed(handle, espKey)) esp = !esp;
             }
+
+            // Вывод статуса над полоской опыта
+            String status = "§bBubble §7| " + 
+                (killaura ? "§aKA " : "§cKA ") + 
+                (triggerbot ? "§aTB " : "§cTB ") + 
+                (esp ? "§aESP" : "§cESP");
+            client.player.sendMessage(Text.literal(status), true);
 
             if (killaura) runKillaura(client);
             if (triggerbot && !killaura) runTriggerbot(client);
@@ -54,6 +66,10 @@ public class ExampleMod implements ModInitializer {
             if (!esp) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
+
+            // Настройка рендера для "просвечивания" сквозь стены
+            RenderSystem.disableDepthTest();
+            RenderSystem.enableBlend();
 
             for (PlayerEntity entity : client.world.getPlayers()) {
                 if (entity == client.player || !entity.isAlive() || entity.isInvisible()) continue;
@@ -69,35 +85,39 @@ public class ExampleMod implements ModInitializer {
                 matrices.translate(x, y, z);
 
                 Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
-                
-                // Рендер бокса (12 линий)
                 MatrixStack.Entry entry = matrices.peek();
-                float r = 1, g = 1, b1 = 1, a = 1;
                 
-                // Нижний квадрат
-                drawLine(buffer, entry, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, r, g, b1, a);
-                drawLine(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ, r, g, b1, a);
-                drawLine(buffer, entry, b.maxX, b.minY, b.maxZ, b.minX, b.minY, b.maxZ, r, g, b1, a);
-                drawLine(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.minY, b.minZ, r, g, b1, a);
-                // Верхний квадрат
-                drawLine(buffer, entry, b.minX, b.maxY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, b1, a);
-                drawLine(buffer, entry, b.maxX, b.maxY, b.minZ, b.maxX, b.maxY, b.maxZ, r, g, b1, a);
-                drawLine(buffer, entry, b.maxX, b.maxY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, b1, a);
-                drawLine(buffer, entry, b.minX, b.maxY, b.maxZ, b.minX, b.maxY, b.minZ, r, g, b1, a);
-                // Стойки
-                drawLine(buffer, entry, b.minX, b.minY, b.minZ, b.minX, b.maxY, b.minZ, r, g, b1, a);
-                drawLine(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, b1, a);
-                drawLine(buffer, entry, b.maxX, b.minY, b.maxZ, b.maxX, b.maxY, b.maxZ, r, g, b1, a);
-                drawLine(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, b1, a);
+                drawBoxLines(buffer, entry, b);
 
                 matrices.pop();
             }
+            RenderSystem.enableDepthTest();
+            RenderSystem.disableBlend();
         });
     }
 
-    private void drawLine(VertexConsumer buffer, MatrixStack.Entry entry, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float b, float a) {
-        buffer.vertex(entry, (float)x1, (float)y1, (float)z1).color(r, g, b, a).normal(entry, 0, 1, 0);
-        buffer.vertex(entry, (float)x2, (float)y2, (float)z2).color(r, g, b, a).normal(entry, 0, 1, 0);
+    private void drawBoxLines(VertexConsumer buffer, MatrixStack.Entry entry, Box b) {
+        float r = 1, g = 1, b1 = 1, a = 1;
+        // Нижний квадрат
+        line(buffer, entry, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, r, g, b1, a);
+        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ, r, g, b1, a);
+        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.minX, b.minY, b.maxZ, r, g, b1, a);
+        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.minY, b.minZ, r, g, b1, a);
+        // Верхний
+        line(buffer, entry, b.minX, b.maxY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, b1, a);
+        line(buffer, entry, b.maxX, b.maxY, b.minZ, b.maxX, b.maxY, b.maxZ, r, g, b1, a);
+        line(buffer, entry, b.maxX, b.maxY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, b1, a);
+        line(buffer, entry, b.minX, b.maxY, b.maxZ, b.minX, b.maxY, b.minZ, r, g, b1, a);
+        // Стойки
+        line(buffer, entry, b.minX, b.minY, b.minZ, b.minX, b.maxY, b.minZ, r, g, b1, a);
+        line(buffer, entry, b.maxX, b.minY, b.minZ, b.maxX, b.maxY, b.minZ, r, g, b1, a);
+        line(buffer, entry, b.maxX, b.minY, b.maxZ, b.maxX, b.maxY, b.maxZ, r, g, b1, a);
+        line(buffer, entry, b.minX, b.minY, b.maxZ, b.minX, b.maxY, b.maxZ, r, g, b1, a);
+    }
+
+    private void line(VertexConsumer buffer, MatrixStack.Entry e, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float b, float a) {
+        buffer.vertex(e, (float)x1, (float)y1, (float)z1).color(r, g, b, a).normal(e, 0, 1, 0);
+        buffer.vertex(e, (float)x2, (float)y2, (float)z2).color(r, g, b, a).normal(e, 0, 1, 0);
     }
 
     private boolean isPressed(long handle, int key) {
@@ -151,16 +171,16 @@ public class ExampleMod implements ModInitializer {
             context.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width / 2, y + 6, -1);
             drawBtn(context, x + 10, y + 25, "Killaura", killaura, killauraKey, "ka", mouseX, mouseY);
             drawBtn(context, x + 10, y + 50, "TriggerBot", triggerbot, triggerbotKey, "tb", mouseX, mouseY);
-            drawBtn(context, x + 10, y + 75, "ESP", esp, -1, "esp", mouseX, mouseY);
+            drawBtn(context, x + 10, y + 75, "ESP", esp, espKey, "esp", mouseX, mouseY);
         }
 
         private void drawBtn(DrawContext context, int x, int y, String name, boolean on, int key, String id, int mx, int my) {
             boolean hover = mx >= x && mx <= x + 140 && my >= y && my <= y + 16;
-            String kName = key == -1 ? "" : (bindingFor.equals(id) ? "???" : GLFW.glfwGetKeyName(key, 0));
+            String kName = bindingFor.equals(id) ? "???" : GLFW.glfwGetKeyName(key, 0);
             if (kName == null) kName = "KEY_" + key;
             context.fill(x, y, x + 140, y + 16, hover ? 0xFF252525 : 0xFF181818);
             context.fill(x + 2, y + 4, x + 10, y + 12, on ? 0xFF00FF00 : 0xFFFF0000);
-            context.drawTextWithShadow(textRenderer, name + (key == -1 ? "" : " §7[" + kName.toUpperCase() + "]"), x + 15, y + 4, -1);
+            context.drawTextWithShadow(textRenderer, name + " §7[" + kName.toUpperCase() + "]", x + 15, y + 4, -1);
         }
 
         @Override
@@ -168,7 +188,7 @@ public class ExampleMod implements ModInitializer {
             int x = width / 2 - 80, y = height / 2 - 50;
             if (isOver(mouseX, mouseY, x + 10, y + 25)) { if (button == 0) killaura = !killaura; else if (button == 1) bindingFor = "ka"; }
             if (isOver(mouseX, mouseY, x + 10, y + 50)) { if (button == 0) triggerbot = !triggerbot; else if (button == 1) bindingFor = "tb"; }
-            if (isOver(mouseX, mouseY, x + 10, y + 75)) { if (button == 0) esp = !esp; }
+            if (isOver(mouseX, mouseY, x + 10, y + 75)) { if (button == 0) esp = !esp; else if (button == 1) bindingFor = "esp"; }
             return super.mouseClicked(mouseX, mouseY, button);
         }
 
@@ -177,6 +197,7 @@ public class ExampleMod implements ModInitializer {
             if (!bindingFor.isEmpty() && keyCode != GLFW.GLFW_KEY_ESCAPE) {
                 if (bindingFor.equals("ka")) killauraKey = keyCode;
                 if (bindingFor.equals("tb")) triggerbotKey = keyCode;
+                if (bindingFor.equals("esp")) espKey = keyCode;
                 bindingFor = ""; return true;
             }
             return super.keyPressed(keyCode, scanCode, modifiers);
