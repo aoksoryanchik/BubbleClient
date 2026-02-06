@@ -36,24 +36,24 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null) return;
             long h = client.getWindow().getHandle();
 
-            // Открытие меню (только если чат закрыт)
+            // Открытие меню (строгий фикс чата)
             if (isPressed(h, menuKey) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Бинды и уведомления
+            // Обработка биндов и вывод в чат (Overlay)
             if (client.currentScreen == null) {
                 if (isPressed(h, killauraKey)) {
                     killaura = !killaura;
-                    client.player.sendMessage(Text.literal("§bKillaura: " + (killaura ? "§aВКЛ" : "§cВЫКЛ")), true);
+                    sendMsg(client, "Killaura", killaura);
                 }
                 if (isPressed(h, triggerbotKey)) {
                     triggerbot = !triggerbot;
-                    client.player.sendMessage(Text.literal("§bTriggerbot: " + (triggerbot ? "§aВКЛ" : "§cВЫКЛ")), true);
+                    sendMsg(client, "Triggerbot", triggerbot);
                 }
                 if (isPressed(h, espKey)) {
                     esp = !esp;
-                    client.player.sendMessage(Text.literal("§bESP: " + (esp ? "§aВКЛ" : "§cВЫКЛ")), true);
+                    sendMsg(client, "ESP", esp);
                 }
             }
 
@@ -61,17 +61,17 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot && !killaura) runTriggerbot(client);
         });
 
-        // ESP через линии (X-RAY эффект)
+        // ESP через LINES (X-Ray эффект)
         WorldRenderEvents.LAST.register(context -> {
             if (!esp) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null || client.world == null) return;
 
-            RenderSystem.disableDepthTest(); // Просвечивание сквозь стены
-            RenderSystem.setShader(GameRenderer::getPositionColorShader);
+            // В 1.21.4 используем RenderLayer.getLines() для стабильности
+            VertexConsumerProvider.Immediate consumers = context.consumers();
+            VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
-            Tessellator tessellator = Tessellator.getInstance();
-            BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+            RenderSystem.disableDepthTest(); // Видим сквозь стены
 
             for (PlayerEntity entity : client.world.getPlayers()) {
                 if (entity == client.player || !entity.isAlive() || entity.isInvisible()) continue;
@@ -88,38 +88,18 @@ public class ExampleMod implements ModInitializer {
                 matrices.translate(x, y, z);
                 Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
                 
-                // Отрисовка линий вручную для стабильности в 1.21.4
-                drawEspLines(matrices.peek(), buffer, b);
+                // Рисуем бокс через современный буфер
+                WorldRenderer.drawBox(matrices, buffer, b, 0f, 0.8f, 1f, 1f);
                 matrices.pop();
             }
-
-            BufferRenderer.drawWithGlobalProgram(buffer.end());
+            
+            consumers.draw(); // Принудительно рисуем линии сейчас
             RenderSystem.enableDepthTest();
         });
     }
 
-    private void drawEspLines(MatrixStack.Entry entry, BufferBuilder b, Box box) {
-        float r = 0f, g = 0.8f, bl = 1f, a = 1f;
-        // Нижний квадрат
-        line(b, entry, box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, r, g, bl, a);
-        line(b, entry, box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, r, g, bl, a);
-        line(b, entry, box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, bl, a);
-        line(b, entry, box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ, r, g, bl, a);
-        // Верхний квадрат
-        line(b, entry, box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, bl, a);
-        line(b, entry, box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ, r, g, bl, a);
-        line(b, entry, box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, bl, a);
-        line(b, entry, box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ, r, g, bl, a);
-        // Вертикали
-        line(b, entry, box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ, r, g, bl, a);
-        line(b, entry, box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, bl, a);
-        line(b, entry, box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, r, g, bl, a);
-        line(b, entry, box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, bl, a);
-    }
-
-    private void line(BufferBuilder b, MatrixStack.Entry e, double x1, double y1, double z1, double x2, double y2, double z2, float r, float g, float bl, float a) {
-        b.vertex(e, (float)x1, (float)y1, (float)z1).color(r, g, bl, a);
-        b.vertex(e, (float)x2, (float)y2, (float)z2).color(r, g, bl, a);
+    private void sendMsg(MinecraftClient client, String name, boolean state) {
+        client.player.sendMessage(Text.literal("§bBubble §8» §f" + name + ": " + (state ? "§aON" : "§cOFF")), true);
     }
 
     private boolean isPressed(long h, int k) {
@@ -134,13 +114,14 @@ public class ExampleMod implements ModInitializer {
         PlayerEntity target = null;
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p != client.player && p.isAlive() && client.player.distanceTo(p) <= 3.8) {
-                target = p;
-                break;
+                target = p; break;
             }
         }
         if (target != null) {
-            // ФИКС БЕГА: заставляем игрока бежать во время боя
-            if (client.player.forwardSpeed > 0) client.player.setSprinting(true);
+            // ФИКС БЕГА: принудительно зажимаем спринт при наличии цели
+            if (client.player.input.movementForward > 0) {
+                client.player.setSprinting(true);
+            }
             
             client.player.setYaw((float) Math.toDegrees(Math.atan2(target.getZ() - client.player.getZ(), target.getX() - client.player.getX())) - 90);
             if (client.player.getAttackCooldownProgress(0) >= 0.9f) {
@@ -168,15 +149,15 @@ public class ExampleMod implements ModInitializer {
             context.fill(x, y, x + 160, y + 100, 0xFF121212);
             context.drawBorder(x, y, 160, 100, 0xFF00AAFF);
             context.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width/2, y + 6, -1);
-            drawBtn(context, x+10, y+25, "Killaura", killaura, killauraKey, mouseX, mouseY);
-            drawBtn(context, x+10, y+50, "TriggerBot", triggerbot, triggerbotKey, mouseX, mouseY);
-            drawBtn(context, x+10, y+75, "ESP", esp, espKey, mouseX, mouseY);
+            drawBtn(context, x+10, y+25, "Killaura", killaura, mouseX, mouseY);
+            drawBtn(context, x+10, y+50, "TriggerBot", triggerbot, mouseX, mouseY);
+            drawBtn(context, x+10, y+75, "ESP", esp, mouseX, mouseY);
         }
-        private void drawBtn(DrawContext context, int x, int y, String name, boolean on, int key, int mx, int my) {
+        private void drawBtn(DrawContext context, int x, int y, String name, boolean on, int mx, int my) {
             boolean h = mx >= x && mx <= x + 140 && my >= y && my <= y + 16;
             context.fill(x, y, x + 140, y + 16, h ? 0xFF252525 : 0xFF181818);
             context.fill(x + 2, y + 4, x + 10, y + 12, on ? 0xFF00FF00 : 0xFFFF0000);
-            context.drawTextWithShadow(textRenderer, name + " §7[" + GLFW.glfwGetKeyName(key, 0).toUpperCase() + "]", x + 15, y + 4, -1);
+            context.drawTextWithShadow(textRenderer, name, x + 15, y + 4, -1);
         }
         @Override public boolean shouldPause() { return false; }
     }
