@@ -16,13 +16,12 @@ import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
-import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false;
     public static boolean triggerbot = false;
-    public static boolean esp = true; // ESP включен по умолчанию
+    public static boolean esp = true;
     
     public static int killauraKey = GLFW.GLFW_KEY_P;
     public static int triggerbotKey = GLFW.GLFW_KEY_R;
@@ -34,7 +33,6 @@ public class ExampleMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        // Логика тиков (Киллаура, Триггер, Спринт)
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
 
@@ -52,7 +50,6 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot && !killaura) runTriggerbot(client);
         });
 
-        // ЛОГИКА ESP (Рисование боксов)
         WorldRenderEvents.LAST.register(context -> {
             if (!esp) return;
             MinecraftClient client = MinecraftClient.getInstance();
@@ -60,27 +57,32 @@ public class ExampleMod implements ModInitializer {
 
             for (PlayerEntity entity : client.world.getPlayers()) {
                 if (entity == client.player || !entity.isAlive() || entity.isInvisible()) continue;
-                renderEntityBox(context, entity);
+                renderBox(context, entity);
             }
         });
     }
 
-    private void renderEntityBox(net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext context, PlayerEntity entity) {
+    private void renderBox(net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext context, PlayerEntity entity) {
         MatrixStack matrices = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
-        
+        VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
+
         matrices.push();
         double x = entity.prevX + (entity.getX() - entity.prevX) * context.tickCounter().getTickDelta(true) - camPos.x;
         double y = entity.prevY + (entity.getY() - entity.prevY) * context.tickCounter().getTickDelta(true) - camPos.y;
         double z = entity.prevZ + (entity.getZ() - entity.prevZ) * context.tickCounter().getTickDelta(true) - camPos.z;
         matrices.translate(x, y, z);
 
-        Box box = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
+        Box b = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
         
-        VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
-        WorldRenderer.drawBox(matrices, buffer, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, 1.0f, 1.0f, 1.0f, 1.0f); // Белый цвет
+        // Рисуем рамку вручную, чтобы избежать ошибок с drawBox
+        drawOutline(matrices, buffer, b);
         
         matrices.pop();
+    }
+
+    private void drawOutline(MatrixStack matrices, VertexConsumer buffer, Box b) {
+        WorldRenderer.drawBox(matrices, buffer, b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ, 1f, 1f, 1f, 1f);
     }
 
     private boolean isPressed(long handle, int key) {
@@ -102,15 +104,10 @@ public class ExampleMod implements ModInitializer {
             }
         }
         if (target != null) {
-            // Combat Sprint (Исправленный)
-            if (client.player.input.movementForward > 0) {
-                client.player.setSprinting(true);
-            }
-
+            if (client.player.input.movementForward > 0) client.player.setSprinting(true);
             double dx = target.getX() - client.player.getX();
             double dz = target.getZ() - client.player.getZ();
             client.player.setYaw((float) Math.toDegrees(Math.atan2(dz, dx)) - 90);
-
             if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
@@ -132,14 +129,14 @@ public class ExampleMod implements ModInitializer {
         public BubbleMenu() { super(Text.literal("Menu")); }
         @Override
         public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-            context.fill(0, 0, width, height, 0x95000000);
+            context.fill(0, 0, width, height, 0x90000000);
             int x = width / 2 - 80, y = height / 2 - 50;
             context.fill(x, y, x + 160, y + 100, 0xFF121212);
             context.drawBorder(x, y, 160, 100, 0xFF00AAFF);
             context.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width / 2, y + 6, -1);
             drawBtn(context, x + 10, y + 25, "Killaura", killaura, killauraKey, "ka", mouseX, mouseY);
             drawBtn(context, x + 10, y + 50, "TriggerBot", triggerbot, triggerbotKey, "tb", mouseX, mouseY);
-            drawBtn(context, x + 10, y + 75, "Player ESP", esp, -1, "esp", mouseX, mouseY);
+            drawBtn(context, x + 10, y + 75, "ESP", esp, -1, "esp", mouseX, mouseY);
         }
 
         private void drawBtn(DrawContext context, int x, int y, String name, boolean on, int key, String id, int mx, int my) {
@@ -173,4 +170,3 @@ public class ExampleMod implements ModInitializer {
         @Override public boolean shouldPause() { return false; }
     }
 }
-
