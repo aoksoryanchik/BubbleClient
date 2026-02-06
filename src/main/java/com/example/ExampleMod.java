@@ -147,7 +147,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // ИСПРАВЛЕНО: Заменен WorldRenderEvents.Context на WorldRenderContext
     private void renderWaypoint(WorldRenderContext context) {
         if (!waypointActive) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -224,15 +223,22 @@ public class ExampleMod implements ModInitializer {
     public static class ConfigScreen extends Screen {
         private final Screen p; private final String t; private TextFieldWidget f1, f2, f3;
         public ConfigScreen(Screen p, String t) { super(Text.literal("")); this.p = p; this.t = t; }
+        
         @Override
         protected void init() {
             f1 = new TextFieldWidget(textRenderer, width/2-50, height/2-45, 100, 16, Text.literal(""));
             f2 = new TextFieldWidget(textRenderer, width/2-50, height/2-20, 100, 16, Text.literal(""));
             f3 = new TextFieldWidget(textRenderer, width/2-50, height/2+5, 100, 16, Text.literal(""));
+            
             if(t.equals("KA")){ f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange)); f3.setText(String.valueOf(shakeIntensity)); }
             if(t.equals("WP")){ f1.setText(String.valueOf(wpX)); f2.setText(String.valueOf(wpY)); f3.setText(String.valueOf(wpZ)); }
-            addSelectableChild(f1); addSelectableChild(f2); addSelectableChild(f3);
+            
+            // ИСПРАВЛЕНИЕ: Добавляем поля в список дочерних элементов, чтобы на них можно было нажать
+            this.addDrawableChild(f1);
+            this.addDrawableChild(f2);
+            this.addDrawableChild(f3);
         }
+
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xF0000000);
@@ -242,27 +248,29 @@ public class ExampleMod implements ModInitializer {
                 ctx.drawTextWithShadow(textRenderer, "Walls:", width/2-95, height/2-16, -1);
                 ctx.drawTextWithShadow(textRenderer, "Shake:", width/2-95, height/2+9, -1);
             }
-            f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
+            // Поля рендерятся автоматически через addDrawableChild
             if(t.equals("KA")) {
                 renderCheck(ctx, "AutoRun", autoRun, height/2+30, mx, my);
                 renderCheck(ctx, "AntiVelocity", antiVelocity, height/2+50, mx, my);
                 renderCheck(ctx, "ScreenShake", screenShake, height/2+70, mx, my);
             }
         }
+
         private void renderCheck(DrawContext ctx, String n, boolean s, int y, int mx, int my) {
             boolean h = mx>=width/2-60 && mx<=width/2+60 && my>=y && my<=y+14;
             ctx.drawTextWithShadow(textRenderer, n + ": " + (s?"§aON":"§cOFF"), width/2-55, y, h ? -1 : 0xFFCCCCCC);
         }
+
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             if(t.equals("KA") && mx>=width/2-60 && mx<=width/2+60) {
                 if(my>=height/2+30 && my<=height/2+44) autoRun=!autoRun;
                 if(my>=height/2+50 && my<=height/2+64) antiVelocity=!antiVelocity;
                 if(my>=height/2+70 && my<=height/2+84) screenShake=!screenShake;
-                return true;
             }
             return super.mouseClicked(mx, my, b);
         }
+
         @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k==GLFW.GLFW_KEY_ESCAPE) {
@@ -270,7 +278,9 @@ public class ExampleMod implements ModInitializer {
                     if(t.equals("KA")){ kaRange=Double.parseDouble(f1.getText()); kaWallsRange=Double.parseDouble(f2.getText()); shakeIntensity=Float.parseFloat(f3.getText()); }
                     if(t.equals("WP")){ wpX=Double.parseDouble(f1.getText()); wpY=Double.parseDouble(f2.getText()); wpZ=Double.parseDouble(f3.getText()); }
                 } catch(Exception ignored){}
-                saveConfig(); client.setScreen(p); return true;
+                saveConfig(); 
+                client.setScreen(p); 
+                return true;
             }
             return super.keyPressed(k, s, m);
         }
@@ -305,4 +315,3 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
-
