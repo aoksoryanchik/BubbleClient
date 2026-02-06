@@ -21,28 +21,22 @@ import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
-import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, noFire = true, viewModelActive = true, autoRun = false;
     public static boolean antiVelocity = true, screenShake = true;
 
-    // Параметры
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
     public static float handX = 0.0f, handY = 0.0f, handZ = 0.0f;
     
-    // Бинды
-    public static int keyMenu = GLFW.GLFW_KEY_0;
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
     public static int keyAT = GLFW.GLFW_KEY_UNKNOWN, keyNF = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN, keyVM = GLFW.GLFW_KEY_UNKNOWN;
 
@@ -53,17 +47,22 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
-
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            handleBinds(h, client);
+            if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
+            if (isPressed(h, keyKA)) killaura = !killaura;
+            if (isPressed(h, keyTB)) triggerbot = !triggerbot;
+            if (isPressed(h, keyFB)) fullbright = !fullbright;
 
-            if (noFire) { client.player.setFireTicks(0); if (client.player.isOnFire()) client.player.extinguish(); }
+            // Исправленный NoFire
+            if (noFire) {
+                client.player.setFireTicks(0);
+                if (client.player.isOnFire()) client.player.extinguish();
+            }
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
 
-            // Auto-Totem
             if (autoTotem && client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
                 for (int i = 0; i < 45; i++) {
                     if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
@@ -73,17 +72,14 @@ public class ExampleMod implements ModInitializer {
                 }
             }
 
-            // Anti-Velocity
             if (antiVelocity && client.player.hurtTime > 0) {
                 client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
             }
 
-            // KillAura с рандомным КД
             if (killaura) {
                 runKillaura(client);
                 if (autoRun) client.options.sprintKey.setPressed(true);
             }
-
             if (triggerbot && !killaura) runTriggerbot(client);
         });
 
@@ -93,32 +89,17 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void handleBinds(long h, MinecraftClient client) {
-        if (isPressed(h, keyMenu) && client.currentScreen == null) client.setScreen(new BubbleMenu());
-        if (isPressed(h, keyKA)) killaura = !killaura;
-        if (isPressed(h, keyTB)) triggerbot = !triggerbot;
-        if (isPressed(h, keyFB)) fullbright = !fullbright;
-    }
-
     private void runKillaura(MinecraftClient client) {
         for (PlayerEntity target : client.world.getPlayers()) {
             if (target == client.player || !target.isAlive() || target.isInvisible()) continue;
-
-            double dist = client.player.distanceTo(target);
-            double limit = client.player.canSee(target) ? kaRange : kaWallsRange;
-
-            if (dist <= limit) {
-                // РАНДОМНЫЙ КД: 0.95 - 1.05 для обхода и критов
-                float randomCooldown = 0.95f + (random.nextFloat() * 0.1f);
-                
-                if (client.player.getAttackCooldownProgress(0.5f) >= randomCooldown) {
-                    
-                    // Screen Shake (Микро-дрожание камеры)
+            double d = client.player.distanceTo(target);
+            if (d <= (client.player.canSee(target) ? kaRange : kaWallsRange)) {
+                // Тот самый рандомный КД
+                if (client.player.getAttackCooldownProgress(0.5f) >= (0.95f + random.nextFloat() * 0.1f)) {
                     if (screenShake) {
                         client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * 0.35f);
                         client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * 0.35f);
                     }
-
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                     break;
@@ -136,23 +117,23 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // Исправленный вызов Context
     private void renderWaypoint(WorldRenderEvents.Context context) {
         if (!waypointActive) return;
         MinecraftClient client = MinecraftClient.getInstance();
-        double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
+        double d = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
         MatrixStack ms = context.matrixStack();
         ms.push();
         ms.translate(wpX - context.camera().getPos().x, (wpY - context.camera().getPos().y) + 1.5, wpZ - context.camera().getPos().z);
         ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
         ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
-        float s = (float) Math.max(0.02, dist * 0.012);
+        float s = (float) Math.max(0.02, d * 0.012);
         ms.scale(-s, -s, s);
         VertexConsumerProvider vcp = context.consumers();
         if (vcp != null) client.textRenderer.draw("§b[!] TARGET", -client.textRenderer.getWidth("[!] TARGET")/2f, 0, -1, false, ms.peek().getPositionMatrix(), vcp, net.minecraft.client.font.TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
         ms.pop();
     }
 
-    // --- ИНТЕРФЕЙС ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -161,17 +142,15 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(x, y, x+180, y+210, 0xFF0A0A0A);
             ctx.drawBorder(x, y, 180, 210, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width/2, y+10, -1);
-            
-            String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "NoFire", "Waypoint", "Hands Mod"};
-            boolean[] states = {killaura, triggerbot, fullbright, autoTotem, noFire, waypointActive, viewModelActive};
-            int[] keys = {keyKA, keyTB, keyFB, keyAT, keyNF, keyWP, keyVM};
-
+            String[] n = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "NoFire", "Waypoint", "Hands Mod"};
+            boolean[] s = {killaura, triggerbot, fullbright, autoTotem, noFire, waypointActive, viewModelActive};
+            int[] k = {keyKA, keyTB, keyFB, keyAT, keyNF, keyWP, keyVM};
             for(int i=0; i<7; i++) {
                 int iy = y+35+i*22;
                 boolean h = mx>=x+10 && mx<=x+170 && my>=iy && my<=iy+18;
                 ctx.fill(x+10, iy, x+170, iy+18, h ? 0xFF1A1A1A : 0xFF121212);
-                String kN = keys[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(keys[i], 0);
-                ctx.drawTextWithShadow(textRenderer, names[i] + " §7[" + (kN==null?"?":kN.toUpperCase()) + "]", x+15, iy+5, states[i] ? 0xFF00FF00 : 0xFFFF3333);
+                String kN = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(k[i], 0);
+                ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + (kN==null?"?":kN.toUpperCase()) + "]", x+15, iy+5, s[i] ? 0xFF00FF00 : 0xFFFF3333);
                 if(i==0 || i==5 || i==6) ctx.drawTextWithShadow(textRenderer, "⚙", x+155, iy+5, -1);
             }
         }
@@ -276,7 +255,7 @@ public class ExampleMod implements ModInitializer {
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange+":"+kaWallsRange+":"+wpX+":"+wpY+":"+wpZ+":"+handX+":"+handY+":"+handZ+":"+autoRun+":"+keyKA+":"+keyTB+":"+keyFB+":"+keyAT+":"+keyNF+":"+keyWP+":"+keyVM+":"+antiVelocity+":"+screenShake);
-        } catch (Exception e) {}
+        } catch (Exception ignored) {}
     }
 
     private void loadConfig() {
@@ -292,6 +271,6 @@ public class ExampleMod implements ModInitializer {
                 keyAT=Integer.parseInt(p[12]); keyNF=Integer.parseInt(p[13]); keyWP=Integer.parseInt(p[14]); keyVM=Integer.parseInt(p[15]);
                 antiVelocity=Boolean.parseBoolean(p[16]); screenShake=Boolean.parseBoolean(p[17]);
             }
-        } catch (Exception e) {}
+        } catch (Exception ignored) {}
     }
 }
