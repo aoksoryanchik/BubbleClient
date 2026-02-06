@@ -73,13 +73,15 @@ public class ExampleMod implements ModInitializer {
             double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
 
             matrices.push();
-            matrices.translate(wpX - camPos.x, (wpY - camPos.y) + 1.5, wpZ - camPos.z);
+            // Смещение метки
+            matrices.translate(wpX - camPos.x, (wpY - camPos.y) + 1.2, wpZ - camPos.z);
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
             
-            float scale = (float) (dist * 0.015);
-            if (scale < 0.02f) scale = 0.02f;
-            if (scale > 0.4f) scale = 0.4f;
+            // Настройка размера (сделал меньше)
+            float scale = (float) (dist * 0.008); // Было 0.015
+            if (scale < 0.01f) scale = 0.01f;
+            if (scale > 0.15f) scale = 0.15f; // Максимальный размер стал значительно меньше
             matrices.scale(-scale, -scale, scale);
 
             VertexConsumerProvider consumers = context.consumers();
@@ -88,6 +90,7 @@ public class ExampleMod implements ModInitializer {
                 String t1 = "§b[!] ИВЕНТ §f(" + (int)dist + "m)";
                 String t2 = "§7" + (int)wpX + " " + (int)wpY + " " + (int)wpZ;
                 
+                // Отрисовка текста (SEE_THROUGH позволяет видеть через блоки)
                 client.textRenderer.draw(t1, -client.textRenderer.getWidth(t1)/2f, 0, -1, true, posMat, consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
                 client.textRenderer.draw(t2, -client.textRenderer.getWidth(t2)/2f, 10, -1, true, posMat, consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
             }
@@ -266,7 +269,8 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2 - 60, y = height/2 - 60;
-            if (mx >= x-80 && mx <= x-15 && my >= y+40 && my <= y+56) {
+            int px = x - 90;
+            if (mx >= px+10 && mx <= px+75 && my >= y+40 && my <= y+56) {
                 kaRange = 3.8; kaWallsRange = 3.0; kaAutoRun = true;
                 rF.setText("3.8"); wF.setText("3.0"); saveConfig(); return true;
             }
@@ -312,3 +316,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
