@@ -97,7 +97,7 @@ public class ExampleMod implements ModInitializer {
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
             updateRotations(client.player, targetPos);
             boolean canAttack = eliteLogic ? isLookingAtEntity(client.player, target, kaRange) : true;
-            float threshold = eliteLogic ? (0.91f + random.nextFloat() * 0.08f) : 0.92f;
+            float threshold = eliteLogic ? (0.91f + random.nextFloat() * 0.08f) : 0.85f;
             
             if (canAttack && client.player.getAttackCooldownProgress(0) >= threshold) {
                 if (screenShake) client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
@@ -118,12 +118,12 @@ public class ExampleMod implements ModInitializer {
 
     private void updateRotations(PlayerEntity player, Vec3d target) {
         Vec3d diff = target.subtract(player.getEyePos());
-        double diffXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
+        double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
-        float speed = eliteLogic ? 0.45f : 1.0f;
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(tYaw - player.getYaw()) * speed);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(tPitch - player.getPitch()) * speed);
+        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
+        float s = eliteLogic ? 0.45f : 1.0f;
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(tYaw - player.getYaw()) * s);
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(tPitch - player.getPitch()) * s);
     }
 
     private void sendNotify(String module, boolean state) {
@@ -192,90 +192,87 @@ public class ExampleMod implements ModInitializer {
     }
 
     public static class ConfigScreen extends Screen {
-        private final Screen p; private final String t; private TextFieldWidget f1, f2, f3;
-        public ConfigScreen(Screen p, String t) { super(Text.literal("")); this.p = p; this.t = t; }
+        private final Screen p; private final String mode; private TextFieldWidget f1, f2, f3;
+        public ConfigScreen(Screen p, String mode) { super(Text.literal("")); this.p = p; this.mode = mode; }
         @Override
         protected void init() {
-            int x = width/2 + 10;
-            f1 = new TextFieldWidget(textRenderer, x, height/2-45, 60, 16, Text.literal(""));
-            f2 = new TextFieldWidget(textRenderer, x, height/2-20, 60, 16, Text.literal(""));
-            f3 = new TextFieldWidget(textRenderer, x, height/2+5, 60, 16, Text.literal(""));
-            if(t.equals("KA")){ f1.setText(String.format("%.1f", kaRange)); f2.setText(String.format("%.1f", kaWallsRange)); f3.setText(String.format("%.2f", shakeIntensity)); }
-            if(t.equals("WP")){ f1.setText(String.valueOf(wpX)); f2.setText(String.valueOf(wpY)); f3.setText(String.valueOf(wpZ)); }
-            this.addDrawableChild(f1); this.addDrawableChild(f2); this.addDrawableChild(f3);
+            int x = width/2 + 20;
+            f1 = new TextFieldWidget(textRenderer, x, height/2-45, 50, 16, Text.literal(""));
+            f2 = new TextFieldWidget(textRenderer, x, height/2-20, 50, 16, Text.literal(""));
+            f3 = new TextFieldWidget(textRenderer, x, height/2+5, 50, 16, Text.literal(""));
+            if(mode.equals("KA")){ f1.setText(String.format("%.1f", kaRange)); f2.setText(String.format("%.1f", kaWallsRange)); f3.setText(String.format("%.2f", shakeIntensity)); }
+            else { f1.setText(String.valueOf((int)wpX)); f2.setText(String.valueOf((int)wpY)); f3.setText(String.valueOf((int)wpZ)); }
+            addDrawableChild(f1); addDrawableChild(f2); addDrawableChild(f3);
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xF0000000);
+            renderBackground(ctx, mx, my, d);
             int x = width/2; int y = height/2;
-            ctx.fill(x-110, y-85, x+110, y+85, 0xFF0A0A0A);
-            ctx.drawBorder(x-110, y-85, 220, 170, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "НАСТРОЙКИ: " + t, x, y-75, 0xFF00AAFF);
+            ctx.fill(x-115, y-90, x+115, y+90, 0xFF0A0A0A);
+            ctx.drawBorder(x-115, y-90, 230, 180, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "НАСТРОЙКИ: " + (mode.equals("KA") ? "KILL AURA" : "WAYPOINT"), x, y-80, 0xFF00AAFF);
 
-            if(t.equals("KA")) {
-                int color = (kaRange > 3.8 || shakeIntensity > 0.5) ? 0xFFFF0000 : (kaRange > 3.3 || !eliteLogic ? 0xFFFFFF00 : 0xFF00FF00);
-                ctx.fill(x+95, y-80, x+105, y-70, color);
-                
-                ctx.drawTextWithShadow(textRenderer, "Дистанция:", x-100, y-41, -1);
-                ctx.drawTextWithShadow(textRenderer, "Стены:", x-100, y-16, -1);
-                ctx.drawTextWithShadow(textRenderer, "Тряска:", x-100, y+9, -1);
-                
-                // Рендер стрелочек
-                renderArrow(ctx, x+75, y-45, ">", mx, my); renderArrow(ctx, x-10, y-45, "<", mx, my);
-                renderArrow(ctx, x+75, y-20, ">", mx, my); renderArrow(ctx, x-10, y-20, "<", mx, my);
-                renderArrow(ctx, x+75, y+5, ">", mx, my); renderArrow(ctx, x-10, y+5, "<", mx, my);
+            if(mode.equals("KA")) {
+                int c = (kaRange > 3.8 || shakeIntensity > 0.4) ? 0xFFFF0000 : (kaRange > 3.3 || !eliteLogic ? 0xFFFFFF00 : 0xFF00FF00);
+                ctx.fill(x+100, y-85, x+110, y-75, c);
+                ctx.drawTextWithShadow(textRenderer, "Дистанция:", x-105, y-41, -1);
+                ctx.drawTextWithShadow(textRenderer, "Стены:", x-105, y-16, -1);
+                ctx.drawTextWithShadow(textRenderer, "Тряска:", x-105, y+9, -1);
+                drawArrows(ctx, x, y, mx, my);
+                drawCheck(ctx, "Авто-Бег", autoRun, y+35, mx, my);
+                drawCheck(ctx, "Анти-Отдача", antiVelocity, y+50, mx, my);
+                drawCheck(ctx, "Elite Mode", eliteLogic, y+65, mx, my);
 
-                renderCheck(ctx, "Авто-Бег", autoRun, y+35, mx, my);
-                renderCheck(ctx, "Анти-Отдача", antiVelocity, y+50, mx, my);
-                renderCheck(ctx, "Elite Mode", eliteLogic, y+65, mx, my);
-
-                int cx = x-225;
-                ctx.fill(cx, y-85, cx+110, y+85, 0xFF0A0A0A);
-                ctx.drawBorder(cx, y-85, 110, 170, 0xFF00AAFF);
-                ctx.drawCenteredTextWithShadow(textRenderer, "§bКОНФИГИ", cx+55, y-75, -1);
-                boolean hA = mx >= cx+10 && mx <= cx+100 && my >= y-40 && my <= y-20;
-                ctx.fill(cx+10, y-40, cx+100, y-20, hA ? 0xFF222222 : 0xFF111111);
+                int cx = x-230;
+                ctx.fill(cx, y-90, cx+110, y+90, 0xFF0A0A0A);
+                ctx.drawBorder(cx, y-90, 110, 180, 0xFF00AAFF);
+                ctx.drawCenteredTextWithShadow(textRenderer, "§bКОНФИГИ", cx+55, y-80, -1);
+                boolean h = mx >= cx+10 && mx <= cx+100 && my >= y-40 && my <= y-20;
+                ctx.fill(cx+10, y-40, cx+100, y-20, h ? 0xFF222222 : 0xFF111111);
                 ctx.drawCenteredTextWithShadow(textRenderer, "AresMine", cx+55, y-35, -1);
                 ctx.drawCenteredTextWithShadow(textRenderer, "§7[ПОСТАВИТЬ]", cx+55, y-15, 0xFFAAAAAA);
+            } else {
+                ctx.drawTextWithShadow(textRenderer, "Координата X:", x-105, y-41, -1);
+                ctx.drawTextWithShadow(textRenderer, "Координата Y:", x-105, y-16, -1);
+                ctx.drawTextWithShadow(textRenderer, "Координата Z:", x-105, y+9, -1);
             }
             super.render(ctx, mx, my, d);
         }
-        private void renderArrow(DrawContext ctx, int x, int y, String t, int mx, int my) {
+        private void drawArrows(DrawContext ctx, int x, int y, int mx, int my) {
+            int[] ys = {-45, -20, 5};
+            for(int i=0; i<3; i++) {
+                drawA(ctx, x+75, y+ys[i], ">", mx, my); drawA(ctx, x, y+ys[i], "<", mx, my);
+            }
+        }
+        private void drawA(DrawContext ctx, int x, int y, String t, int mx, int my) {
             boolean h = mx >= x && mx <= x+12 && my >= y && my <= y+16;
             ctx.fill(x, y, x+12, y+16, h ? 0xFF333333 : 0xFF111111);
             ctx.drawTextWithShadow(textRenderer, t, x+3, y+4, h ? 0xFF00AAFF : -1);
         }
-        private void renderCheck(DrawContext ctx, String n, boolean s, int y, int mx, int my) {
+        private void drawCheck(DrawContext ctx, String n, boolean s, int y, int mx, int my) {
             boolean h = mx>=width/2-60 && mx<=width/2+60 && my>=y && my<=y+12;
             ctx.drawCenteredTextWithShadow(textRenderer, n + ": " + (s?"§aВКЛ":"§cВЫКЛ"), width/2, y, h ? -1 : 0xFFCCCCCC);
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2; int y = height/2;
-            if(t.equals("KA")) {
-                // Клик по стрелочкам
+            if(mode.equals("KA")) {
                 if(my>=y-45 && my<=y-29) { 
-                    if(mx>=x+75 && mx<=x+87) { kaRange += 0.1; f1.setText(String.format("%.1f", kaRange)); }
-                    if(mx>=x-10 && mx<=x+2) { kaRange -= 0.1; f1.setText(String.format("%.1f", kaRange)); }
+                    if(mx>=x+75 && mx<=x+87) kaRange+=0.1; if(mx>=x && mx<=x+12) kaRange-=0.1; f1.setText(String.format("%.1f", kaRange));
                 }
                 if(my>=y-20 && my<=y-4) {
-                    if(mx>=x+75 && mx<=x+87) { kaWallsRange += 0.1; f2.setText(String.format("%.1f", kaWallsRange)); }
-                    if(mx>=x-10 && mx<=x+2) { kaWallsRange -= 0.1; f2.setText(String.format("%.1f", kaWallsRange)); }
+                    if(mx>=x+75 && mx<=x+87) kaWallsRange+=0.1; if(mx>=x && mx<=x+12) kaWallsRange-=0.1; f2.setText(String.format("%.1f", kaWallsRange));
                 }
                 if(my>=y+5 && my<=y+21) {
-                    if(mx>=x+75 && mx<=x+87) { shakeIntensity += 0.01; f3.setText(String.format("%.2f", shakeIntensity)); }
-                    if(mx>=x-10 && mx<=x+2) { shakeIntensity -= 0.01; f3.setText(String.format("%.2f", shakeIntensity)); }
+                    if(mx>=x+75 && mx<=x+87) shakeIntensity+=0.01; if(mx>=x && mx<=x+12) shakeIntensity-=0.01; f3.setText(String.format("%.2f", shakeIntensity));
                 }
-                // Клик по конфигам и чекбоксам
                 if(mx>=x-60 && mx<=x+60) {
-                    if(my>=y+35 && my<=y+47) autoRun=!autoRun;
-                    if(my>=y+50 && my<=y+62) antiVelocity=!antiVelocity;
-                    if(my>=y+65 && my<=y+77) eliteLogic=!eliteLogic;
+                    if(my>=y+35 && my<=y+47) autoRun=!autoRun; if(my>=y+50 && my<=y+62) antiVelocity=!antiVelocity; if(my>=y+65 && my<=y+77) eliteLogic=!eliteLogic;
                 }
-                int cx = x-225;
+                int cx = x-230;
                 if(mx >= cx+10 && mx <= cx+100 && my >= y-40 && my <= y-20) {
                     kaRange = 4.5; kaWallsRange = 3.5; shakeIntensity = 0.15f; eliteLogic = false; autoRun = true;
-                    f1.setText("4.5"); f2.setText("3.5"); f3.setText("0.15"); saveConfig();
+                    f1.setText("4.5"); f2.setText("3.5"); f3.setText("0.15");
                 }
             }
             return super.mouseClicked(mx, my, b);
@@ -284,9 +281,11 @@ public class ExampleMod implements ModInitializer {
         public boolean keyPressed(int k, int s, int m) {
             if(k==GLFW.GLFW_KEY_ESCAPE) {
                 try {
-                    kaRange=Double.parseDouble(f1.getText().replace(",", "."));
-                    kaWallsRange=Double.parseDouble(f2.getText().replace(",", "."));
-                    shakeIntensity=Float.parseFloat(f3.getText().replace(",", "."));
+                    if(mode.equals("KA")) {
+                        kaRange=Double.parseDouble(f1.getText().replace(",", ".")); kaWallsRange=Double.parseDouble(f2.getText().replace(",", ".")); shakeIntensity=Float.parseFloat(f3.getText().replace(",", "."));
+                    } else {
+                        wpX=Double.parseDouble(f1.getText()); wpY=Double.parseDouble(f2.getText()); wpZ=Double.parseDouble(f3.getText());
+                    }
                 } catch(Exception ignored){}
                 saveConfig(); client.setScreen(p); return true;
             }
