@@ -91,10 +91,10 @@ public class ExampleMod implements ModInitializer {
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
             client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()));
             client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()));
+            
             EntityHitResult hit = raycastEntity(client, kaRange);
             if (hit != null && hit.getEntity() == target) {
-                float cd = 0.92f + random.nextFloat() * 0.16f;
-                if (client.player.getAttackCooldownProgress(0) >= cd) {
+                if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -106,7 +106,7 @@ public class ExampleMod implements ModInitializer {
         Vec3d eye = client.player.getEyePos();
         Vec3d look = client.player.getRotationVec(1.0F).multiply(range);
         Box box = client.player.getBoundingBox().expand(look.x, look.y, look.z).expand(1.0);
-        return ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e instanceof PlayerEntity && e.isAlive(), range * range);
+        return ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e instanceof PlayerEntity && e.isAlive() && !e.isSpectator(), range * range);
     }
 
     private void renderWaypointArrow(DrawContext ctx, RenderTickCounter tick) {
@@ -140,8 +140,9 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient client) {
         EntityHitResult hit = raycastEntity(client, kaRange);
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
-            boolean canCrit = !tbCrits || (client.player.fallDistance > 0 && !client.player.isOnGround());
-            if (client.player.getAttackCooldownProgress(0) >= 0.95f && canCrit) {
+            // Исправленная проверка условий атаки
+            boolean critCondition = !tbCrits || (client.player.fallDistance > 0.05f && !client.player.isOnGround() && !client.player.isClimbing());
+            if (client.player.getAttackCooldownProgress(0) >= 0.95f && critCondition) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -207,8 +208,26 @@ public class ExampleMod implements ModInitializer {
 
     public static class KillAuraSettings extends Screen {
         private final Screen parent; 
+        private TextFieldWidget rF, wF, sF;
+
         public KillAuraSettings(Screen p) { super(Text.literal("")); this.parent = p; }
         
+        @Override
+        protected void init() {
+            int x = width/2, y = height/2;
+            // Поля ввода теперь поверх цифр для ручного редактирования
+            rF = new TextFieldWidget(textRenderer, x+62, y-44, 28, 12, Text.literal(""));
+            wF = new TextFieldWidget(textRenderer, x+62, y-21, 28, 12, Text.literal(""));
+            sF = new TextFieldWidget(textRenderer, x+62, y+2, 28, 12, Text.literal(""));
+            
+            rF.setText(String.format("%.1f", kaRange));
+            wF.setText(String.format("%.1f", kaWallsRange));
+            sF.setText(String.format("%.1f", shakeIntensity));
+            
+            rF.setDrawsBackground(false); wF.setDrawsBackground(false); sF.setDrawsBackground(false);
+            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(sF);
+        }
+
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xEE000000);
@@ -217,10 +236,9 @@ public class ExampleMod implements ModInitializer {
             ctx.drawBorder(x-115, y-95, 230, 205, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lKILL AURA SETTINGS", x, y-85, -1);
             
-            // ОТРИСОВКА С ЦИФРАМИ
-            drawNumRow(ctx, "Range:", x-105, y-41, x+50, y-41, kaRange, mx, my);
-            drawNumRow(ctx, "WallsRange:", x-105, y-18, x+50, y-18, kaWallsRange, mx, my);
-            drawNumRow(ctx, "Shake:", x-105, y+5, x+50, y+5, shakeIntensity, mx, my);
+            drawControlRow(ctx, "Range:", x-105, y-41, x+50, y-41, mx, my);
+            drawControlRow(ctx, "WallsRange:", x-105, y-18, x+50, y-18, mx, my);
+            drawControlRow(ctx, "Shake:", x-105, y+5, x+50, y+5, mx, my);
             
             drawStatus(ctx, "Auto-run:", x-105, y+35, autoRun, mx, my);
             drawStatus(ctx, "AntiVelocity:", x-105, y+55, antiVelocity, mx, my);
@@ -231,12 +249,13 @@ public class ExampleMod implements ModInitializer {
             ctx.drawCenteredTextWithShadow(textRenderer, "§bCONFIGS", cx+60, y-85, -1);
             drawBtn(ctx, "MineBlaze", cx+10, y-50, mx, my);
             drawBtn(ctx, "AresMine", cx+10, y-25, mx, my);
+            
+            super.render(ctx, mx, my, d);
         }
 
-        private void drawNumRow(DrawContext ctx, String s, int x, int y, int bx, int by, double val, int mx, int my) {
+        private void drawControlRow(DrawContext ctx, String s, int x, int y, int bx, int by, int mx, int my) {
             ctx.drawTextWithShadow(textRenderer, s, x, y, -1);
             ctx.drawTextWithShadow(textRenderer, "<", bx, by, mx>=bx && mx<=bx+10 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
-            ctx.drawTextWithShadow(textRenderer, String.format("%.1f", val), bx+15, by, -1);
             ctx.drawTextWithShadow(textRenderer, ">", bx+45, by, mx>=bx+45 && mx<=bx+55 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
         }
 
@@ -255,35 +274,53 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2, cx = x-240;
-            // Клики по стрелкам
+            // Клик по стрелочкам
             if(my>=y-41 && my<=y-31) {
-                if(mx>=x+50 && mx<=x+60) kaRange -= 0.1;
-                if(mx>=x+95 && mx<=x+105) kaRange += 0.1;
+                if(mx>=x+50 && mx<=x+60) { kaRange -= 0.1; rF.setText(String.format("%.1f", kaRange)); }
+                if(mx>=x+95 && mx<=x+105) { kaRange += 0.1; rF.setText(String.format("%.1f", kaRange)); }
             }
             if(my>=y-18 && my<=y-8) {
-                if(mx>=x+50 && mx<=x+60) kaWallsRange -= 0.1;
-                if(mx>=x+95 && mx<=x+105) kaWallsRange += 0.1;
+                if(mx>=x+50 && mx<=x+60) { kaWallsRange -= 0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
+                if(mx>=x+95 && mx<=x+105) { kaWallsRange += 0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
             }
             if(my>=y+5 && my<=y+15) {
-                if(mx>=x+50 && mx<=x+60) shakeIntensity -= 0.1f;
-                if(mx>=x+95 && mx<=x+105) shakeIntensity += 0.1f;
+                if(mx>=x+50 && mx<=x+60) { shakeIntensity -= 0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
+                if(mx>=x+95 && mx<=x+105) { shakeIntensity += 0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
             }
-            // Клики по ВКЛ/ВЫКЛ
+            // Клик по статусам
             if(mx>=x-105 && mx<=x+20) {
                 if(my>=y+35 && my<=y+45) autoRun = !autoRun;
                 if(my>=y+55 && my<=y+65) antiVelocity = !antiVelocity;
             }
             // Конфиги
             if(mx>=cx+10 && mx<=cx+110) {
-                if(my>=y-50 && my<=y-32) { kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; }
-                if(my>=y-25 && my<=y-7) { kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.6f; }
+                if(my>=y-50 && my<=y-32) { kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; updateFields(); }
+                if(my>=y-25 && my<=y-7) { kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.6f; updateFields(); }
             }
             saveConfig(); return super.mouseClicked(mx, my, b);
         }
+
+        private void updateFields() {
+            rF.setText(String.format("%.1f", kaRange));
+            wF.setText(String.format("%.1f", kaWallsRange));
+            sF.setText(String.format("%.1f", shakeIntensity));
+        }
+
         @Override
         public boolean keyPressed(int k, int s, int m) {
-            if(k == GLFW.GLFW_KEY_ESCAPE) { client.setScreen(parent); return true; }
+            if(k == GLFW.GLFW_KEY_ESCAPE || k == GLFW.GLFW_KEY_ENTER) {
+                applyInputs();
+                client.setScreen(parent);
+                return true;
+            }
             return super.keyPressed(k, s, m);
+        }
+
+        private void applyInputs() {
+            try { kaRange = Double.parseDouble(rF.getText().replace(",", ".")); } catch(Exception ignored){}
+            try { kaWallsRange = Double.parseDouble(wF.getText().replace(",", ".")); } catch(Exception ignored){}
+            try { shakeIntensity = Float.parseFloat(sF.getText().replace(",", ".")); } catch(Exception ignored){}
+            saveConfig();
         }
     }
 
@@ -318,7 +355,7 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public boolean keyPressed(int k, int s, int m) {
-            if(k == GLFW.GLFW_KEY_ESCAPE) {
+            if(k == GLFW.GLFW_KEY_ESCAPE || k == GLFW.GLFW_KEY_ENTER) {
                 try { wpX=Double.parseDouble(xF.getText()); wpY=Double.parseDouble(yF.getText()); wpZ=Double.parseDouble(zF.getText()); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(parent); return true;
             }
