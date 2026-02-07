@@ -140,7 +140,6 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient client) {
         EntityHitResult hit = raycastEntity(client, kaRange);
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
-            // Исправленная проверка условий атаки
             boolean critCondition = !tbCrits || (client.player.fallDistance > 0.05f && !client.player.isOnGround() && !client.player.isClimbing());
             if (client.player.getAttackCooldownProgress(0) >= 0.95f && critCondition) {
                 client.interactionManager.attackEntity(client.player, target);
@@ -214,28 +213,35 @@ public class ExampleMod implements ModInitializer {
         
         @Override
         protected void init() {
-            int x = width/2, y = height/2;
-            // Поля ввода теперь поверх цифр для ручного редактирования
-            rF = new TextFieldWidget(textRenderer, x+62, y-44, 28, 12, Text.literal(""));
-            wF = new TextFieldWidget(textRenderer, x+62, y-21, 28, 12, Text.literal(""));
-            sF = new TextFieldWidget(textRenderer, x+62, y+2, 28, 12, Text.literal(""));
+            int x = width / 2;
+            int y = height / 2;
+
+            // Центровка полей ввода между стрелочками (bx=x+50, bx+45=x+95 -> центр x+72.5)
+            // Поле шириной 30, значит x = 72.5 - 15 = 57.5 (округлим до 58)
+            rF = new TextFieldWidget(textRenderer, x + 58, y - 44, 30, 12, Text.literal(""));
+            wF = new TextFieldWidget(textRenderer, x + 58, y - 21, 30, 12, Text.literal(""));
+            sF = new TextFieldWidget(textRenderer, x + 58, y + 2, 30, 12, Text.literal(""));
             
-            rF.setText(String.format("%.1f", kaRange));
-            wF.setText(String.format("%.1f", kaWallsRange));
-            sF.setText(String.format("%.1f", shakeIntensity));
+            updateFields();
             
             rF.setDrawsBackground(false); wF.setDrawsBackground(false); sF.setDrawsBackground(false);
+            // Устанавливаем выравнивание текста по центру внутри виджета
+            rF.setMaxLength(5); wF.setMaxLength(5); sF.setMaxLength(5);
+
             addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(sF);
         }
 
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xEE000000);
+            // УБРАНО РАЗМЫТИЕ: Используем чистое заполнение
+            ctx.fill(0, 0, width, height, 0xCC000000); 
             int x = width/2, y = height/2;
+            
             ctx.fill(x-115, y-95, x+115, y+110, 0xFF0A0A0A);
             ctx.drawBorder(x-115, y-95, 230, 205, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lKILL AURA SETTINGS", x, y-85, -1);
             
+            // Отрисовка строк управления со стрелочками
             drawControlRow(ctx, "Range:", x-105, y-41, x+50, y-41, mx, my);
             drawControlRow(ctx, "WallsRange:", x-105, y-18, x+50, y-18, mx, my);
             drawControlRow(ctx, "Shake:", x-105, y+5, x+50, y+5, mx, my);
@@ -243,6 +249,7 @@ public class ExampleMod implements ModInitializer {
             drawStatus(ctx, "Auto-run:", x-105, y+35, autoRun, mx, my);
             drawStatus(ctx, "AntiVelocity:", x-105, y+55, antiVelocity, mx, my);
             
+            // Конфиги слева
             int cx = x-240;
             ctx.fill(cx, y-95, cx+120, y+90, 0xFF0A0A0A);
             ctx.drawBorder(cx, y-95, 120, 185, 0xFF00AAFF);
@@ -255,7 +262,9 @@ public class ExampleMod implements ModInitializer {
 
         private void drawControlRow(DrawContext ctx, String s, int x, int y, int bx, int by, int mx, int my) {
             ctx.drawTextWithShadow(textRenderer, s, x, y, -1);
+            // Левая стрелка
             ctx.drawTextWithShadow(textRenderer, "<", bx, by, mx>=bx && mx<=bx+10 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
+            // Правая стрелка
             ctx.drawTextWithShadow(textRenderer, ">", bx+45, by, mx>=bx+45 && mx<=bx+55 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
         }
 
@@ -274,20 +283,22 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2, cx = x-240;
-            // Клик по стрелочкам
+            // Клик по стрелочкам (Range)
             if(my>=y-41 && my<=y-31) {
-                if(mx>=x+50 && mx<=x+60) { kaRange -= 0.1; rF.setText(String.format("%.1f", kaRange)); }
-                if(mx>=x+95 && mx<=x+105) { kaRange += 0.1; rF.setText(String.format("%.1f", kaRange)); }
+                if(mx>=x+50 && mx<=x+60) { kaRange -= 0.1; updateFields(); }
+                if(mx>=x+95 && mx<=x+105) { kaRange += 0.1; updateFields(); }
             }
+            // WallsRange
             if(my>=y-18 && my<=y-8) {
-                if(mx>=x+50 && mx<=x+60) { kaWallsRange -= 0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
-                if(mx>=x+95 && mx<=x+105) { kaWallsRange += 0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
+                if(mx>=x+50 && mx<=x+60) { kaWallsRange -= 0.1; updateFields(); }
+                if(mx>=x+95 && mx<=x+105) { kaWallsRange += 0.1; updateFields(); }
             }
+            // Shake
             if(my>=y+5 && my<=y+15) {
-                if(mx>=x+50 && mx<=x+60) { shakeIntensity -= 0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
-                if(mx>=x+95 && mx<=x+105) { shakeIntensity += 0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
+                if(mx>=x+50 && mx<=x+60) { shakeIntensity -= 0.1f; updateFields(); }
+                if(mx>=x+95 && mx<=x+105) { shakeIntensity += 0.1f; updateFields(); }
             }
-            // Клик по статусам
+            // Статусы
             if(mx>=x-105 && mx<=x+20) {
                 if(my>=y+35 && my<=y+45) autoRun = !autoRun;
                 if(my>=y+55 && my<=y+65) antiVelocity = !antiVelocity;
@@ -301,9 +312,9 @@ public class ExampleMod implements ModInitializer {
         }
 
         private void updateFields() {
-            rF.setText(String.format("%.1f", kaRange));
-            wF.setText(String.format("%.1f", kaWallsRange));
-            sF.setText(String.format("%.1f", shakeIntensity));
+            rF.setText(String.format("%.1f", kaRange).replace(".", ","));
+            wF.setText(String.format("%.1f", kaWallsRange).replace(".", ","));
+            sF.setText(String.format("%.1f", shakeIntensity).replace(".", ","));
         }
 
         @Override
@@ -323,6 +334,8 @@ public class ExampleMod implements ModInitializer {
             saveConfig();
         }
     }
+
+    // --- Остальные окна (без изменений структуры) ---
 
     public static class TriggerSettings extends Screen {
         private final Screen parent; public TriggerSettings(Screen p) { super(Text.literal("")); this.parent = p; }
