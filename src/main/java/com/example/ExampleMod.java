@@ -6,7 +6,6 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
@@ -207,51 +206,30 @@ public class ExampleMod implements ModInitializer {
 
     public static class KillAuraSettings extends Screen {
         private final Screen parent; 
-        private TextFieldWidget rF, wF, sF;
-
         public KillAuraSettings(Screen p) { super(Text.literal("")); this.parent = p; }
-        
-        @Override
-        protected void init() {
-            int x = width / 2;
-            int y = height / 2;
-
-            // Центровка полей ввода между стрелочками (bx=x+50, bx+45=x+95 -> центр x+72.5)
-            // Поле шириной 30, значит x = 72.5 - 15 = 57.5 (округлим до 58)
-            rF = new TextFieldWidget(textRenderer, x + 58, y - 44, 30, 12, Text.literal(""));
-            wF = new TextFieldWidget(textRenderer, x + 58, y - 21, 30, 12, Text.literal(""));
-            sF = new TextFieldWidget(textRenderer, x + 58, y + 2, 30, 12, Text.literal(""));
-            
-            updateFields();
-            
-            rF.setDrawsBackground(false); wF.setDrawsBackground(false); sF.setDrawsBackground(false);
-            // Устанавливаем выравнивание текста по центру внутри виджета
-            rF.setMaxLength(5); wF.setMaxLength(5); sF.setMaxLength(5);
-
-            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(sF);
-        }
 
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            // УБРАНО РАЗМЫТИЕ: Используем чистое заполнение
-            ctx.fill(0, 0, width, height, 0xCC000000); 
+            // ФИКС РАЗМЫТИЯ: используем один четкий слой фона
+            ctx.fill(0, 0, width, height, 0x90000000); 
             int x = width/2, y = height/2;
             
-            ctx.fill(x-115, y-95, x+115, y+110, 0xFF0A0A0A);
+            // Основное окно
+            ctx.fill(x-115, y-95, x+115, y+110, 0xFF050505);
             ctx.drawBorder(x-115, y-95, 230, 205, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lKILL AURA SETTINGS", x, y-85, -1);
             
-            // Отрисовка строк управления со стрелочками
-            drawControlRow(ctx, "Range:", x-105, y-41, x+50, y-41, mx, my);
-            drawControlRow(ctx, "WallsRange:", x-105, y-18, x+50, y-18, mx, my);
-            drawControlRow(ctx, "Shake:", x-105, y+5, x+50, y+5, mx, my);
+            // Отрисовка параметров с РОВНЫМИ цифрами
+            drawSetting(ctx, "Range:", kaRange, x-105, y-41, x+50, mx, my);
+            drawSetting(ctx, "WallsRange:", kaWallsRange, x-105, y-18, x+50, mx, my);
+            drawSetting(ctx, "Shake:", (double)shakeIntensity, x-105, y+5, x+50, mx, my);
             
             drawStatus(ctx, "Auto-run:", x-105, y+35, autoRun, mx, my);
             drawStatus(ctx, "AntiVelocity:", x-105, y+55, antiVelocity, mx, my);
             
-            // Конфиги слева
+            // Конфиги
             int cx = x-240;
-            ctx.fill(cx, y-95, cx+120, y+90, 0xFF0A0A0A);
+            ctx.fill(cx, y-95, cx+120, y+90, 0xFF050505);
             ctx.drawBorder(cx, y-95, 120, 185, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bCONFIGS", cx+60, y-85, -1);
             drawBtn(ctx, "MineBlaze", cx+10, y-50, mx, my);
@@ -260,12 +238,26 @@ public class ExampleMod implements ModInitializer {
             super.render(ctx, mx, my, d);
         }
 
-        private void drawControlRow(DrawContext ctx, String s, int x, int y, int bx, int by, int mx, int my) {
-            ctx.drawTextWithShadow(textRenderer, s, x, y, -1);
-            // Левая стрелка
-            ctx.drawTextWithShadow(textRenderer, "<", bx, by, mx>=bx && mx<=bx+10 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
-            // Правая стрелка
-            ctx.drawTextWithShadow(textRenderer, ">", bx+45, by, mx>=bx+45 && mx<=bx+55 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
+        private void drawSetting(DrawContext ctx, String label, double val, int x, int y, int startX, int mx, int my) {
+            ctx.drawTextWithShadow(textRenderer, label, x, y, -1);
+            
+            // Координаты стрелок
+            int arrowLeftX = startX;
+            int arrowRightX = startX + 50;
+            
+            // Сами стрелки
+            boolean hL = mx >= arrowLeftX && mx <= arrowLeftX + 10 && my >= y && my <= y + 10;
+            boolean hR = mx >= arrowRightX && mx <= arrowRightX + 10 && my >= y && my <= y + 10;
+            
+            ctx.drawTextWithShadow(textRenderer, "<", arrowLeftX, y, hL ? 0xFF00AAFF : -1);
+            ctx.drawTextWithShadow(textRenderer, ">", arrowRightX, y, hR ? 0xFF00AAFF : -1);
+            
+            // РОВНЫЕ ЦИФРЫ ПО ЦЕНТРУ МЕЖДУ СТРЕЛКАМИ
+            String s = String.format("%.1f", val).replace(".", ",");
+            int textWidth = textRenderer.getWidth(s);
+            // Центр между стрелками: (arrowLeftX + 10 + arrowRightX) / 2
+            int centerX = (arrowLeftX + 8 + arrowRightX) / 2; 
+            ctx.drawTextWithShadow(textRenderer, s, centerX - (textWidth / 2), y, -1);
         }
 
         private void drawStatus(DrawContext ctx, String t, int x, int y, boolean s, int mx, int my) {
@@ -283,20 +275,22 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2, cx = x-240;
-            // Клик по стрелочкам (Range)
+            int bx = x+50;
+            
+            // Клик Range
             if(my>=y-41 && my<=y-31) {
-                if(mx>=x+50 && mx<=x+60) { kaRange -= 0.1; updateFields(); }
-                if(mx>=x+95 && mx<=x+105) { kaRange += 0.1; updateFields(); }
+                if(mx>=bx && mx<=bx+15) kaRange -= 0.1;
+                if(mx>=bx+45 && mx<=bx+60) kaRange += 0.1;
             }
-            // WallsRange
+            // Клик WallsRange
             if(my>=y-18 && my<=y-8) {
-                if(mx>=x+50 && mx<=x+60) { kaWallsRange -= 0.1; updateFields(); }
-                if(mx>=x+95 && mx<=x+105) { kaWallsRange += 0.1; updateFields(); }
+                if(mx>=bx && mx<=bx+15) kaWallsRange -= 0.1;
+                if(mx>=bx+45 && mx<=bx+60) kaWallsRange += 0.1;
             }
-            // Shake
+            // Клик Shake
             if(my>=y+5 && my<=y+15) {
-                if(mx>=x+50 && mx<=x+60) { shakeIntensity -= 0.1f; updateFields(); }
-                if(mx>=x+95 && mx<=x+105) { shakeIntensity += 0.1f; updateFields(); }
+                if(mx>=bx && mx<=bx+15) shakeIntensity -= 0.1f;
+                if(mx>=bx+45 && mx<=bx+60) shakeIntensity += 0.1f;
             }
             // Статусы
             if(mx>=x-105 && mx<=x+20) {
@@ -305,43 +299,25 @@ public class ExampleMod implements ModInitializer {
             }
             // Конфиги
             if(mx>=cx+10 && mx<=cx+110) {
-                if(my>=y-50 && my<=y-32) { kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; updateFields(); }
-                if(my>=y-25 && my<=y-7) { kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.6f; updateFields(); }
+                if(my>=y-50 && my<=y-32) { kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; }
+                if(my>=y-25 && my<=y-7) { kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.6f; }
             }
-            saveConfig(); return super.mouseClicked(mx, my, b);
-        }
-
-        private void updateFields() {
-            rF.setText(String.format("%.1f", kaRange).replace(".", ","));
-            wF.setText(String.format("%.1f", kaWallsRange).replace(".", ","));
-            sF.setText(String.format("%.1f", shakeIntensity).replace(".", ","));
+            saveConfig(); 
+            return super.mouseClicked(mx, my, b);
         }
 
         @Override
         public boolean keyPressed(int k, int s, int m) {
-            if(k == GLFW.GLFW_KEY_ESCAPE || k == GLFW.GLFW_KEY_ENTER) {
-                applyInputs();
-                client.setScreen(parent);
-                return true;
-            }
+            if(k == GLFW.GLFW_KEY_ESCAPE) { client.setScreen(parent); return true; }
             return super.keyPressed(k, s, m);
         }
-
-        private void applyInputs() {
-            try { kaRange = Double.parseDouble(rF.getText().replace(",", ".")); } catch(Exception ignored){}
-            try { kaWallsRange = Double.parseDouble(wF.getText().replace(",", ".")); } catch(Exception ignored){}
-            try { shakeIntensity = Float.parseFloat(sF.getText().replace(",", ".")); } catch(Exception ignored){}
-            saveConfig();
-        }
     }
-
-    // --- Остальные окна (без изменений структуры) ---
 
     public static class TriggerSettings extends Screen {
         private final Screen parent; public TriggerSettings(Screen p) { super(Text.literal("")); this.parent = p; }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xEE000000);
+            ctx.fill(0, 0, width, height, 0x90000000);
             ctx.drawCenteredTextWithShadow(textRenderer, "Only Crits: " + (tbCrits ? "§aВКЛ" : "§cВЫКЛ"), width/2, height/2, -1);
         }
         @Override
@@ -351,29 +327,16 @@ public class ExampleMod implements ModInitializer {
     }
 
     public static class WaypointSettings extends Screen {
-        private final Screen parent; private TextFieldWidget xF, yF, zF;
+        private final Screen parent; 
         public WaypointSettings(Screen p) { super(Text.literal("")); this.parent = p; }
         @Override
-        protected void init() {
-            xF = new TextFieldWidget(textRenderer, width/2-25, height/2-40, 50, 16, Text.literal(""));
-            yF = new TextFieldWidget(textRenderer, width/2-25, height/2-15, 50, 16, Text.literal(""));
-            zF = new TextFieldWidget(textRenderer, width/2-25, height/2 + 10, 50, 16, Text.literal(""));
-            xF.setText(String.valueOf((int)wpX)); yF.setText(String.valueOf((int)wpY)); zF.setText(String.valueOf((int)wpZ));
-            addDrawableChild(xF); addDrawableChild(yF); addDrawableChild(zF);
-        }
-        @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xEE000000);
-            xF.render(ctx, mx, my, d); yF.render(ctx, mx, my, d); zF.render(ctx, mx, my, d);
+            ctx.fill(0, 0, width, height, 0x90000000);
+            ctx.drawCenteredTextWithShadow(textRenderer, "X: " + (int)wpX + " Y: " + (int)wpY + " Z: " + (int)wpZ, width/2, height/2, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§7(Используй чат .wp для смены)", width/2, height/2 + 20, -1);
         }
         @Override
-        public boolean keyPressed(int k, int s, int m) {
-            if(k == GLFW.GLFW_KEY_ESCAPE || k == GLFW.GLFW_KEY_ENTER) {
-                try { wpX=Double.parseDouble(xF.getText()); wpY=Double.parseDouble(yF.getText()); wpZ=Double.parseDouble(zF.getText()); } catch(Exception ignored){}
-                saveConfig(); client.setScreen(parent); return true;
-            }
-            return super.keyPressed(k, s, m);
-        }
+        public boolean keyPressed(int k, int s, int m) { if(k == GLFW.GLFW_KEY_ESCAPE) client.setScreen(parent); return true; }
     }
 
     public static class BindScreen extends Screen {
@@ -386,7 +349,7 @@ public class ExampleMod implements ModInitializer {
             saveConfig(); client.setScreen(parent); return true;
         }
         @Override
-        public void render(DrawContext ctx, int mx, int my, float d) { ctx.fill(0,0,width,height, 0xEE000000); ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width/2, height/2, -1); }
+        public void render(DrawContext ctx, int mx, int my, float d) { ctx.fill(0,0,width,height, 0x90000000); ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width/2, height/2, -1); }
     }
 
     public static void saveConfig() {
@@ -412,4 +375,3 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
-
