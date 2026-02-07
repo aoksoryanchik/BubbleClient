@@ -16,6 +16,7 @@ import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.item.Items;
+import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -32,9 +33,9 @@ public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, screenShake = true, tbCrits = true;
 
-    public static double kaRange = 3.8, kaWallsRange = 3.0;
+    public static double kaRange = 3.1, kaWallsRange = 0.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
-    public static float shakeIntensity = 0.5f;
+    public static float shakeIntensity = 0.2f;
     
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN, 
                       keyAT = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
@@ -42,6 +43,10 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
+
+    // Переменные для Silent Rotations
+    private float serverYaw, serverPitch;
+    private boolean rotating = false;
 
     @Override
     public void onInitialize() {
@@ -93,13 +98,24 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
+            // SILENT ROTATIONS LOGIC
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
-            updateRotations(client.player, targetPos, 18.0f);
+            Vec3d diff = targetPos.subtract(client.player.getEyePos());
+            double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
+            
+            serverYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+            serverPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
+            
+            // Добавляем невидимую тряску для пакетов сервера
+            if (screenShake) {
+                serverYaw += (random.nextFloat() - 0.5f) * shakeIntensity;
+                serverPitch += (random.nextFloat() - 0.5f) * shakeIntensity;
+            }
 
-            if (client.player.getAttackCooldownProgress(0) >= 0.94f) {
-                if (screenShake) {
-                    client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
-                }
+            // Отправляем пакет вращения на сервер БЕЗ поворота камеры игрока
+            client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround()));
+
+            if (client.player.getAttackCooldownProgress(0) >= 0.95f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -109,7 +125,6 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient client) {
         double reach = kaRange;
         Vec3d eye = client.player.getEyePos();
-        // FIXED: Исправлена ошибка компиляции со скриншота 11173
         Vec3d look = client.player.getRotationVec(1.0F).multiply(reach);
         Box box = client.player.getBoundingBox().expand(look.x, look.y, look.z).expand(1.0);
         EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e instanceof PlayerEntity && e.isAlive() && e != client.player, reach * reach);
@@ -120,15 +135,6 @@ public class ExampleMod implements ModInitializer {
                 client.player.swingHand(Hand.MAIN_HAND);
             }
         }
-    }
-
-    private void updateRotations(PlayerEntity player, Vec3d target, float speed) {
-        Vec3d diff = target.subtract(player.getEyePos());
-        double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
-        float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
-        player.setYaw(player.getYaw() + MathHelper.clamp(MathHelper.wrapDegrees(tYaw - player.getYaw()), -speed, speed));
-        player.setPitch(player.getPitch() + MathHelper.clamp(MathHelper.wrapDegrees(tPitch - player.getPitch()), -speed, speed));
     }
 
     private void sendNotify(String module, boolean state) {
@@ -283,20 +289,16 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
-            if(my>=y-45 && my<=y-29) { if(mx>=x+72 && mx<=x+84) kaRange+=0.1; if(mx>=x+10 && mx<=x+22) kaRange-=0.1; f1.setText(String.format("%.1f", kaRange)); }
-            if(my>=y-20 && my<=y-4) { if(mx>=x+72 && mx<=x+84) kaWallsRange+=0.1; if(mx>=x+10 && mx<=x+22) kaWallsRange-=0.1; f2.setText(String.format("%.1f", kaWallsRange)); }
-            if(my>=y+5 && my<=y+21) { if(mx>=x+72 && mx<=x+84) shakeIntensity+=0.1; if(mx>=x+10 && mx<=x+22) shakeIntensity-=0.1; f3.setText(String.format("%.1f", shakeIntensity)); }
+            if(my>=y-45 && my<=y-29) { if(mx>=x+72 && mx<=x+84) kaRange+=0.1; if(mx>=x+10 && mx<=x+22) kaRange-=0.1; updateFields(); }
+            if(my>=y-20 && my<=y-4) { if(mx>=x+72 && mx<=x+84) kaWallsRange+=0.1; if(mx>=x+10 && mx<=x+22) kaWallsRange-=0.1; updateFields(); }
+            if(my>=y+5 && my<=y+21) { if(mx>=x+72 && mx<=x+84) shakeIntensity+=0.1; if(mx>=x+10 && mx<=x+22) shakeIntensity-=0.1; updateFields(); }
             if(mx>=x-60 && mx<=x+60) {
                 if(my>=y+35 && my<=y+47) autoRun=!autoRun; if(my>=y+50 && my<=y+62) antiVelocity=!antiVelocity;
             }
             int cx = x-240;
             if(mx >= cx+10 && mx <= cx+110) {
-                if(my >= y-45 && my <= y-27) { // AresMine
-                    kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.8f; autoRun=true; antiVelocity=true; updateFields();
-                }
-                if(my >= y-20 && my <= y-2) { // MineBlaze NEW CONFIG
-                    kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; autoRun=true; antiVelocity=false; updateFields();
-                }
+                if(my >= y-45 && my <= y-27) { kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.8f; autoRun=true; antiVelocity=true; updateFields(); }
+                if(my >= y-20 && my <= y-2) { kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; autoRun=true; antiVelocity=false; updateFields(); }
             }
             f1.mouseClicked(mx, my, b); f2.mouseClicked(mx, my, b); f3.mouseClicked(mx, my, b);
             return super.mouseClicked(mx, my, b);
