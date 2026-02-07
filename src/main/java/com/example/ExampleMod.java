@@ -21,10 +21,7 @@ import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.RotationAxis;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.*;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.*;
@@ -38,7 +35,7 @@ public class ExampleMod implements ModInitializer {
 
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
-    public static float shakeIntensity = 1.0f;
+    public static float shakeIntensity = 0.5f; // Уменьшил по дефолту для беспалевности
     
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN, 
                       keyAT = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
@@ -90,13 +87,24 @@ public class ExampleMod implements ModInitializer {
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
-            if (d <= kaRange && d < bestDist) { bestDist = d; target = p; }
+            if (d <= kaRange && d < bestDist) {
+                if (!client.player.canSee(p) && d > kaWallsRange) continue;
+                bestDist = d; target = p;
+            }
         }
+
         if (target != null) {
-            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.45, 0);
-            updateRotations(client.player, targetPos);
-            if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
-                if (screenShake) client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
+            // Легитные ротации (плавное наведение)
+            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
+            updateRotations(client.player, targetPos, 25.0f); // 25.0f - скорость доводки
+
+            // Удар с рандомизацией (анти-античит)
+            float progress = client.player.getAttackCooldownProgress(0);
+            if (progress >= 0.92f + (random.nextFloat() * 0.08f)) {
+                if (screenShake) {
+                    client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
+                    client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
+                }
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -105,35 +113,28 @@ public class ExampleMod implements ModInitializer {
 
     private void runTrigger(MinecraftClient client) {
         double reach = 3.5;
-        Vec3d eyePos = client.player.getEyePos();
-        // Исправленный расчет вектора взгляда для новых версий
-        float f = client.player.getPitch() * 0.017453292F;
-        float g = -client.player.getYaw() * 0.017453292F;
-        float h = MathHelper.cos(g);
-        float i = MathHelper.sin(g);
-        float j = MathHelper.cos(f);
-        float k = MathHelper.sin(f);
-        Vec3d lookVec = new Vec3d(i * j, -k, h * j).multiply(reach);
-        
-        Box box = client.player.getBoundingBox().expand(lookVec.x, lookVec.y, lookVec.z).expand(1.0);
-        EntityHitResult hit = ProjectileUtil.raycast(client.player, eyePos, eyePos.add(lookVec), box, (e) -> e instanceof PlayerEntity && e.isAlive() && e != client.player, reach * reach);
+        Vec3d eye = client.player.getEyePos();
+        Vec3d look = client.player.getRotationVec(1.0F).multiply(reach);
+        Box box = client.player.getBoundingBox().expand(look.x, look.y, look.z).expand(1.0);
+        EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e instanceof PlayerEntity && e.isAlive() && e != client.player, reach * reach);
         
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
             float progress = client.player.getAttackCooldownProgress(0);
-            if (tbCrits ? progress >= 1.0f : progress >= 0.92f) {
+            if (tbCrits ? progress >= 1.0f : progress >= 0.93f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
         }
     }
 
-    private void updateRotations(PlayerEntity player, Vec3d target) {
+    private void updateRotations(PlayerEntity player, Vec3d target, float speed) {
         Vec3d diff = target.subtract(player.getEyePos());
         double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(tYaw - player.getYaw()));
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(tPitch - player.getPitch()));
+
+        player.setYaw(player.getYaw() + MathHelper.clamp(MathHelper.wrapDegrees(tYaw - player.getYaw()), -speed, speed));
+        player.setPitch(player.getPitch() + MathHelper.clamp(MathHelper.wrapDegrees(tPitch - player.getPitch()), -speed, speed));
     }
 
     private void sendNotify(String module, boolean state) {
@@ -178,7 +179,6 @@ public class ExampleMod implements ModInitializer {
                 ctx.fill(x+10, iy, x+170, iy+18, h ? 0xFF1A1A1A : 0xFF101010);
                 String kN = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(k[i], 0).toUpperCase();
                 ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + kN + "]", x+15, iy+5, s[i] ? 0xFF00FF00 : 0xFFFF3333);
-                // Фикс условия: шестеренки у KA, TriggerBot и Waypoint
                 if(i==0 || i==1 || i==4) ctx.drawTextWithShadow(textRenderer, "⚙", x+155, iy+5, -1);
             }
         }
@@ -258,6 +258,7 @@ public class ExampleMod implements ModInitializer {
             drawArr(ctx, x, y, mx, my);
             drawChk(ctx, "Авто-Бег", autoRun, y+35, mx, my);
             drawChk(ctx, "Анти-Отдача", antiVelocity, y+50, mx, my);
+            
             int cx = x-230;
             ctx.fill(cx, y-90, cx+110, y+90, 0xFF0A0A0A);
             ctx.drawBorder(cx, y-90, 110, 180, 0xFF00AAFF);
@@ -265,6 +266,7 @@ public class ExampleMod implements ModInitializer {
             boolean h = mx >= cx+10 && mx <= cx+100 && my >= y-40 && my <= y-20;
             ctx.fill(cx+10, y-40, cx+100, y-20, h ? 0xFF222222 : 0xFF111111);
             ctx.drawCenteredTextWithShadow(textRenderer, "AresMine", cx+55, y-35, h ? 0xFF00AAFF : -1);
+            
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
         }
         private void drawArr(DrawContext ctx, int x, int y, int mx, int my) {
@@ -293,8 +295,8 @@ public class ExampleMod implements ModInitializer {
             }
             int cx = x-230;
             if(mx >= cx+10 && mx <= cx+100 && my >= y-40 && my <= y-20) {
-                kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 1.0f; autoRun = true; antiVelocity = true;
-                f1.setText("3.8"); f2.setText("3.0"); f3.setText("1.0");
+                kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 0.5f; autoRun = true; antiVelocity = true;
+                f1.setText("3.8"); f2.setText("3.0"); f3.setText("0.5");
             }
             f1.mouseClicked(mx, my, b); f2.mouseClicked(mx, my, b); f3.mouseClicked(mx, my, b);
             return super.mouseClicked(mx, my, b);
