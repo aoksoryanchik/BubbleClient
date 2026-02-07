@@ -93,17 +93,29 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
+            // Наводимся на центр хитбокса
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
             
-            // Наводимся каждый тик для точности
-            updateRotations(client.player, targetPos, 100.0f);
+            // ВЫЗОВ ЛОГИКИ НАВОДКИ (БЕЗ ТРЯСКИ)
+            updateRotations(client.player, targetPos);
 
-            // ИСПРАВЛЕНО: Ждем полного КД перед ударом (1.0f - максимальный урон)
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
         }
+    }
+
+    private void updateRotations(PlayerEntity player, Vec3d target) {
+        Vec3d diff = target.subtract(player.getEyePos());
+        double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
+        
+        float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+        float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
+
+        // Используем нормализацию углов, чтобы убрать рывки при переходе через 180/-180 градусов
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(targetYaw - player.getYaw()));
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(targetPitch - player.getPitch()));
     }
 
     private void runTrigger(MinecraftClient client) {
@@ -119,17 +131,6 @@ public class ExampleMod implements ModInitializer {
                 client.player.swingHand(Hand.MAIN_HAND);
             }
         }
-    }
-
-    private void updateRotations(PlayerEntity player, Vec3d target, float speed) {
-        Vec3d diff = target.subtract(player.getEyePos());
-        double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
-        float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
-        
-        // Плавная, но быстрая наводка без использования random (убирает тряску)
-        player.setYaw(player.getYaw() + MathHelper.clamp(MathHelper.wrapDegrees(tYaw - player.getYaw()), -speed, speed));
-        player.setPitch(player.getPitch() + MathHelper.clamp(MathHelper.wrapDegrees(tPitch - player.getPitch()), -speed, speed));
     }
 
     private void sendNotify(String module, boolean state) {
@@ -154,7 +155,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI (Без изменений) ---
+    // --- GUI СЕКЦИЯ ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
@@ -381,4 +382,3 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
-
