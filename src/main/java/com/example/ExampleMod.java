@@ -9,6 +9,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
@@ -17,6 +18,7 @@ import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.item.Items;
+import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -31,7 +33,7 @@ import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
-    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, screenShake = true, tbCrits = true;
+    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
 
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
@@ -42,7 +44,6 @@ public class ExampleMod implements ModInitializer {
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    private final Random random = new Random();
 
     @Override
     public void onInitialize() {
@@ -68,10 +69,9 @@ public class ExampleMod implements ModInitializer {
         });
 
         WorldRenderEvents.LAST.register(this::renderWaypointInWorld);
+        // ИСПРАВЛЕНО: использование DrawContext и RenderTickCounter для совместимости
         HudRenderCallback.EVENT.register(this::renderWaypointHud);
     }
-
-    // --- КИЛЛАУРА И МЕХАНИКИ ---
 
     private void runAura(MinecraftClient client) {
         PlayerEntity target = null;
@@ -85,8 +85,11 @@ public class ExampleMod implements ModInitializer {
             }
         }
         if (target != null) {
-            updateRotations(client.player, target.getPos().add(0, target.getHeight() * 0.5, 0));
+            Vec3d pos = target.getPos().add(0, target.getHeight() * 0.5, 0);
+            updateRotations(client.player, pos);
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
+                // ИСПРАВЛЕНО: Пакет теперь принимает 4 аргумента (yaw, pitch, onGround, horizontalCollision)
+                client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(client.player.getYaw(), client.player.getPitch(), client.player.isOnGround(), client.player.horizontalCollision));
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -99,6 +102,48 @@ public class ExampleMod implements ModInitializer {
         float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
         player.setYaw(player.getYaw() + MathHelper.wrapDegrees(tYaw - player.getYaw()));
         player.setPitch(player.getPitch() + MathHelper.wrapDegrees(tPitch - player.getPitch()));
+    }
+
+    private void renderWaypointHud(DrawContext ctx, RenderTickCounter tickCounter) {
+        if (!waypointActive) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return;
+
+        double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
+        if (dist > 450) {
+            int centerX = client.getWindow().getScaledWidth() / 2;
+            String info = String.format("§bЦЕЛЬ: §f%.0f, %.0f, %.0f §7(%.0fm)", wpX, wpY, wpZ, dist);
+            ctx.drawCenteredTextWithShadow(client.textRenderer, info, centerX, 10, -1);
+
+            Vec3d diff = new Vec3d(wpX, wpY, wpZ).subtract(client.player.getPos());
+            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+            float yawDiff = MathHelper.wrapDegrees(targetYaw - client.player.getYaw());
+
+            String direction;
+            int color;
+            if (yawDiff > 15) { direction = "◄◄◄ ПОВЕРНИ НАЛЕВО"; color = 0xFFFF5555; }
+            else if (yawDiff < -15) { direction = "ПОВЕРНИ НАПРАВО ►►►"; color = 0xFFFF5555; }
+            else { direction = "▲▲▲ ИДИ ПРЯМО ▲▲▲"; color = 0xFF55FF55; }
+            ctx.drawCenteredTextWithShadow(client.textRenderer, direction, centerX, 22, color);
+        }
+    }
+
+    private void renderWaypointInWorld(WorldRenderContext context) {
+        if (!waypointActive) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
+        if (dist > 450) return;
+
+        MatrixStack ms = context.matrixStack();
+        ms.push();
+        ms.translate(wpX - context.camera().getPos().x, (wpY - context.camera().getPos().y) + 1.5, wpZ - context.camera().getPos().z);
+        ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
+        ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
+        float s = (float) Math.max(0.02, dist * 0.012);
+        ms.scale(-s, -s, s);
+        VertexConsumerProvider vcp = context.consumers();
+        if (vcp != null) client.textRenderer.draw("§b[!] TARGET", -client.textRenderer.getWidth("[!] TARGET")/2f, 0, -1, false, ms.peek().getPositionMatrix(), vcp, net.minecraft.client.font.TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
+        ms.pop();
     }
 
     private void handleAutoTotem(MinecraftClient client) {
@@ -126,60 +171,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- УЛУЧШЕННЫЙ ВАЙПОИНТ ---
-
-    private void renderWaypointInWorld(WorldRenderContext context) {
-        if (!waypointActive) return;
-        MinecraftClient client = MinecraftClient.getInstance();
-        double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
-        
-        // Показываем в мире только если ближе 450 блоков
-        if (dist > 450) return;
-
-        MatrixStack ms = context.matrixStack();
-        ms.push();
-        ms.translate(wpX - context.camera().getPos().x, (wpY - context.camera().getPos().y) + 1.5, wpZ - context.camera().getPos().z);
-        ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-        ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
-        float s = (float) Math.max(0.02, dist * 0.012);
-        ms.scale(-s, -s, s);
-        VertexConsumerProvider vcp = context.consumers();
-        if (vcp != null) client.textRenderer.draw("§b[!] TARGET", -client.textRenderer.getWidth("[!] TARGET")/2f, 0, -1, false, ms.peek().getPositionMatrix(), vcp, net.minecraft.client.font.TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
-        ms.pop();
-    }
-
-    private void renderWaypointHud(DrawContext ctx, float delta) {
-        if (!waypointActive) return;
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null) return;
-
-        double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
-        
-        // Если дальше 450 метров - рисуем навигатор сверху
-        if (dist > 450) {
-            int centerX = client.getWindow().getScaledWidth() / 2;
-            
-            // Информация о цели
-            String info = String.format("§bЦЕЛЬ: §f%.0f, %.0f, %.0f §7(%.0fm)", wpX, wpY, wpZ, dist);
-            ctx.drawCenteredTextWithShadow(client.textRenderer, info, centerX, 10, -1);
-
-            // Логика поворота
-            Vec3d diff = new Vec3d(wpX, wpY, wpZ).subtract(client.player.getPos());
-            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-            float yawDiff = MathHelper.wrapDegrees(targetYaw - client.player.getYaw());
-
-            String direction;
-            int color;
-            if (yawDiff > 15) { direction = "◄◄◄ ПОВЕРНИ НАЛЕВО"; color = 0xFFFF5555; }
-            else if (yawDiff < -15) { direction = "ПОВЕРНИ НАПРАВО ►►►"; color = 0xFFFF5555; }
-            else { direction = "▲▲▲ ИДИ ПРЯМО ▲▲▲"; color = 0xFF55FF55; }
-
-            ctx.drawCenteredTextWithShadow(client.textRenderer, direction, centerX, 22, color);
-        }
-    }
-
-    // --- СИСТЕМНОЕ ---
-
     private void sendNotify(String module, boolean state) {
         if (MinecraftClient.getInstance().player != null) {
             MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[Bubble] §f" + module + ": " + (state ? "§aON" : "§cOFF")), true);
@@ -193,7 +184,7 @@ public class ExampleMod implements ModInitializer {
         if (!d) keyStates[k] = false; return false;
     }
 
-    // --- GUI И КОНФИГ (БЕЗ ИЗМЕНЕНИЙ) ---
+    // --- GUI СЕКЦИЯ ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
@@ -268,7 +259,6 @@ public class ExampleMod implements ModInitializer {
             ctx.drawBorder(cx, y-95, 120, 185, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bКОНФИГИ", cx+60, y-85, -1);
             drawCfgBtn(ctx, "AresMine", cx+10, y-45, mx, my);
-            drawCfgBtn(ctx, "MineBlaze", cx+10, y-20, mx, my);
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
         }
         private void drawCfgBtn(DrawContext ctx, String n, int x, int y, int mx, int my) {
@@ -303,7 +293,6 @@ public class ExampleMod implements ModInitializer {
             int cx = x-240;
             if(mx >= cx+10 && mx <= cx+110) {
                 if(my >= y-45 && my <= y-27) { kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.8f; autoRun=true; antiVelocity=true; updateFields(); }
-                if(my >= y-20 && my <= y-2) { kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; autoRun=true; antiVelocity=false; updateFields(); }
             }
             f1.mouseClicked(mx, my, b); f2.mouseClicked(mx, my, b); f3.mouseClicked(mx, my, b);
             return super.mouseClicked(mx, my, b);
