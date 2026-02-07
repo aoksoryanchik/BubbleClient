@@ -29,16 +29,13 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния модулей
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
 
-    // Настройки параметров
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static float shakeIntensity = 0.5f;
     public static double wpX = 0, wpY = 64, wpZ = 0;
     
-    // Бинды клавиш
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN, 
                       keyAT = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
 
@@ -85,20 +82,15 @@ public class ExampleMod implements ModInitializer {
             }
         }
         if (target != null) {
-            // Шейк и рандомизация
             double s = shakeIntensity * 0.15;
             double rX = (random.nextDouble() - 0.5) * s;
             double rZ = (random.nextDouble() - 0.5) * s;
-            
             Vec3d tPos = target.getPos().add(rX, target.getHeight() * (0.35 + random.nextDouble() * 0.45), rZ);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
-            
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            
             client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()));
             client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()));
-
             EntityHitResult hit = raycastEntity(client, kaRange);
             if (hit != null && hit.getEntity() == target) {
                 float cd = 0.92f + random.nextFloat() * 0.16f;
@@ -215,16 +207,8 @@ public class ExampleMod implements ModInitializer {
 
     public static class KillAuraSettings extends Screen {
         private final Screen parent; 
-        private TextFieldWidget rF, wF, sF;
         public KillAuraSettings(Screen p) { super(Text.literal("")); this.parent = p; }
-        @Override
-        protected void init() {
-            rF = new TextFieldWidget(textRenderer, width/2 + 25, height/2-45, 30, 16, Text.literal(""));
-            wF = new TextFieldWidget(textRenderer, width/2 + 25, height/2-22, 30, 16, Text.literal(""));
-            sF = new TextFieldWidget(textRenderer, width/2 + 25, height/2 + 1, 30, 16, Text.literal(""));
-            rF.setText(String.valueOf(kaRange)); wF.setText(String.valueOf(kaWallsRange)); sF.setText(String.valueOf(shakeIntensity));
-            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(sF);
-        }
+        
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xEE000000);
@@ -233,9 +217,10 @@ public class ExampleMod implements ModInitializer {
             ctx.drawBorder(x-115, y-95, 230, 205, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lKILL AURA SETTINGS", x, y-85, -1);
             
-            drawNumRow(ctx, "Range:", x-105, y-41, x+10, y-41, mx, my);
-            drawNumRow(ctx, "WallsRange:", x-105, y-18, x+10, y-18, mx, my);
-            drawNumRow(ctx, "Shake:", x-105, y+5, x+10, y+5, mx, my);
+            // ОТРИСОВКА С ЦИФРАМИ
+            drawNumRow(ctx, "Range:", x-105, y-41, x+50, y-41, kaRange, mx, my);
+            drawNumRow(ctx, "WallsRange:", x-105, y-18, x+50, y-18, kaWallsRange, mx, my);
+            drawNumRow(ctx, "Shake:", x-105, y+5, x+50, y+5, shakeIntensity, mx, my);
             
             drawStatus(ctx, "Auto-run:", x-105, y+35, autoRun, mx, my);
             drawStatus(ctx, "AntiVelocity:", x-105, y+55, antiVelocity, mx, my);
@@ -247,53 +232,57 @@ public class ExampleMod implements ModInitializer {
             drawBtn(ctx, "MineBlaze", cx+10, y-50, mx, my);
             drawBtn(ctx, "AresMine", cx+10, y-25, mx, my);
         }
-        private void drawNumRow(DrawContext ctx, String s, int x, int y, int bx, int by, int mx, int my) {
+
+        private void drawNumRow(DrawContext ctx, String s, int x, int y, int bx, int by, double val, int mx, int my) {
             ctx.drawTextWithShadow(textRenderer, s, x, y, -1);
             ctx.drawTextWithShadow(textRenderer, "<", bx, by, mx>=bx && mx<=bx+10 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
-            ctx.drawTextWithShadow(textRenderer, ">", bx+48, by, mx>=bx+48 && mx<=bx+58 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
+            ctx.drawTextWithShadow(textRenderer, String.format("%.1f", val), bx+15, by, -1);
+            ctx.drawTextWithShadow(textRenderer, ">", bx+45, by, mx>=bx+45 && mx<=bx+55 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
         }
+
         private void drawStatus(DrawContext ctx, String t, int x, int y, boolean s, int mx, int my) {
             boolean h = mx>=x && mx<=x+120 && my>=y && my<=y+10;
             ctx.drawTextWithShadow(textRenderer, t, x, y, h ? 0xFF00AAFF : -1);
-            ctx.drawTextWithShadow(textRenderer, s ? "§aВКЛ" : "§cВЫКЛ", x+80, y, -1);
+            ctx.drawTextWithShadow(textRenderer, s ? "§aВКЛ" : "§cВЫКЛ", x+85, y, -1);
         }
+
         private void drawBtn(DrawContext ctx, String n, int x, int y, int mx, int my) {
             boolean h = mx>=x && mx<=x+100 && my>=y && my<=y+18;
             ctx.fill(x, y, x+100, y+18, h ? 0xFF222222 : 0xFF111111);
             ctx.drawCenteredTextWithShadow(textRenderer, n, x+50, y+5, h ? 0xFF00AAFF : -1);
         }
+
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2, cx = x-240;
+            // Клики по стрелкам
             if(my>=y-41 && my<=y-31) {
-                if(mx>=x+10 && mx<=x+20) { kaRange-=0.1; rF.setText(String.format("%.1f", kaRange)); }
-                if(mx>=x+58 && mx<=x+68) { kaRange+=0.1; rF.setText(String.format("%.1f", kaRange)); }
+                if(mx>=x+50 && mx<=x+60) kaRange -= 0.1;
+                if(mx>=x+95 && mx<=x+105) kaRange += 0.1;
             }
             if(my>=y-18 && my<=y-8) {
-                if(mx>=x+10 && mx<=x+20) { kaWallsRange-=0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
-                if(mx>=x+58 && mx<=x+68) { kaWallsRange+=0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
+                if(mx>=x+50 && mx<=x+60) kaWallsRange -= 0.1;
+                if(mx>=x+95 && mx<=x+105) kaWallsRange += 0.1;
             }
             if(my>=y+5 && my<=y+15) {
-                if(mx>=x+10 && mx<=x+20) { shakeIntensity-=0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
-                if(mx>=x+58 && mx<=x+68) { shakeIntensity+=0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
+                if(mx>=x+50 && mx<=x+60) shakeIntensity -= 0.1f;
+                if(mx>=x+95 && mx<=x+105) shakeIntensity += 0.1f;
             }
+            // Клики по ВКЛ/ВЫКЛ
             if(mx>=x-105 && mx<=x+20) {
                 if(my>=y+35 && my<=y+45) autoRun = !autoRun;
                 if(my>=y+55 && my<=y+65) antiVelocity = !antiVelocity;
             }
+            // Конфиги
             if(mx>=cx+10 && mx<=cx+110) {
-                if(my>=y-50 && my<=y-32) { kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; refresh(); }
-                if(my>=y-25 && my<=y-7) { kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.6f; refresh(); }
+                if(my>=y-50 && my<=y-32) { kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; }
+                if(my>=y-25 && my<=y-7) { kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.6f; }
             }
             saveConfig(); return super.mouseClicked(mx, my, b);
         }
-        private void refresh() { rF.setText(String.valueOf(kaRange)); wF.setText(String.valueOf(kaWallsRange)); sF.setText(String.valueOf(shakeIntensity)); }
         @Override
         public boolean keyPressed(int k, int s, int m) {
-            if(k == GLFW.GLFW_KEY_ESCAPE) {
-                try { kaRange=Double.parseDouble(rF.getText()); kaWallsRange=Double.parseDouble(wF.getText()); shakeIntensity=Float.parseFloat(sF.getText()); } catch(Exception ignored){}
-                saveConfig(); client.setScreen(parent); return true;
-            }
+            if(k == GLFW.GLFW_KEY_ESCAPE) { client.setScreen(parent); return true; }
             return super.keyPressed(k, s, m);
         }
     }
