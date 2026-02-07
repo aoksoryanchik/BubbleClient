@@ -21,8 +21,6 @@ import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.*;
 import org.lwjgl.glfw.GLFW;
-import org.joml.Vector3f;      // Добавлен импорт для фикса ошибки
-import org.joml.Quaternionf;    // Добавлен импорт для фикса ошибки
 
 import java.io.*;
 import java.nio.file.Files;
@@ -117,9 +115,10 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient client) {
         EntityHitResult hit = raycastEntity(client, kaRange);
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
-            if (client.player.getAttackCooldownProgress(0) >= 0.95f) {
-                boolean critReady = !tbCrits || (client.player.fallDistance > 0.01f && !client.player.isOnGround());
-                if (critReady) {
+            if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
+                // ФИКС ТРИГГЕРА: Криты работают только если игрок падает и не в воде/на лестнице
+                boolean isFalling = client.player.fallDistance > 0.0f && !client.player.isOnGround() && !client.player.isClimbing() && !client.player.isTouchingWater();
+                if (!tbCrits || isFalling) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -140,25 +139,20 @@ public class ExampleMod implements ModInitializer {
         PlayerEntity entity = (currentTarget != null) ? currentTarget : client.player;
 
         int x = thX, y = thY;
-        int width = 140;
-        int height = 40;
+        int w = 140, h = 40;
 
-        // Фон корпуса без блюра
-        ctx.fill(x, y, x + width, y + height, 0xAA000000); 
-        ctx.drawBorder(x, y, width, height, 0xFF444444); 
+        ctx.fill(x, y, x + w, y + h, 0xAA000000); 
+        ctx.drawBorder(x, y, w, h, 0xFF444444); 
 
-        // Отрисовка головы/тела (Nursultan style)
-        InventoryScreen.drawEntity(ctx, x + 5, y + 5, x + 35, y + 35, 15, 0.0625f, mx, my, entity);
+        // ФИКС: Удалены mx/my, которые вызывали ошибку. Статичное положение головы.
+        InventoryScreen.drawEntity(ctx, x + 5, y + 5, x + 35, y + 35, 15, 0.0625f, 0, 0, entity);
         
-        // Ник и ХП
         ctx.drawTextWithShadow(client.textRenderer, entity.getName().getString(), x + 40, y + 6, -1);
         ctx.drawTextWithShadow(client.textRenderer, "HP: " + String.format("%.1f", entity.getHealth()), x + 40, y + 17, 0xFFBBBBBB);
 
-        // Полоска здоровья
-        ctx.fill(x + 40, y + 28, x + width - 10, y + 32, 0x66FFFFFF); 
+        ctx.fill(x + 40, y + 28, x + w - 10, y + 32, 0x66FFFFFF); 
         float hpPercent = MathHelper.clamp(entity.getHealth() / entity.getMaxHealth(), 0, 1);
-        int hpBarWidth = (int)((width - 50) * hpPercent);
-        ctx.fill(x + 40, y + 28, x + 40 + hpBarWidth, y + 32, 0xFF00AAFF); 
+        ctx.fill(x + 40, y + 28, x + 40 + (int)((w - 50) * hpPercent), y + 32, 0xFF00AAFF); 
     }
 
     private void renderWaypointArrow(DrawContext ctx) {
@@ -278,7 +272,6 @@ public class ExampleMod implements ModInitializer {
             ctx.drawCenteredTextWithShadow(textRenderer, "§bCONFIGS", cx+60, y-95, -1);
             drawBtn(ctx, "MineBlaze", cx+10, y-60, mx, my);
             drawBtn(ctx, "AresMine", cx+10, y-35, mx, my);
-            super.render(ctx, mx, my, d);
         }
         @Override public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
         private void drawSetting(DrawContext ctx, String label, double val, int x, int y, int startX, int mx, int my) {
@@ -332,7 +325,6 @@ public class ExampleMod implements ModInitializer {
                     thY = my - 20; 
                 }
             }
-            super.render(ctx, mx, my, d);
         }
         @Override public boolean mouseClicked(double mx, double my, int b) {
             if(mx >= width/2-40 && mx <= width/2+40 && my >= height-40 && my <= height-20) { saveConfig(); client.setScreen(parent); }
