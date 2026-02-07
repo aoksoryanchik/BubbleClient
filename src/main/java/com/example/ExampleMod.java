@@ -61,7 +61,11 @@ public class ExampleMod implements ModInitializer {
             
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) handleAutoTotem(client);
-            if (autoRun && (client.player.forwardSpeed > 0 || killaura)) client.player.setSprinting(true);
+            
+            // ФИКС ДЕРГАНЬЯ ЭКРАНА: Спринт включается только если ты реально жмешь кнопки движения
+            if (autoRun && client.player.input.movementForward > 0) {
+                client.player.setSprinting(true);
+            }
             
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
@@ -88,6 +92,8 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            
+            // Плавная наводка без лишних обновлений состояния игрока
             client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()));
             client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()));
             
@@ -137,15 +143,16 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runTrigger(MinecraftClient client) {
+        // РЕАЛЬНЫЙ ФИКС ТРИГГЕРБОТА
         EntityHitResult hit = raycastEntity(client, kaRange);
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
-            // ФИКС ТРИГГЕРБОТА: проверяем условия и бьем
-            boolean canAttack = client.player.getAttackCooldownProgress(0) >= 0.95f;
-            boolean crit = !tbCrits || (client.player.fallDistance > 0.05f && !client.player.isOnGround());
-            
-            if (canAttack && crit) {
-                client.interactionManager.attackEntity(client.player, target);
-                client.player.swingHand(Hand.MAIN_HAND);
+            if (client.player.getAttackCooldownProgress(0) >= 0.95f) {
+                // Если включены криты - ждем падения, если выключены - бьем сразу
+                boolean critReady = !tbCrits || (client.player.fallDistance > 0.01f && !client.player.isOnGround());
+                if (critReady) {
+                    client.interactionManager.attackEntity(client.player, target);
+                    client.player.swingHand(Hand.MAIN_HAND);
+                }
             }
         }
     }
@@ -187,9 +194,7 @@ public class ExampleMod implements ModInitializer {
         }
         
         @Override
-        public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
-            // ПУСТО: Чтобы не было размытия
-        }
+        public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
 
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
@@ -219,15 +224,12 @@ public class ExampleMod implements ModInitializer {
 
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            // ФИКС РАЗМЫТИЯ: Используем плотный черный цвет
             ctx.fill(0, 0, width, height, 0xBF000000); 
             int x = width/2, y = height/2;
-            
             ctx.fill(x-115, y-95, x+115, y+110, 0xFF050505);
             ctx.drawBorder(x-115, y-95, 230, 205, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lKILL AURA SETTINGS", x, y-85, -1);
             
-            // Отрисовка с выровненными цифрами
             drawSetting(ctx, "Range:", kaRange, x-105, y-41, x+50, mx, my);
             drawSetting(ctx, "WallsRange:", kaWallsRange, x-105, y-18, x+50, mx, my);
             drawSetting(ctx, "Shake:", (double)shakeIntensity, x-105, y+5, x+50, mx, my);
@@ -241,30 +243,22 @@ public class ExampleMod implements ModInitializer {
             ctx.drawCenteredTextWithShadow(textRenderer, "§bCONFIGS", cx+60, y-85, -1);
             drawBtn(ctx, "MineBlaze", cx+10, y-50, mx, my);
             drawBtn(ctx, "AresMine", cx+10, y-25, mx, my);
-            
             super.render(ctx, mx, my, d);
         }
 
         @Override
-        public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
-            // ПУСТО: Блокируем блюр
-        }
+        public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
 
         private void drawSetting(DrawContext ctx, String label, double val, int x, int y, int startX, int mx, int my) {
             ctx.drawTextWithShadow(textRenderer, label, x, y, -1);
             int arrowLX = startX;
             int arrowRX = startX + 50;
-            
             boolean hL = mx >= arrowLX && mx <= arrowLX + 10 && my >= y && my <= y + 10;
             boolean hR = mx >= arrowRX && mx <= arrowRX + 10 && my >= y && my <= y + 10;
-            
             ctx.drawTextWithShadow(textRenderer, "<", arrowLX, y, hL ? 0xFF00AAFF : -1);
             ctx.drawTextWithShadow(textRenderer, ">", arrowRX, y, hR ? 0xFF00AAFF : -1);
-            
-            // ИДЕАЛЬНАЯ ЦЕНТРОВКА
             String s = String.format("%.1f", val).replace(".", ",");
             int textW = textRenderer.getWidth(s);
-            // Середина между стрелками = (LX + 10 + RX) / 2 = (startX + 60) / 2 = startX + 30
             int centerPos = startX + 30; 
             ctx.drawTextWithShadow(textRenderer, s, centerPos - (textW / 2), y, -1);
         }
@@ -381,3 +375,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
