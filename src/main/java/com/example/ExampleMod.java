@@ -97,22 +97,16 @@ public class ExampleMod implements ModInitializer {
             client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()));
             client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()));
 
-            // ОБНОВЛЕННАЯ ЛОГИКА ПРИСОСКИ
-            float myHp = client.player.getHealth();
-            float targetHp = target.getHealth();
-            float myMaxHp = client.player.getMaxHealth();
-            float targetMaxHp = target.getMaxHealth();
-
-            if (stickyAura && (myHp > myMaxHp / 2) && (targetHp < (targetMaxHp * 0.66f))) {
-                Vec3d pullDir = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.12);
-                Vec3d vel = client.player.getVelocity();
-                client.player.setVelocity(vel.x + pullDir.x, vel.y, vel.z + pullDir.z);
+            // ЛОГИКА ПРИСОСКИ (Sticky)
+            if (stickyAura && client.player.getHealth() > (client.player.getMaxHealth() / 2f) 
+                && target.getHealth() < (target.getMaxHealth() * 0.66f)) {
+                Vec3d pull = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.14);
+                client.player.addVelocity(pull.x, 0, pull.z);
             }
 
             EntityHitResult hit = raycastEntity(client, kaRange);
             if (hit != null && hit.getEntity() == target) {
-                float cd = 0.92f + random.nextFloat() * 0.16f;
-                if (client.player.getAttackCooldownProgress(0) >= cd) {
+                if (client.player.getAttackCooldownProgress(0) >= 0.95f) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -138,7 +132,7 @@ public class ExampleMod implements ModInitializer {
             float tYaw = (float) Math.toDegrees(Math.atan2(targetVec.z, targetVec.x)) - 90F;
             float angleDiff = MathHelper.wrapDegrees(tYaw - client.player.getYaw());
             String info = String.format("%s [%d, %d, %d] - %.1fm", getArrowByAngle(angleDiff), (int)wpX, (int)wpY, (int)wpZ, d);
-            ctx.drawCenteredTextWithShadow(client.textRenderer, info, client.getWindow().getScaledWidth() / 2, 15, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(client.textRenderer, info, client.getWindow().getScaledWidth() / 2, 10, 0xFF00AAFF);
         }
     }
 
@@ -238,10 +232,12 @@ public class ExampleMod implements ModInitializer {
         public KillAuraSettings(Screen p) { super(Text.literal("")); this.parent = p; }
         @Override
         protected void init() {
-            rF = new TextFieldWidget(textRenderer, width/2 + 25, height/2-45, 40, 16, Text.literal(""));
-            wF = new TextFieldWidget(textRenderer, width/2 + 25, height/2-22, 40, 16, Text.literal(""));
-            sF = new TextFieldWidget(textRenderer, width/2 + 25, height/2 + 1, 40, 16, Text.literal(""));
+            int x = width/2 + 25;
+            rF = new TextFieldWidget(textRenderer, x, height/2-41, 40, 12, Text.literal(""));
+            wF = new TextFieldWidget(textRenderer, x, height/2-18, 40, 12, Text.literal(""));
+            sF = new TextFieldWidget(textRenderer, x, height/2 + 5, 40, 12, Text.literal(""));
             rF.setText(String.valueOf(kaRange)); wF.setText(String.valueOf(kaWallsRange)); sF.setText(String.valueOf(shakeIntensity));
+            rF.setDrawsBackground(false); wF.setDrawsBackground(false); sF.setDrawsBackground(false);
             addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(sF);
         }
         @Override
@@ -252,9 +248,9 @@ public class ExampleMod implements ModInitializer {
             ctx.drawBorder(x-115, y-95, 230, 205, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lKILL AURA SETTINGS", x, y-85, -1);
             
-            drawNumRow(ctx, "Range:", x-105, y-41, x+10, y-41, mx, my);
-            drawNumRow(ctx, "WallsRange:", x-105, y-18, x+10, y-18, mx, my);
-            drawNumRow(ctx, "Shake:", x-105, y+5, x+10, y+5, mx, my);
+            drawNumRow(ctx, "Range:", x-105, y-41, x+10, y-41, kaRange, mx, my);
+            drawNumRow(ctx, "WallsRange:", x-105, y-18, x+10, y-18, kaWallsRange, mx, my);
+            drawNumRow(ctx, "Shake:", x-105, y+5, x+10, y+5, shakeIntensity, mx, my);
             
             drawStatus(ctx, "Auto-run:", x-105, y+35, autoRun, mx, my);
             drawStatus(ctx, "AntiVelocity:", x-105, y+55, antiVelocity, mx, my);
@@ -267,10 +263,11 @@ public class ExampleMod implements ModInitializer {
             drawBtn(ctx, "MineBlaze", cx+10, y-50, mx, my);
             drawBtn(ctx, "AresMine", cx+10, y-25, mx, my);
         }
-        private void drawNumRow(DrawContext ctx, String s, int x, int y, int bx, int by, int mx, int my) {
+        private void drawNumRow(DrawContext ctx, String s, int x, int y, int bx, int by, double val, int mx, int my) {
             ctx.drawTextWithShadow(textRenderer, s, x, y, -1);
             ctx.drawTextWithShadow(textRenderer, "<", bx, by, mx>=bx && mx<=bx+10 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
-            ctx.drawTextWithShadow(textRenderer, ">", bx+68, by, mx>=bx+68 && mx<=bx+78 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
+            ctx.drawTextWithShadow(textRenderer, String.format("%.1f", val), bx+15, by, -1); // ЦИФРЫ ТУТ
+            ctx.drawTextWithShadow(textRenderer, ">", bx+55, by, mx>=bx+55 && mx<=bx+65 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
         }
         private void drawStatus(DrawContext ctx, String t, int x, int y, boolean s, int mx, int my) {
             boolean h = mx>=x && mx<=x+120 && my>=y && my<=y+10;
@@ -287,15 +284,15 @@ public class ExampleMod implements ModInitializer {
             int x = width/2, y = height/2, cx = x-240;
             if(my>=y-41 && my<=y-31) {
                 if(mx>=x+10 && mx<=x+20) { kaRange-=0.1; rF.setText(String.format("%.1f", kaRange)); }
-                if(mx>=x+78 && mx<=x+88) { kaRange+=0.1; rF.setText(String.format("%.1f", kaRange)); }
+                if(mx>=x+65 && mx<=x+75) { kaRange+=0.1; rF.setText(String.format("%.1f", kaRange)); }
             }
             if(my>=y-18 && my<=y-8) {
                 if(mx>=x+10 && mx<=x+20) { kaWallsRange-=0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
-                if(mx>=x+78 && mx<=x+88) { kaWallsRange+=0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
+                if(mx>=x+65 && mx<=x+75) { kaWallsRange+=0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
             }
             if(my>=y+5 && my<=y+15) {
                 if(mx>=x+10 && mx<=x+20) { shakeIntensity-=0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
-                if(mx>=x+78 && mx<=x+88) { shakeIntensity+=0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
+                if(mx>=x+65 && mx<=x+75) { shakeIntensity+=0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
             }
             if(mx>=x-105 && mx<=x+120) {
                 if(my>=y+35 && my<=y+45) autoRun = !autoRun;
@@ -312,7 +309,7 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
-                try { kaRange=Double.parseDouble(rF.getText()); kaWallsRange=Double.parseDouble(wF.getText()); shakeIntensity=Float.parseFloat(sF.getText()); } catch(Exception ignored){}
+                try { kaRange=Double.parseDouble(rF.getText().replace(",",".")); kaWallsRange=Double.parseDouble(wF.getText().replace(",",".")); shakeIntensity=Float.parseFloat(sF.getText().replace(",",".")); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(parent); return true;
             }
             return super.keyPressed(k, s, m);
