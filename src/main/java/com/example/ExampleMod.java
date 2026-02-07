@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
@@ -20,6 +21,8 @@ import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.*;
 import org.lwjgl.glfw.GLFW;
+import org.joml.Vector3f;      // Добавлен импорт для фикса ошибки
+import org.joml.Quaternionf;    // Добавлен импорт для фикса ошибки
 
 import java.io.*;
 import java.nio.file.Files;
@@ -140,23 +143,21 @@ public class ExampleMod implements ModInitializer {
         int width = 140;
         int height = 40;
 
-        // Фон корпуса
-        ctx.fill(x, y, x + width, y + height, 0xAA000000); // Темный полупрозрачный фон
-        ctx.drawBorder(x, y, width, height, 0xFF444444); // Тонкая серая обводка
+        // Фон корпуса без блюра
+        ctx.fill(x, y, x + width, y + height, 0xAA000000); 
+        ctx.drawBorder(x, y, width, height, 0xFF444444); 
 
-        // Отрисовка лица (как в Nursultan)
-        ctx.drawEntity(entity, x + 20, y + 35, 15, new Vector3f(), new Quaternionf());
+        // Отрисовка головы/тела (Nursultan style)
+        InventoryScreen.drawEntity(ctx, x + 5, y + 5, x + 35, y + 35, 15, 0.0625f, mx, my, entity);
         
-        // Информация: Ник и ХП
+        // Ник и ХП
         ctx.drawTextWithShadow(client.textRenderer, entity.getName().getString(), x + 40, y + 6, -1);
         ctx.drawTextWithShadow(client.textRenderer, "HP: " + String.format("%.1f", entity.getHealth()), x + 40, y + 17, 0xFFBBBBBB);
 
-        // Красивая полоска здоровья
-        ctx.fill(x + 40, y + 28, x + width - 10, y + 32, 0x66FFFFFF); // Подложка (серая)
+        // Полоска здоровья
+        ctx.fill(x + 40, y + 28, x + width - 10, y + 32, 0x66FFFFFF); 
         float hpPercent = MathHelper.clamp(entity.getHealth() / entity.getMaxHealth(), 0, 1);
         int hpBarWidth = (int)((width - 50) * hpPercent);
-        
-        // Градиентная полоска (от светло-голубого к синему)
         ctx.fill(x + 40, y + 28, x + 40 + hpBarWidth, y + 32, 0xFF00AAFF); 
     }
 
@@ -318,11 +319,9 @@ public class ExampleMod implements ModInitializer {
         public HudEditor(Screen p) { super(Text.literal("")); this.parent = p; }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            // ЧИСТЫЙ ФОН БЕЗ РАЗМЫТИЯ
             ctx.fill(0, 0, width, height, 0x44000000); 
             ctx.drawCenteredTextWithShadow(textRenderer, "DRAG HUD WITH RIGHT CLICK (ПКМ)", width/2, 50, -1);
             
-            // Кнопка Save
             boolean hSave = mx >= width/2-40 && mx <= width/2+40 && my >= height-40 && my <= height-20;
             ctx.fill(width/2-40, height-40, width/2+40, height-20, hSave ? 0xFF00CCFF : 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "SAVE", width/2, height-35, -1);
@@ -393,4 +392,3 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
-
