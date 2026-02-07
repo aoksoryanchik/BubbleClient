@@ -9,7 +9,6 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
@@ -34,7 +33,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean stickyAura = true;
 
     public static double kaRange = 3.8, kaWallsRange = 3.0;
-    public static float shakeIntensity = 0.5f;
+    public static float shakeIntensity = 0.3f;
     public static double wpX = 0, wpY = 64, wpZ = 0;
     public static double wpMaxDist = 450.0;
     
@@ -84,33 +83,33 @@ public class ExampleMod implements ModInitializer {
             }
         }
         if (target != null) {
-            // Плавная доводка с разбросом
-            double s = shakeIntensity * 0.15;
-            double rX = (random.nextDouble() - 0.5) * s;
-            double rZ = (random.nextDouble() - 0.5) * s;
-            
-            Vec3d tPos = target.getPos().add(rX, target.getHeight() * (0.4 + random.nextDouble() * 0.3), rZ);
+            // Агрессивная наводка
+            Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.7, 0); // Целимся в верхнюю часть (ближе к голове)
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
             
-            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()) * 0.85f);
-            client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()) * 0.85f);
+            // Более быстрая доводка (0.95f вместо 0.85f)
+            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()) * 0.95f);
+            client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()) * 0.95f);
 
-            // Sticky (Присоска) - условия: твои HP > 50%, врага < 66%
+            // Продвинутая присоска
             if (stickyAura && client.player.getHealth() > (client.player.getMaxHealth() * 0.5f) 
                 && target.getHealth() < (target.getMaxHealth() * 0.66f)) {
-                Vec3d pull = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.08); // Уменьшил силу для беспалевности
-                client.player.addVelocity(pull.x, 0, pull.z);
+                Vec3d pull = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.12);
+                client.player.setVelocity(client.player.getVelocity().x + pull.x, client.player.getVelocity().y, client.player.getVelocity().z + pull.z);
             }
 
-            // Raycast Bypass: бьем только если реально смотрим на цель
             EntityHitResult hit = raycastEntity(client, kaRange);
             if (hit != null && hit.getEntity() == target) {
-                // Рандомный КД для MineBlaze (0.93 - 1.15)
-                float randomCD = 0.93f + random.nextFloat() * 0.22f;
-                if (client.player.getAttackCooldownProgress(0) >= randomCD) {
+                // Прыжок для критов, если мы на земле и готовы бить
+                if (client.player.isOnGround() && client.player.getAttackCooldownProgress(0) > 0.8f) {
+                    client.player.jump();
+                }
+
+                // Кулдаун для максимального урона
+                if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -166,8 +165,7 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient client) {
         EntityHitResult hit = raycastEntity(client, kaRange);
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
-            float randomCD = 0.95f + random.nextFloat() * 0.15f;
-            if (client.player.getAttackCooldownProgress(0) >= randomCD && (!tbCrits || (client.player.fallDistance > 0 && !client.player.isOnGround()))) {
+            if (client.player.getAttackCooldownProgress(0) >= 0.95f && (!tbCrits || (client.player.fallDistance > 0 && !client.player.isOnGround()))) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -305,13 +303,11 @@ public class ExampleMod implements ModInitializer {
                 if(my>=y+75 && my<=y+85) stickyAura = !stickyAura;
             }
             if(mx>=cx+10 && mx<=cx+110) {
-                if(my>=y-50 && my<=y-32) { // КФГ MINEBLAZE
-                    kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; antiVelocity=false; // Выключаем AntiVelocity
-                    refresh();
+                if(my>=y-50 && my<=y-32) { // MINEBLAZE OPTIMIZED
+                    kaRange=3.2; kaWallsRange=0.0; shakeIntensity=0.1f; antiVelocity=false; refresh();
                 }
-                if(my>=y-25 && my<=y-7) { // КФГ ARESMINE
-                    kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.6f; antiVelocity=true;
-                    refresh();
+                if(my>=y-25 && my<=y-7) { // ARESMINE
+                    kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.5f; antiVelocity=true; refresh();
                 }
             }
             saveConfig(); return super.mouseClicked(mx, my, b);
