@@ -96,24 +96,23 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
             
-            // ВЫЧИСЛЯЕМ РОТАЦИИ (SILENT)
+            // --- СЕКЦИЯ НАВОДКИ (SILENT) ---
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
             double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
             float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
 
-            // Добавляем тряску только для сервера
-            float packetYaw = tYaw;
-            float packetPitch = tPitch;
+            // Добавляем невидимую тряску
             if (screenShake) {
-                packetYaw += (random.nextFloat() - 0.5f) * shakeIntensity;
-                packetPitch += (random.nextFloat() - 0.5f) * shakeIntensity;
+                tYaw += (random.nextFloat() - 0.5f) * shakeIntensity;
+                tPitch += (random.nextFloat() - 0.5f) * shakeIntensity;
             }
 
-            // ПАКЕТ НА СЕРВЕР: Это фиксит "заморозку" персонажа
-            // Мы отправляем только LookAndOnGround в момент удара, чтобы не блокировать движение
+            // Отправляем ротации серверу КАЖДЫЙ ТИК, чтобы наводка "существовала"
+            client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(tYaw, tPitch, client.player.isOnGround(), true));
+
+            // --- СЕКЦИЯ АТАКИ ---
             if (client.player.getAttackCooldownProgress(0) >= 0.94f) {
-                client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(packetYaw, packetPitch, client.player.isOnGround(), true));
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
