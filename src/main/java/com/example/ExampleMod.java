@@ -94,6 +94,7 @@ public class ExampleMod implements ModInitializer {
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.45, 0);
             updateRotations(client.player, targetPos);
             
+            // Artefacts 27 Logic - Высокая скорость и приоритет критов
             if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
                 if (screenShake) client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                 client.interactionManager.attackEntity(client.player, target);
@@ -139,7 +140,7 @@ public class ExampleMod implements ModInitializer {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x90000000); // Обычный темный фон без блюра
+            ctx.fill(0, 0, width, height, 0x80000000); // Ручная заливка без блюра
             int x = width/2-90, y = height/2-105;
             ctx.fill(x, y, x+180, y+155, 0xFF050505);
             ctx.drawBorder(x, y, 180, 155, 0xFF00AAFF);
@@ -191,24 +192,18 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xEE000000); // Сплошная заливка вместо размытия
+            ctx.fill(0, 0, width, height, 0xEE000000); // Сплошной черный фон
             int x = width/2, y = height/2;
             ctx.fill(x-115, y-90, x+115, y+90, 0xFF0A0A0A);
             ctx.drawBorder(x-115, y-90, 230, 180, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bKILL AURA", x, y-80, -1);
-            
-            int c = (kaRange > 4.0) ? 0xFFFF0000 : (kaRange > 3.6 ? 0xFFFFFF00 : 0xFF00FF00);
-            ctx.fill(x+100, y-85, x+110, y-75, c);
-
             ctx.drawTextWithShadow(textRenderer, "Дистанция:", x-105, y-41, -1);
             ctx.drawTextWithShadow(textRenderer, "Стены:", x-105, y-16, -1);
             ctx.drawTextWithShadow(textRenderer, "Тряска:", x-105, y+9, -1);
-            
             drawArr(ctx, x, y, mx, my);
             drawChk(ctx, "Авто-Бег", autoRun, y+35, mx, my);
             drawChk(ctx, "Анти-Отдача", antiVelocity, y+50, mx, my);
             drawChk(ctx, "Elite Mode", eliteLogic, y+65, mx, my);
-
             int cx = x-230;
             ctx.fill(cx, y-90, cx+110, y+90, 0xFF0A0A0A);
             ctx.drawBorder(cx, y-90, 110, 180, 0xFF00AAFF);
@@ -244,7 +239,7 @@ public class ExampleMod implements ModInitializer {
             }
             int cx = x-230;
             if(mx >= cx+10 && mx <= cx+100 && my >= y-40 && my <= y-20) {
-                kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 1.0f; autoRun = true; antiVelocity = true; eliteLogic = true;
+                kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 1.0f; autoRun = true; antiVelocity = true;
                 f1.setText("3.8"); f2.setText("3.0"); f3.setText("1.0");
             }
             return super.mouseClicked(mx, my, b);
@@ -305,7 +300,7 @@ public class ExampleMod implements ModInitializer {
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0,0,width,height, 0xEE000000);
-            ctx.drawCenteredTextWithShadow(textRenderer, "ЖМИ КНОПКУ", width/2, height/2, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "PRESS KEY", width/2, height/2, -1);
         }
     }
 
@@ -338,4 +333,3 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
-
