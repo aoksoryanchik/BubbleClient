@@ -24,33 +24,30 @@ import org.lwjgl.glfw.GLFW;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния модулей
+    [span_1](start_span)// Состояния модулей (из оригинального ExampleMod.class)[span_1](end_span)
     public static boolean killaura = false;
     public static boolean triggerbot = false;
     public static boolean fullbright = false;
     public static boolean autoTotem = true;
-    public static boolean autoRun = true;
     public static boolean targetHudActive = true;
     public static boolean kaTargetStick = true;
     public static boolean waypointActive = false;
 
-    // Настройки
+    // Настройки параметров
     public static double kaRange = 3.8;
     public static double kaWallsRange = 3.0;
     public static float shakeIntensity = 0.5f;
-    public static int thX = 10, thY = 10;
+    public static int thX = 30, thY = 30;
     public static double wpX = 0, wpY = 64, wpZ = 0;
 
-    // Бинды
+    // Клавиши управления
     public static int keyKA = GLFW.GLFW_KEY_R;
     public static int keyTB = GLFW.GLFW_KEY_Z;
     public static int keyFB = GLFW.GLFW_KEY_B;
     public static int keyAT = GLFW.GLFW_KEY_G;
-    public static int keyWP = GLFW.GLFW_KEY_O;
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
@@ -64,30 +61,26 @@ public class ExampleMod implements ModInitializer {
         
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
-            long handle = client.getWindow().getHandle();
+            long h = client.getWindow().getHandle();
 
-            // Открытие меню на Правый Shift
-            if (isPressed(handle, GLFW.GLFW_KEY_RIGHT_SHIFT) && client.currentScreen == null) {
+            [span_2](start_span)// Открытие оригинального меню (BubbleMenu.class)[span_2](end_span)
+            if (isPressed(h, GLFW.GLFW_KEY_RIGHT_SHIFT) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Обработка биндов в игре
+            [span_3](start_span)// Обработка нажатий клавиш (BindScreen.class логика)[span_3](end_span)
             if (client.currentScreen == null) {
-                if (isPressed(handle, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
-                if (isPressed(handle, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
-                if (isPressed(handle, keyFB)) { fullbright = !fullbright; sendNotify("FullBright", fullbright); }
-                if (isPressed(handle, keyAT)) { autoTotem = !autoTotem; sendNotify("AutoTotem", autoTotem); }
-                if (isPressed(handle, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
+                if (isPressed(h, keyKA)) killaura = !killaura;
+                if (isPressed(h, keyTB)) triggerbot = !triggerbot;
+                if (isPressed(h, keyFB)) fullbright = !fullbright;
+                if (isPressed(h, keyAT)) autoTotem = !autoTotem;
             }
 
-            // Логика модулей
-            if (fullbright) {
-                client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
+            // Модули
+            if (fullbright) client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
                     net.minecraft.entity.effect.StatusEffects.NIGHT_VISION, 1000, 0, false, false));
-            }
+            
             if (autoTotem) handleAutoTotem(client);
-            if (autoRun && client.player.input.movementForward > 0) client.player.setSprinting(true);
-
             if (killaura) runAura(client); else currentTarget = null;
             if (triggerbot) runTrigger(client);
         });
@@ -100,6 +93,7 @@ public class ExampleMod implements ModInitializer {
         if (waypointActive) renderWaypointArrow(ctx);
     }
 
+    // --- КИЛЛАУРА И ТАРГЕТ (ПРИСОСКА) ---
     private void runAura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
@@ -116,17 +110,17 @@ public class ExampleMod implements ModInitializer {
         currentTarget = target;
         if (target != null) {
             // Тряска (Shake)
-            float s = shakeIntensity * 1.5f;
+            float s = shakeIntensity * 2.0f;
             client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * s);
             client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * s);
 
-            // Target (Присоска) - притягивает к врагу, если у него < 10 HP
-            if (kaTargetStick && target.getHealth() < 10.0f) {
-                Vec3d diff = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.045);
-                client.player.addVelocity(diff.x, 0, diff.z);
+            // TARGET (Присоска) - Плавное прилипание
+            if (kaTargetStick && target.getHealth() < 12.0f) {
+                Vec3d motion = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.05);
+                client.player.addVelocity(motion.x, 0, motion.z);
             }
 
-            // Удар
+            // Удар (КД 0.95)
             if (client.player.getAttackCooldownProgress(0) >= 0.95f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
@@ -134,6 +128,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // --- ТРИГГЕРБОТ (БЕЗ НАСТРОЕК) ---
     private void runTrigger(MinecraftClient client) {
         EntityHitResult hit = raycastEntity(client, kaRange);
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
@@ -151,40 +146,35 @@ public class ExampleMod implements ModInitializer {
         return ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e instanceof PlayerEntity && e.isAlive(), range * range);
     }
 
+    // --- TARGET HUD (NURSULTAN STYLE) ---
     private void renderTargetHUD(DrawContext ctx) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (currentTarget == null) return;
 
-        int x = thX, y = thY, w = 130, h = 42;
-        ctx.fill(x, y, x + w, y + h, 0xAA101010); // Фон
+        int x = thX, y = thY, w = 130, h = 45;
+        ctx.fill(x, y, x + w, y + h, 0xCC000000); // Глубокий темный фон
 
-        // Рендер головы (Face only)
+        // Голова игрока (Метод из новых версий 1.20+)
         PlayerListEntry entry = client.getNetworkHandler().getPlayerListEntry(currentTarget.getUuid());
         if (entry != null) {
             Identifier skin = entry.getSkinTextures().texture();
-            ctx.drawTexture(RenderLayer::getGuiTextured, skin, x + 5, y + 5, 8, 8, 32, 32, 64, 64);
-            ctx.drawTexture(RenderLayer::getGuiTextured, skin, x + 5, y + 5, 40, 8, 32, 32, 64, 64);
+            ctx.drawTexture(RenderLayer::getGuiTextured, skin, x + 5, y + 5, 8, 8, 35, 35, 64, 64);
         }
 
-        ctx.drawTextWithShadow(client.textRenderer, currentTarget.getName().getString(), x + 42, y + 6, -1);
-
-        // Полоска здоровья с переливом (Nursultan Style)
-        float hpPercent = currentTarget.getHealth() / currentTarget.getMaxHealth();
-        animatedHP += (hpPercent - animatedHP) * 0.12f;
-
-        int barX = x + 42, barY = y + 18, barW = 80, barH = 5;
-        ctx.fill(barX, barY, barX + barW, barY + barH, 0x40FFFFFF); // Подложка
-
-        int currentBarW = (int) (barW * animatedHP);
+        ctx.drawTextWithShadow(client.textRenderer, currentTarget.getName().getString(), x + 45, y + 6, -1);
+        
+        // Анимированная полоска HP
+        float hpRatio = MathHelper.clamp(currentTarget.getHealth() / currentTarget.getMaxHealth(), 0, 1);
+        animatedHP += (hpRatio - animatedHP) * 0.1f;
+        
+        int barW = (int) (80 * animatedHP);
         long time = System.currentTimeMillis();
-        for (int i = 0; i < currentBarW; i++) {
-            float wave = (float) Math.sin((time / 350.0) + (i / 7.0)) * 0.5f + 0.5f;
-            int r = (int) (160 + wave * 95);
-            int g = (int) (160 + wave * 95);
-            int b = (int) (160 + wave * 95);
-            ctx.fill(barX + i, barY, barX + i + 1, barY + barH, (255 << 24) | (r << 16) | (g << 8) | b);
+        for (int i = 0; i < barW; i++) {
+            float wave = (float) Math.sin((time / 400.0) + (i / 8.0)) * 0.5f + 0.5f;
+            int color = (255 << 24) | ((int)(170 + wave * 85) << 16) | ((int)(170 + wave * 85) << 8) | (int)(170 + wave * 85);
+            ctx.fill(x + 45 + i, y + 20, x + 46 + i, y + 26, color);
         }
-        ctx.drawText(client.textRenderer, String.format("HP: %.1f", currentTarget.getHealth()), barX, barY + 9, 0xFFBBBBBB, false);
+        ctx.drawText(client.textRenderer, "Health: " + (int)currentTarget.getHealth(), x + 45, y + 30, 0xFFBBBBBB, false);
     }
 
     private void renderWaypointArrow(DrawContext ctx) {
@@ -193,7 +183,7 @@ public class ExampleMod implements ModInitializer {
         float tYaw = (float) Math.toDegrees(Math.atan2(targetVec.z, targetVec.x)) - 90F;
         float diff = MathHelper.wrapDegrees(tYaw - client.player.getYaw());
         ctx.getMatrices().push();
-        ctx.getMatrices().translate(client.getWindow().getScaledWidth() / 2f, client.getWindow().getScaledHeight() / 2f - 40, 0);
+        ctx.getMatrices().translate(client.getWindow().getScaledWidth() / 2f, client.getWindow().getScaledHeight() / 2f - 35, 0);
         ctx.getMatrices().multiply(RotationAxis.POSITIVE_Z.rotationDegrees(diff));
         ctx.drawCenteredTextWithShadow(client.textRenderer, "▲", 0, 0, 0xFF00AAFF);
         ctx.getMatrices().pop();
@@ -210,11 +200,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void sendNotify(String mod, boolean s) {
-        if (MinecraftClient.getInstance().player != null)
-            MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[Bubble] §f" + mod + ": " + (s ? "§aON" : "§cOFF")), true);
-    }
-
     private boolean isPressed(long h, int k) {
         if (k == GLFW.GLFW_KEY_UNKNOWN) return false;
         boolean d = InputUtil.isKeyPressed(h, k);
@@ -222,7 +207,7 @@ public class ExampleMod implements ModInitializer {
         if (!d) keyStates[k] = false; return false;
     }
 
-    // --- ИНТЕРФЕЙС МЕНЮ (СТАРЫЙ СТИЛЬ) ---
+    [span_4](start_span)// --- ОРИГИНАЛЬНОЕ МЕНЮ (BubbleMenu.class)[span_4](end_span) ---
     public static class BubbleMenu extends Screen {
         private String inputVal = "";
         private int selectedParam = -1; // 0: Range, 1: Walls, 2: Shake
@@ -232,65 +217,64 @@ public class ExampleMod implements ModInitializer {
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0x85000000);
-            int x = width / 2 - 160, y = height / 2 - 100;
+            int x = width / 2 - 160, y = height / 2 - 110;
 
-            // Левая часть (CONFIGS)
-            ctx.fill(x, y, x + 90, y + 180, 0xFF121212);
-            ctx.drawBorder(x, y, 90, 180, 0xFF00AAFF);
+            // CONFIGS
+            ctx.fill(x, y, x + 90, y + 190, 0xFF141414);
+            ctx.drawBorder(x, y, 90, 190, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "CONFIGS", x + 45, y + 10, 0xFF00AAFF);
             
-            drawButton(ctx, "MineBlaze", x + 10, y + 35, mx, my);
-            drawButton(ctx, "AresMine", x + 10, y + 60, mx, my);
+            drawMenuBtn(ctx, "MineBlaze", x + 10, y + 40, mx, my);
+            drawMenuBtn(ctx, "AresMine", x + 10, y + 65, mx, my);
 
-            // Правая часть (SETTINGS)
-            ctx.fill(x + 95, y, x + 320, y + 180, 0xFF121212);
-            ctx.drawBorder(x + 95, y, 225, 180, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "KILL AURA SETTINGS", x + 207, y + 10, 0xFF00AAFF);
+            // SETTINGS
+            ctx.fill(x + 95, y, x + 330, y + 190, 0xFF141414);
+            ctx.drawBorder(x + 95, y, 235, 190, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "AURA CONFIGURATION", x + 212, y + 10, 0xFF00AAFF);
 
-            drawRow(ctx, "Range", kaRange, x + 110, y + 40, selectedParam == 0);
-            drawRow(ctx, "WallsRange", kaWallsRange, x + 110, y + 65, selectedParam == 1);
-            drawRow(ctx, "Shake", (double) shakeIntensity, x + 110, y + 90, selectedParam == 2);
+            renderSetting(ctx, "Range", kaRange, x + 110, y + 45, selectedParam == 0);
+            renderSetting(ctx, "Walls", kaWallsRange, x + 110, y + 70, selectedParam == 1);
+            renderSetting(ctx, "Shake", (double) shakeIntensity, x + 110, y + 95, selectedParam == 2);
             
-            // Чекбоксы
-            drawCheckbox(ctx, "Target Stick", kaTargetStick, x + 110, y + 115);
-            drawCheckbox(ctx, "TargetHUD", targetHudActive, x + 110, y + 135);
+            renderToggle(ctx, "Stick Target", kaTargetStick, x + 110, y + 125);
+            renderToggle(ctx, "TargetHUD", targetHudActive, x + 110, y + 145);
 
             if (selectedParam != -1) {
-                ctx.drawCenteredTextWithShadow(textRenderer, "Type & Enter: §a" + inputVal + "_", x + 207, y + 160, -1);
+                ctx.drawCenteredTextWithShadow(textRenderer, "Input: §a" + inputVal + "_", x + 212, y + 175, -1);
             }
         }
 
-        private void drawRow(DrawContext ctx, String name, double val, int x, int y, boolean sel) {
-            ctx.drawTextWithShadow(textRenderer, name, x, y, -1);
-            ctx.drawTextWithShadow(textRenderer, (sel ? "§b" : "") + "< " + String.format("%.1f", val) + " >", x + 130, y, -1);
+        private void renderSetting(DrawContext ctx, String n, double v, int x, int y, boolean s) {
+            ctx.drawTextWithShadow(textRenderer, n, x, y, -1);
+            ctx.drawTextWithShadow(textRenderer, (s ? "§b" : "") + "< " + String.format("%.1f", v) + " >", x + 140, y, -1);
         }
 
-        private void drawCheckbox(DrawContext ctx, String name, boolean state, int x, int y) {
-            ctx.drawTextWithShadow(textRenderer, name, x, y, -1);
-            ctx.drawTextWithShadow(textRenderer, state ? "§a[ON]" : "§c[OFF]", x + 130, y, -1);
+        private void renderToggle(DrawContext ctx, String n, boolean st, int x, int y) {
+            ctx.drawTextWithShadow(textRenderer, n, x, y, -1);
+            ctx.drawTextWithShadow(textRenderer, st ? "§aON" : "§cOFF", x + 140, y, -1);
         }
 
-        private void drawButton(DrawContext ctx, String text, int x, int y, int mx, int my) {
+        private void drawMenuBtn(DrawContext ctx, String t, int x, int y, int mx, int my) {
             boolean h = mx >= x && mx <= x + 70 && my >= y && my <= y + 18;
-            ctx.fill(x, y, x + 70, y + 18, h ? 0xFF303030 : 0xFF202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, text, x + 35, y + 5, -1);
+            ctx.fill(x, y, x + 70, y + 18, h ? 0xFF353535 : 0xFF252525);
+            ctx.drawCenteredTextWithShadow(textRenderer, t, x + 35, y + 5, -1);
         }
 
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
-            int x = width / 2 - 160, y = height / 2 - 100;
-            // Клик по конфигам
+            int x = width / 2 - 160, y = height / 2 - 110;
+            // Config logic
             if (mx >= x + 10 && mx <= x + 80) {
-                if (my >= y + 35 && my <= y + 53) { kaRange = 3.1; kaWallsRange = 3.1; shakeIntensity = 0.3f; }
-                if (my >= y + 60 && my <= y + 78) { kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 0.5f; }
+                if (my >= y + 40 && my <= y + 58) { kaRange = 3.1; kaWallsRange = 3.1; shakeIntensity = 0.3f; }
+                if (my >= y + 65 && my <= y + 83) { kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 0.5f; }
             }
-            // Клик по параметрам (для ввода)
-            if (mx >= x + 220 && mx <= x + 300) {
-                if (my >= y + 40 && my <= y + 55) { selectedParam = 0; inputVal = ""; }
-                if (my >= y + 65 && my <= y + 80) { selectedParam = 1; inputVal = ""; }
-                if (my >= y + 90 && my <= y + 105) { selectedParam = 2; inputVal = ""; }
-                if (my >= y + 115 && my <= y + 130) kaTargetStick = !kaTargetStick;
-                if (my >= y + 135 && my <= y + 150) targetHudActive = !targetHudActive;
+            // Param logic
+            if (mx >= x + 240 && mx <= x + 320) {
+                if (my >= y + 45 && my <= y + 60) { selectedParam = 0; inputVal = ""; }
+                if (my >= y + 70 && my <= y + 85) { selectedParam = 1; inputVal = ""; }
+                if (my >= y + 95 && my <= y + 110) { selectedParam = 2; inputVal = ""; }
+                if (my >= y + 125 && my <= y + 140) kaTargetStick = !kaTargetStick;
+                if (my >= y + 145 && my <= y + 160) targetHudActive = !targetHudActive;
             }
             saveConfig();
             return true;
@@ -300,10 +284,10 @@ public class ExampleMod implements ModInitializer {
         public boolean keyPressed(int k, int s, int m) {
             if (k == GLFW.GLFW_KEY_ENTER && selectedParam != -1) {
                 try {
-                    double v = Double.parseDouble(inputVal);
-                    if (selectedParam == 0) kaRange = v;
-                    if (selectedParam == 1) kaWallsRange = v;
-                    if (selectedParam == 2) shakeIntensity = (float) v;
+                    double val = Double.parseDouble(inputVal);
+                    if (selectedParam == 0) kaRange = val;
+                    if (selectedParam == 1) kaWallsRange = val;
+                    if (selectedParam == 2) shakeIntensity = (float) val;
                 } catch (Exception ignored) {}
                 selectedParam = -1; return true;
             }
@@ -314,6 +298,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // --- СИСТЕМА КОНФИГОВ ---
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange + ":" + kaWallsRange + ":" + shakeIntensity + ":" + kaTargetStick + ":" + targetHudActive);
@@ -325,10 +310,8 @@ public class ExampleMod implements ModInitializer {
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":");
             if (p.length >= 5) {
-                kaRange = Double.parseDouble(p[0]);
-                kaWallsRange = Double.parseDouble(p[1]);
-                shakeIntensity = Float.parseFloat(p[2]);
-                kaTargetStick = Boolean.parseBoolean(p[3]);
+                kaRange = Double.parseDouble(p[0]); kaWallsRange = Double.parseDouble(p[1]);
+                shakeIntensity = Float.parseFloat(p[2]); kaTargetStick = Boolean.parseBoolean(p[3]);
                 targetHudActive = Boolean.parseBoolean(p[4]);
             }
         } catch (Exception ignored) {}
