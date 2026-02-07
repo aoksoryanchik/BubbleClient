@@ -84,29 +84,33 @@ public class ExampleMod implements ModInitializer {
             }
         }
         if (target != null) {
+            // Плавная доводка с разбросом
             double s = shakeIntensity * 0.15;
             double rX = (random.nextDouble() - 0.5) * s;
             double rZ = (random.nextDouble() - 0.5) * s;
             
-            Vec3d tPos = target.getPos().add(rX, target.getHeight() * (0.35 + random.nextDouble() * 0.45), rZ);
+            Vec3d tPos = target.getPos().add(rX, target.getHeight() * (0.4 + random.nextDouble() * 0.3), rZ);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
             
-            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()));
-            client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()));
+            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()) * 0.85f);
+            client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()) * 0.85f);
 
-            // ЛОГИКА ПРИСОСКИ (Sticky)
-            if (stickyAura && client.player.getHealth() > (client.player.getMaxHealth() / 2f) 
+            // Sticky (Присоска) - условия: твои HP > 50%, врага < 66%
+            if (stickyAura && client.player.getHealth() > (client.player.getMaxHealth() * 0.5f) 
                 && target.getHealth() < (target.getMaxHealth() * 0.66f)) {
-                Vec3d pull = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.14);
+                Vec3d pull = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.08); // Уменьшил силу для беспалевности
                 client.player.addVelocity(pull.x, 0, pull.z);
             }
 
+            // Raycast Bypass: бьем только если реально смотрим на цель
             EntityHitResult hit = raycastEntity(client, kaRange);
             if (hit != null && hit.getEntity() == target) {
-                if (client.player.getAttackCooldownProgress(0) >= 0.95f) {
+                // Рандомный КД для MineBlaze (0.93 - 1.15)
+                float randomCD = 0.93f + random.nextFloat() * 0.22f;
+                if (client.player.getAttackCooldownProgress(0) >= randomCD) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -162,7 +166,8 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient client) {
         EntityHitResult hit = raycastEntity(client, kaRange);
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
-            if (client.player.getAttackCooldownProgress(0) >= 0.95f && (!tbCrits || (client.player.fallDistance > 0 && !client.player.isOnGround()))) {
+            float randomCD = 0.95f + random.nextFloat() * 0.15f;
+            if (client.player.getAttackCooldownProgress(0) >= randomCD && (!tbCrits || (client.player.fallDistance > 0 && !client.player.isOnGround()))) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -266,7 +271,7 @@ public class ExampleMod implements ModInitializer {
         private void drawNumRow(DrawContext ctx, String s, int x, int y, int bx, int by, double val, int mx, int my) {
             ctx.drawTextWithShadow(textRenderer, s, x, y, -1);
             ctx.drawTextWithShadow(textRenderer, "<", bx, by, mx>=bx && mx<=bx+10 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
-            ctx.drawTextWithShadow(textRenderer, String.format("%.1f", val), bx+15, by, -1); // ЦИФРЫ ТУТ
+            ctx.drawTextWithShadow(textRenderer, String.format("%.1f", val), bx+15, by, -1);
             ctx.drawTextWithShadow(textRenderer, ">", bx+55, by, mx>=bx+55 && mx<=bx+65 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
         }
         private void drawStatus(DrawContext ctx, String t, int x, int y, boolean s, int mx, int my) {
@@ -300,8 +305,14 @@ public class ExampleMod implements ModInitializer {
                 if(my>=y+75 && my<=y+85) stickyAura = !stickyAura;
             }
             if(mx>=cx+10 && mx<=cx+110) {
-                if(my>=y-50 && my<=y-32) { kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; refresh(); }
-                if(my>=y-25 && my<=y-7) { kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.6f; refresh(); }
+                if(my>=y-50 && my<=y-32) { // КФГ MINEBLAZE
+                    kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; antiVelocity=false; // Выключаем AntiVelocity
+                    refresh();
+                }
+                if(my>=y-25 && my<=y-7) { // КФГ ARESMINE
+                    kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.6f; antiVelocity=true;
+                    refresh();
+                }
             }
             saveConfig(); return super.mouseClicked(mx, my, b);
         }
