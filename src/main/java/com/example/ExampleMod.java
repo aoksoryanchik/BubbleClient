@@ -1,4 +1,3 @@
-
 package com.example;
 
 import net.fabricmc.api.ModInitializer;
@@ -96,12 +95,11 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
             
-            // Прямая наводка как в старом коде, но БЕЗ тряски в методе updateRotations
-            updateRotations(client.player, targetPos, 100.0f); // 100.0f - мгновенная наводка
+            // Наводимся каждый тик для точности
+            updateRotations(client.player, targetPos, 100.0f);
 
-            if (client.player.getAttackCooldownProgress(0) >= 0.94f) {
-                // Если нужна тряска ДЛЯ СЕРВЕРА, она должна быть тут, но ты просил убрать
-                // Поэтому просто бьем. Прицел УЖЕ наведен методом выше.
+            // ИСПРАВЛЕНО: Ждем полного КД перед ударом (1.0f - максимальный урон)
+            if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -116,7 +114,7 @@ public class ExampleMod implements ModInitializer {
         EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e instanceof PlayerEntity && e.isAlive() && e != client.player, reach * reach);
         
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
-            if (client.player.getAttackCooldownProgress(0) >= (tbCrits ? 1.0f : 0.92f)) {
+            if (client.player.getAttackCooldownProgress(0) >= (tbCrits ? 1.0f : 0.95f)) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -129,7 +127,7 @@ public class ExampleMod implements ModInitializer {
         float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
         
-        // Убрана случайная тряска (random) для плавной наводки
+        // Плавная, но быстрая наводка без использования random (убирает тряску)
         player.setYaw(player.getYaw() + MathHelper.clamp(MathHelper.wrapDegrees(tYaw - player.getYaw()), -speed, speed));
         player.setPitch(player.getPitch() + MathHelper.clamp(MathHelper.wrapDegrees(tPitch - player.getPitch()), -speed, speed));
     }
@@ -156,7 +154,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI ---
+    // --- GUI (Без изменений) ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
@@ -226,14 +224,12 @@ public class ExampleMod implements ModInitializer {
             drawArr(ctx, x, y, mx, my);
             drawChk(ctx, "Авто-Бег", autoRun, y+35, mx, my);
             drawChk(ctx, "Анти-Отдача", antiVelocity, y+50, mx, my);
-            
             int cx = x-240;
             ctx.fill(cx, y-95, cx+120, y+90, 0xFF0A0A0A);
             ctx.drawBorder(cx, y-95, 120, 185, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bКОНФИГИ", cx+60, y-85, -1);
             drawCfgBtn(ctx, "AresMine", cx+10, y-45, mx, my);
             drawCfgBtn(ctx, "MineBlaze", cx+10, y-20, mx, my);
-
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
         }
         private void drawCfgBtn(DrawContext ctx, String n, int x, int y, int mx, int my) {
@@ -385,3 +381,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
