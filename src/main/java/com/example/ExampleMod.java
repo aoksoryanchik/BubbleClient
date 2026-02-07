@@ -94,7 +94,6 @@ public class ExampleMod implements ModInitializer {
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.45, 0);
             updateRotations(client.player, targetPos);
             
-            // Artefacts 27 Logic - Высокая скорость и приоритет критов
             if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
                 if (screenShake) client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                 client.interactionManager.attackEntity(client.player, target);
@@ -134,13 +133,13 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI ---
+    // --- GUI С НУЛЕВЫМ РАЗМЫТИЕМ ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x80000000); // Ручная заливка без блюра
+            ctx.fill(0, 0, width, height, 0x90000000); // Ручное затемнение вместо блюра
             int x = width/2-90, y = height/2-105;
             ctx.fill(x, y, x+180, y+155, 0xFF050505);
             ctx.drawBorder(x, y, 180, 155, 0xFF00AAFF);
@@ -154,7 +153,7 @@ public class ExampleMod implements ModInitializer {
                 ctx.fill(x+10, iy, x+170, iy+18, h ? 0xFF1A1A1A : 0xFF101010);
                 String kN = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(k[i], 0).toUpperCase();
                 ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + kN + "]", x+15, iy+5, s[i] ? 0xFF00FF00 : 0xFFFF3333);
-                if(i==0 || i==4) ctx.drawTextWithShadow(textRenderer, "⚙", x+155, iy+5, -1);
+                [span_0](start_span)[span_1](start_span)if(i==0 || i[span_0](end_span)[span_1](end_span)) ctx.drawTextWithShadow(textRenderer, "⚙", x+155, iy+5, -1);
             }
         }
         @Override
@@ -192,7 +191,7 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xEE000000); // Сплошной черный фон
+            ctx.fill(0, 0, width, height, 0xEE000000); // Никакого размытия!
             int x = width/2, y = height/2;
             ctx.fill(x-115, y-90, x+115, y+90, 0xFF0A0A0A);
             ctx.drawBorder(x-115, y-90, 230, 180, 0xFF00AAFF);
@@ -333,3 +332,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
