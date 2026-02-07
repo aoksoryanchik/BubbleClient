@@ -106,9 +106,17 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient client) {
         double reach = 3.5;
         Vec3d eyePos = client.player.getEyePos();
-        Vec3d lookVec = client.player.getRotationVector(1.0F).multiply(reach);
+        // Исправленный расчет вектора взгляда для новых версий
+        float f = client.player.getPitch() * 0.017453292F;
+        float g = -client.player.getYaw() * 0.017453292F;
+        float h = MathHelper.cos(g);
+        float i = MathHelper.sin(g);
+        float j = MathHelper.cos(f);
+        float k = MathHelper.sin(f);
+        Vec3d lookVec = new Vec3d(i * j, -k, h * j).multiply(reach);
+        
         Box box = client.player.getBoundingBox().expand(lookVec.x, lookVec.y, lookVec.z).expand(1.0);
-        EntityHitResult hit = ProjectileUtil.raycast(client.player, eyePos, eyePos.add(lookVec), box, (e) -> e instanceof PlayerEntity && e.isAlive(), reach * reach);
+        EntityHitResult hit = ProjectileUtil.raycast(client.player, eyePos, eyePos.add(lookVec), box, (e) -> e instanceof PlayerEntity && e.isAlive() && e != client.player, reach * reach);
         
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
             float progress = client.player.getAttackCooldownProgress(0);
@@ -170,6 +178,7 @@ public class ExampleMod implements ModInitializer {
                 ctx.fill(x+10, iy, x+170, iy+18, h ? 0xFF1A1A1A : 0xFF101010);
                 String kN = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(k[i], 0).toUpperCase();
                 ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + kN + "]", x+15, iy+5, s[i] ? 0xFF00FF00 : 0xFFFF3333);
+                // Фикс условия: шестеренки у KA, TriggerBot и Waypoint
                 if(i==0 || i==1 || i==4) ctx.drawTextWithShadow(textRenderer, "⚙", x+155, iy+5, -1);
             }
         }
@@ -202,16 +211,17 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xEE000000);
             int x = width/2, y = height/2;
-            ctx.fill(x-70, y-40, x+70, y+40, 0xFF0A0A0A);
-            ctx.drawBorder(x-70, y-40, 140, 80, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "TRIGGER BOT", x, y-30, -1);
-            boolean h = mx >= x-60 && mx <= x+60 && my >= y && my <= y+12;
-            ctx.drawCenteredTextWithShadow(textRenderer, "Только криты: " + (tbCrits ? "§aВКЛ" : "§cВЫКЛ"), x, y, h ? -1 : 0xFFCCCCCC);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§7[ESC для выхода]", x, y+25, 0xFF888888);
+            ctx.fill(x-80, y-40, x+80, y+40, 0xFF0A0A0A);
+            ctx.drawBorder(x-80, y-40, 160, 80, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§bTRIGGER BOT", x, y-30, -1);
+            boolean h = mx >= x-70 && mx <= x+70 && my >= y && my <= y+12;
+            ctx.drawCenteredTextWithShadow(textRenderer, "Only Crits: " + (tbCrits ? "§aON" : "§cOFF"), x, y, h ? -1 : 0xFFCCCCCC);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§7[ESC back]", x, y+25, 0xFF888888);
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
-            if(mx >= width/2-60 && mx <= width/2+60 && my >= height/2 && my <= height/2+12) {
+            int x = width/2, y = height/2;
+            if(mx >= x-70 && mx <= x+70 && my >= y && my <= y+12) {
                 tbCrits = !tbCrits; saveConfig(); return true;
             }
             return false;
