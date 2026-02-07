@@ -135,13 +135,29 @@ public class ExampleMod implements ModInitializer {
         MinecraftClient client = MinecraftClient.getInstance();
         if (currentTarget == null && !(client.currentScreen instanceof HudEditor)) return;
         PlayerEntity entity = (currentTarget != null) ? currentTarget : client.player;
+
         int x = thX, y = thY;
-        ctx.fill(x, y, x + 120, y + 35, 0x90000000);
-        ctx.drawBorder(x, y, 120, 35, 0xFF00AAFF);
-        ctx.drawTextWithShadow(client.textRenderer, entity.getName().getString(), x + 5, y + 5, -1);
-        ctx.drawTextWithShadow(client.textRenderer, String.format("%.1f HP", entity.getHealth()), x + 5, y + 16, 0xFFFF5555);
-        float hw = (entity.getHealth() / entity.getMaxHealth()) * 110;
-        ctx.fill(x + 5, y + 27, x + 5 + (int)hw, y + 30, 0xFFFF5555);
+        int width = 140;
+        int height = 40;
+
+        // Фон корпуса
+        ctx.fill(x, y, x + width, y + height, 0xAA000000); // Темный полупрозрачный фон
+        ctx.drawBorder(x, y, width, height, 0xFF444444); // Тонкая серая обводка
+
+        // Отрисовка лица (как в Nursultan)
+        ctx.drawEntity(entity, x + 20, y + 35, 15, new Vector3f(), new Quaternionf());
+        
+        // Информация: Ник и ХП
+        ctx.drawTextWithShadow(client.textRenderer, entity.getName().getString(), x + 40, y + 6, -1);
+        ctx.drawTextWithShadow(client.textRenderer, "HP: " + String.format("%.1f", entity.getHealth()), x + 40, y + 17, 0xFFBBBBBB);
+
+        // Красивая полоска здоровья
+        ctx.fill(x + 40, y + 28, x + width - 10, y + 32, 0x66FFFFFF); // Подложка (серая)
+        float hpPercent = MathHelper.clamp(entity.getHealth() / entity.getMaxHealth(), 0, 1);
+        int hpBarWidth = (int)((width - 50) * hpPercent);
+        
+        // Градиентная полоска (от светло-голубого к синему)
+        ctx.fill(x + 40, y + 28, x + 40 + hpBarWidth, y + 32, 0xFF00AAFF); 
     }
 
     private void renderWaypointArrow(DrawContext ctx) {
@@ -302,12 +318,20 @@ public class ExampleMod implements ModInitializer {
         public HudEditor(Screen p) { super(Text.literal("")); this.parent = p; }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x70000000);
+            // ЧИСТЫЙ ФОН БЕЗ РАЗМЫТИЯ
+            ctx.fill(0, 0, width, height, 0x44000000); 
             ctx.drawCenteredTextWithShadow(textRenderer, "DRAG HUD WITH RIGHT CLICK (ПКМ)", width/2, 50, -1);
-            ctx.fill(width/2-40, height-40, width/2+40, height-20, 0xFF00AAFF);
+            
+            // Кнопка Save
+            boolean hSave = mx >= width/2-40 && mx <= width/2+40 && my >= height-40 && my <= height-20;
+            ctx.fill(width/2-40, height-40, width/2+40, height-20, hSave ? 0xFF00CCFF : 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "SAVE", width/2, height-35, -1);
+
             if(GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS) {
-                if(mx >= thX && mx <= thX + 120 && my >= thY && my <= thY + 35) { thX = mx - 60; thY = my - 17; }
+                if(mx >= thX && mx <= thX + 140 && my >= thY && my <= thY + 40) { 
+                    thX = mx - 70; 
+                    thY = my - 20; 
+                }
             }
             super.render(ctx, mx, my, d);
         }
@@ -369,3 +393,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
