@@ -29,18 +29,15 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния модулей
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
-    public static boolean stickyAura = true; // Новая настройка присоски
+    public static boolean stickyAura = true;
 
-    // Настройки параметров
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static float shakeIntensity = 0.5f;
     public static double wpX = 0, wpY = 64, wpZ = 0;
-    public static double wpMaxDist = 450.0; // Твой лимит 450 блоков
+    public static double wpMaxDist = 450.0;
     
-    // Бинды клавиш
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN, 
                       keyAT = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
 
@@ -87,7 +84,6 @@ public class ExampleMod implements ModInitializer {
             }
         }
         if (target != null) {
-            // Шейк и рандомизация
             double s = shakeIntensity * 0.15;
             double rX = (random.nextDouble() - 0.5) * s;
             double rZ = (random.nextDouble() - 0.5) * s;
@@ -101,8 +97,13 @@ public class ExampleMod implements ModInitializer {
             client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()));
             client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()));
 
-            // ЛОГИКА ПРИСОСКИ (Sticky)
-            if (stickyAura && target.getHealth() <= 10.0f) {
+            // ОБНОВЛЕННАЯ ЛОГИКА ПРИСОСКИ
+            float myHp = client.player.getHealth();
+            float targetHp = target.getHealth();
+            float myMaxHp = client.player.getMaxHealth();
+            float targetMaxHp = target.getMaxHealth();
+
+            if (stickyAura && (myHp > myMaxHp / 2) && (targetHp < (targetMaxHp * 0.66f))) {
                 Vec3d pullDir = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.12);
                 Vec3d vel = client.player.getVelocity();
                 client.player.setVelocity(vel.x + pullDir.x, vel.y, vel.z + pullDir.z);
@@ -130,24 +131,14 @@ public class ExampleMod implements ModInitializer {
         if (!waypointActive) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return;
-
         Vec3d wpVec = new Vec3d(wpX, wpY, wpZ);
         double d = client.player.getPos().distanceTo(wpVec);
-
         if (d <= wpMaxDist) {
             Vec3d targetVec = wpVec.subtract(client.player.getPos());
             float tYaw = (float) Math.toDegrees(Math.atan2(targetVec.z, targetVec.x)) - 90F;
             float angleDiff = MathHelper.wrapDegrees(tYaw - client.player.getYaw());
-            
-            // Получаем символ стрелочки в зависимости от угла
-            String arrowIcon = getArrowByAngle(angleDiff);
-            
-            // Формируем строку: [Стрелка] Координаты | Расстояние
-            String info = String.format("%s [%d, %d, %d] - %.1fm", 
-                arrowIcon, (int)wpX, (int)wpY, (int)wpZ, d);
-            
-            int screenWidth = client.getWindow().getScaledWidth();
-            ctx.drawCenteredTextWithShadow(client.textRenderer, info, screenWidth / 2, 15, 0xFF00AAFF);
+            String info = String.format("%s [%d, %d, %d] - %.1fm", getArrowByAngle(angleDiff), (int)wpX, (int)wpY, (int)wpZ, d);
+            ctx.drawCenteredTextWithShadow(client.textRenderer, info, client.getWindow().getScaledWidth() / 2, 15, 0xFF00AAFF);
         }
     }
 
@@ -177,8 +168,7 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient client) {
         EntityHitResult hit = raycastEntity(client, kaRange);
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
-            boolean canCrit = !tbCrits || (client.player.fallDistance > 0 && !client.player.isOnGround());
-            if (client.player.getAttackCooldownProgress(0) >= 0.95f && canCrit) {
+            if (client.player.getAttackCooldownProgress(0) >= 0.95f && (!tbCrits || (client.player.fallDistance > 0 && !client.player.isOnGround()))) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -248,9 +238,9 @@ public class ExampleMod implements ModInitializer {
         public KillAuraSettings(Screen p) { super(Text.literal("")); this.parent = p; }
         @Override
         protected void init() {
-            rF = new TextFieldWidget(textRenderer, width/2 + 25, height/2-45, 30, 16, Text.literal(""));
-            wF = new TextFieldWidget(textRenderer, width/2 + 25, height/2-22, 30, 16, Text.literal(""));
-            sF = new TextFieldWidget(textRenderer, width/2 + 25, height/2 + 1, 30, 16, Text.literal(""));
+            rF = new TextFieldWidget(textRenderer, width/2 + 25, height/2-45, 40, 16, Text.literal(""));
+            wF = new TextFieldWidget(textRenderer, width/2 + 25, height/2-22, 40, 16, Text.literal(""));
+            sF = new TextFieldWidget(textRenderer, width/2 + 25, height/2 + 1, 40, 16, Text.literal(""));
             rF.setText(String.valueOf(kaRange)); wF.setText(String.valueOf(kaWallsRange)); sF.setText(String.valueOf(shakeIntensity));
             addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(sF);
         }
@@ -268,7 +258,7 @@ public class ExampleMod implements ModInitializer {
             
             drawStatus(ctx, "Auto-run:", x-105, y+35, autoRun, mx, my);
             drawStatus(ctx, "AntiVelocity:", x-105, y+55, antiVelocity, mx, my);
-            drawStatus(ctx, "Sticky Mode:", x-105, y+75, stickyAura, mx, my); // Отображение присоски
+            drawStatus(ctx, "Sticky Mode:", x-105, y+75, stickyAura, mx, my);
             
             int cx = x-240;
             ctx.fill(cx, y-95, cx+120, y+90, 0xFF0A0A0A);
@@ -280,12 +270,12 @@ public class ExampleMod implements ModInitializer {
         private void drawNumRow(DrawContext ctx, String s, int x, int y, int bx, int by, int mx, int my) {
             ctx.drawTextWithShadow(textRenderer, s, x, y, -1);
             ctx.drawTextWithShadow(textRenderer, "<", bx, by, mx>=bx && mx<=bx+10 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
-            ctx.drawTextWithShadow(textRenderer, ">", bx+48, by, mx>=bx+48 && mx<=bx+58 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
+            ctx.drawTextWithShadow(textRenderer, ">", bx+68, by, mx>=bx+68 && mx<=bx+78 && my>=by && my<=by+10 ? 0xFF00AAFF : -1);
         }
         private void drawStatus(DrawContext ctx, String t, int x, int y, boolean s, int mx, int my) {
             boolean h = mx>=x && mx<=x+120 && my>=y && my<=y+10;
             ctx.drawTextWithShadow(textRenderer, t, x, y, h ? 0xFF00AAFF : -1);
-            ctx.drawTextWithShadow(textRenderer, s ? "§aВКЛ" : "§cВЫКЛ", x+80, y, -1);
+            ctx.drawTextWithShadow(textRenderer, s ? "§aВКЛ" : "§cВЫКЛ", x+85, y, -1);
         }
         private void drawBtn(DrawContext ctx, String n, int x, int y, int mx, int my) {
             boolean h = mx>=x && mx<=x+100 && my>=y && my<=y+18;
@@ -297,20 +287,20 @@ public class ExampleMod implements ModInitializer {
             int x = width/2, y = height/2, cx = x-240;
             if(my>=y-41 && my<=y-31) {
                 if(mx>=x+10 && mx<=x+20) { kaRange-=0.1; rF.setText(String.format("%.1f", kaRange)); }
-                if(mx>=x+58 && mx<=x+68) { kaRange+=0.1; rF.setText(String.format("%.1f", kaRange)); }
+                if(mx>=x+78 && mx<=x+88) { kaRange+=0.1; rF.setText(String.format("%.1f", kaRange)); }
             }
             if(my>=y-18 && my<=y-8) {
                 if(mx>=x+10 && mx<=x+20) { kaWallsRange-=0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
-                if(mx>=x+58 && mx<=x+68) { kaWallsRange+=0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
+                if(mx>=x+78 && mx<=x+88) { kaWallsRange+=0.1; wF.setText(String.format("%.1f", kaWallsRange)); }
             }
             if(my>=y+5 && my<=y+15) {
                 if(mx>=x+10 && mx<=x+20) { shakeIntensity-=0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
-                if(mx>=x+58 && mx<=x+68) { shakeIntensity+=0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
+                if(mx>=x+78 && mx<=x+88) { shakeIntensity+=0.1f; sF.setText(String.format("%.1f", shakeIntensity)); }
             }
             if(mx>=x-105 && mx<=x+120) {
                 if(my>=y+35 && my<=y+45) autoRun = !autoRun;
                 if(my>=y+55 && my<=y+65) antiVelocity = !antiVelocity;
-                if(my>=y+75 && my<=y+85) stickyAura = !stickyAura; // Клик по присоске
+                if(my>=y+75 && my<=y+85) stickyAura = !stickyAura;
             }
             if(mx>=cx+10 && mx<=cx+110) {
                 if(my>=y-50 && my<=y-32) { kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; refresh(); }
