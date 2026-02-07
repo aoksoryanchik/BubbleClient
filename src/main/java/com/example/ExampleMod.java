@@ -38,7 +38,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean autoTotem = true, noFire = true, autoRun = false;
     public static boolean antiVelocity = true, screenShake = true;
 
-    public static double kaRange = 3.6, kaWallsRange = 3.0; // Слегка уменьшен радиус для легитности
+    public static double kaRange = 3.6, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
     public static float shakeIntensity = 0.08f;
     
@@ -48,9 +48,6 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
-    
-    private float attackDelay = 0;
-    private float currentYaw, currentPitch;
 
     @Override
     public void onInitialize() {
@@ -75,6 +72,11 @@ public class ExampleMod implements ModInitializer {
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
 
             if (autoTotem) handleAutoTotem(client);
+            
+            // Фикс Авто-бега: принудительный спринт
+            if (autoRun && (client.player.forwardSpeed > 0 || killaura)) {
+                client.player.setSprinting(true);
+            }
 
             if (killaura) runEliteAura(client);
         });
@@ -107,21 +109,14 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // 1. SILENT ROTATION: Плавное наведение
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
             updateRotations(client.player, targetPos);
 
-            // 2. RAYTRACE: Проверяем, смотрим ли мы реально на цель
             if (isLookingAtEntity(client.player, target, kaRange)) {
-                
-                // 3. RANDOMIZED CPS: Удар только если прогресс атаки + рандом
                 if (client.player.getAttackCooldownProgress(0) >= (0.91f + random.nextFloat() * 0.08f)) {
-                    
-                    // Эффект тряски при ударе (легитность)
                     if (screenShake) {
                         client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                     }
-
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -129,7 +124,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // Метод проверки «луча» (Raytrace)
     private boolean isLookingAtEntity(PlayerEntity player, Entity target, double range) {
         Vec3d eyePos = player.getEyePos();
         Vec3d lookVec = player.getRotationVec(1.0F);
@@ -144,8 +138,6 @@ public class ExampleMod implements ModInitializer {
         double diffXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
-
-        // Плавность (Lerp) — 0.45f это скорость доводки, можно уменьшить для большей легитности
         player.setYaw(player.getYaw() + MathHelper.wrapDegrees(targetYaw - player.getYaw()) * 0.45f);
         player.setPitch(player.getPitch() + MathHelper.wrapDegrees(targetPitch - player.getPitch()) * 0.45f);
     }
@@ -172,7 +164,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI (Полный функционал) ---
+    // --- GUI (ИСПРАВЛЕНЫ КООРДИНАТЫ) ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
@@ -181,7 +173,7 @@ public class ExampleMod implements ModInitializer {
             int x = width/2-90, y = height/2-105;
             ctx.fill(x, y, x+180, y+165, 0xFF0A0A0A);
             ctx.drawBorder(x, y, 180, 165, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT §7[ELITE]", width/2, y+10, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width/2, y+10, -1);
             String[] n = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "NoFire", "Waypoint"};
             boolean[] s = {killaura, triggerbot, fullbright, autoTotem, noFire, waypointActive};
             int[] k = {keyKA, keyTB, keyFB, keyAT, keyNF, keyWP};
@@ -189,8 +181,8 @@ public class ExampleMod implements ModInitializer {
                 int iy = y+35+i*22;
                 boolean h = mx>=x+10 && mx<=x+170 && my>=iy && my<=iy+18;
                 ctx.fill(x+10, iy, x+170, iy+18, h ? 0xFF1A1A1A : 0xFF121212);
-                String kN = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(k[i], 0);
-                ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + (kN==null?"?":kN.toUpperCase()) + "]", x+15, iy+5, s[i] ? 0xFF00FF00 : 0xFFFF3333);
+                String kN = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(k[i], 0).toUpperCase();
+                ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + kN + "]", x+15, iy+5, s[i] ? 0xFF00FF00 : 0xFFFF3333);
                 if(i==0 || i==5) ctx.drawTextWithShadow(textRenderer, "⚙", x+155, iy+5, -1);
             }
         }
@@ -236,9 +228,9 @@ public class ExampleMod implements ModInitializer {
         public ConfigScreen(Screen p, String t) { super(Text.literal("")); this.p = p; this.t = t; }
         @Override
         protected void init() {
-            f1 = new TextFieldWidget(textRenderer, width/2-50, height/2-45, 100, 16, Text.literal(""));
-            f2 = new TextFieldWidget(textRenderer, width/2-50, height/2-20, 100, 16, Text.literal(""));
-            f3 = new TextFieldWidget(textRenderer, width/2-50, height/2+5, 100, 16, Text.literal(""));
+            f1 = new TextFieldWidget(textRenderer, width/2-20, height/2-45, 100, 16, Text.literal(""));
+            f2 = new TextFieldWidget(textRenderer, width/2-20, height/2-20, 100, 16, Text.literal(""));
+            f3 = new TextFieldWidget(textRenderer, width/2-20, height/2+5, 100, 16, Text.literal(""));
             if(t.equals("KA")){ f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange)); f3.setText(String.valueOf(shakeIntensity)); }
             if(t.equals("WP")){ f1.setText(String.valueOf(wpX)); f2.setText(String.valueOf(wpY)); f3.setText(String.valueOf(wpZ)); }
             this.addDrawableChild(f1); this.addDrawableChild(f2); this.addDrawableChild(f3);
@@ -249,8 +241,9 @@ public class ExampleMod implements ModInitializer {
             ctx.drawCenteredTextWithShadow(textRenderer, "НАСТРОЙКИ: " + t, width/2, height/2-75, 0xFF00AAFF);
             if(t.equals("KA")) {
                 ctx.drawTextWithShadow(textRenderer, "Дистанция:", width/2-95, height/2-41, -1);
-                ctx.drawTextWithShadow(textRenderer, "Сквозь стены:", width/2-95, height/2-16, -1);
+                ctx.drawTextWithShadow(textRenderer, "Стены:", width/2-95, height/2-16, -1);
                 ctx.drawTextWithShadow(textRenderer, "Тряска:", width/2-95, height/2+9, -1);
+                // Починка отрисовки кнопок (выравнивание по центру)
                 renderCheck(ctx, "Авто-Бег", autoRun, height/2+35, mx, my);
                 renderCheck(ctx, "Анти-Отдача", antiVelocity, height/2+50, mx, my);
             }
@@ -258,7 +251,7 @@ public class ExampleMod implements ModInitializer {
         }
         private void renderCheck(DrawContext ctx, String n, boolean s, int y, int mx, int my) {
             boolean h = mx>=width/2-60 && mx<=width/2+60 && my>=y && my<=y+12;
-            ctx.drawTextWithShadow(textRenderer, n + ": " + (s?"§aВКЛ":"§cВЫКЛ"), width/2-55, y, h ? -1 : 0xFFCCCCCC);
+            ctx.drawCenteredTextWithShadow(textRenderer, n + ": " + (s?"§aВКЛ":"§cВЫКЛ"), width/2, y, h ? -1 : 0xFFCCCCCC);
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
