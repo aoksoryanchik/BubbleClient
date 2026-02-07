@@ -12,14 +12,17 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
@@ -33,11 +36,11 @@ import java.util.Random;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, noFire = true, autoRun = false;
-    public static boolean antiVelocity = true, screenShake = true, mode360 = false;
+    public static boolean antiVelocity = true, screenShake = true;
 
-    public static double kaRange = 3.8, kaWallsRange = 3.0;
+    public static double kaRange = 3.6, kaWallsRange = 3.0; // Слегка уменьшен радиус для легитности
     public static double wpX = 0, wpY = 64, wpZ = 0;
-    public static float shakeIntensity = 0.12f;
+    public static float shakeIntensity = 0.08f;
     
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
     public static int keyAT = GLFW.GLFW_KEY_UNKNOWN, keyNF = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
@@ -46,8 +49,8 @@ public class ExampleMod implements ModInitializer {
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
     
-    private float nextAttackThreshold = 0.94f;
-    private float strafeAngle = 0;
+    private float attackDelay = 0;
+    private float currentYaw, currentPitch;
 
     @Override
     public void onInitialize() {
@@ -68,103 +71,83 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
             }
 
-            if (noFire) { client.player.setFireTicks(0); if (client.player.isOnFire()) client.player.extinguish(); }
+            if (noFire) client.player.extinguish();
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
 
-            if (autoTotem && client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
-                for (int i = 0; i < 45; i++) {
-                    if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
-                        client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, i < 9 ? i + 36 : i, 45, SlotActionType.SWAP, client.player);
-                        break;
-                    }
-                }
-            }
+            if (autoTotem) handleAutoTotem(client);
 
-            if (killaura) {
-                runAresAura(client);
-            }
+            if (killaura) runEliteAura(client);
         });
 
         WorldRenderEvents.LAST.register(this::renderWaypoint);
-        HudRenderCallback.EVENT.register((ctx, t) -> {
-            if (waypointActive) ctx.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, String.format("§bTarget: §f%.0f %.0f %.0f", wpX, wpY, wpZ), ctx.getScaledWindowWidth()/2, 10, -1);
-        });
     }
 
-    private void runAresAura(MinecraftClient client) {
+    private void handleAutoTotem(MinecraftClient client) {
+        if (client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
+            for (int i = 0; i < 45; i++) {
+                if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
+                    client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, i < 9 ? i + 36 : i, 45, SlotActionType.SWAP, client.player);
+                    break;
+                }
+            }
+        }
+    }
+
+    private void runEliteAura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
-            double limit = client.player.canSee(p) ? kaRange : kaWallsRange;
-            if (d <= limit && d < bestDist) { bestDist = d; target = p; }
+            if (d <= kaRange && d < bestDist) {
+                bestDist = d;
+                target = p;
+            }
         }
 
         if (target != null) {
-            // Наводка (плавная, чтобы не было флагов за ротации)
-            lookAt(client.player, target.getPos().add(0, target.getHeight() * 0.5, 0));
+            // 1. SILENT ROTATION: Плавное наведение
+            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
+            updateRotations(client.player, targetPos);
 
-            // ЛОГИКА 360 (Orbit Strafe)
-            if (mode360) {
-                client.player.setSprinting(true);
+            // 2. RAYTRACE: Проверяем, смотрим ли мы реально на цель
+            if (isLookingAtEntity(client.player, target, kaRange)) {
                 
-                // Вычисляем угол между игроком и целью
-                double diffX = target.getX() - client.player.getX();
-                double diffZ = target.getZ() - client.player.getZ();
-                float yawToTarget = (float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90F;
-                
-                // Увеличиваем угол вращения
-                strafeAngle += 0.13f; 
-                
-                // Вычисляем "желаемую" позицию на круге
-                double radius = kaRange - 0.7;
-                double targetX = target.getX() + Math.cos(strafeAngle) * radius;
-                double targetZ = target.getZ() + Math.sin(strafeAngle) * radius;
-                
-                // Вместо addVelocity мы плавно корректируем движение через yaw
-                Vec3d moveVec = new Vec3d(targetX - client.player.getX(), 0, targetZ - client.player.getZ()).normalize().multiply(0.23);
-                
-                if (client.player.isOnGround()) {
-                    client.player.setVelocity(moveVec.x, client.player.getVelocity().y, moveVec.z);
-                }
-            } else if (autoRun) {
-                client.options.sprintKey.setPressed(true);
-            }
+                // 3. RANDOMIZED CPS: Удар только если прогресс атаки + рандом
+                if (client.player.getAttackCooldownProgress(0) >= (0.91f + random.nextFloat() * 0.08f)) {
+                    
+                    // Эффект тряски при ударе (легитность)
+                    if (screenShake) {
+                        client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
+                    }
 
-            // Удар
-            if (client.player.getAttackCooldownProgress(0) >= nextAttackThreshold) {
-                if (screenShake) {
-                    client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
-                    client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * shakeIntensity);
+                    client.interactionManager.attackEntity(client.player, target);
+                    client.player.swingHand(Hand.MAIN_HAND);
                 }
-                client.interactionManager.attackEntity(client.player, target);
-                client.player.swingHand(Hand.MAIN_HAND);
-                // Рандомизация КД для обхода анти-кликера
-                nextAttackThreshold = 0.92f + (random.nextFloat() * 0.07f);
             }
         }
     }
 
-    private void lookAt(PlayerEntity player, Vec3d target) {
+    // Метод проверки «луча» (Raytrace)
+    private boolean isLookingAtEntity(PlayerEntity player, Entity target, double range) {
+        Vec3d eyePos = player.getEyePos();
+        Vec3d lookVec = player.getRotationVec(1.0F);
+        Vec3d endPos = eyePos.add(lookVec.multiply(range));
+        Box box = target.getBoundingBox().expand(0.1);
+        EntityHitResult hit = ProjectileUtil.raycast(player, eyePos, endPos, box, (entity) -> entity == target, range * range);
+        return hit != null && hit.getEntity() == target;
+    }
+
+    private void updateRotations(PlayerEntity player, Vec3d target) {
         Vec3d diff = target.subtract(player.getEyePos());
         double diffXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
-        float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-        float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
-        
-        // Ограничение скорости поворота головы (Silent Rotation style)
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(yaw - player.getYaw()) * 0.55f);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(pitch - player.getPitch()) * 0.55f);
-    }
+        float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+        float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
 
-    private void runTriggerbot(MinecraftClient client) {
-        if (client.crosshairTarget instanceof EntityHitResult res && res.getEntity() instanceof PlayerEntity target) {
-            if (target.isAlive() && client.player.getAttackCooldownProgress(0) >= 0.98f) {
-                client.interactionManager.attackEntity(client.player, target);
-                client.player.swingHand(Hand.MAIN_HAND);
-            }
-        }
+        // Плавность (Lerp) — 0.45f это скорость доводки, можно уменьшить для большей легитности
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(targetYaw - player.getYaw()) * 0.45f);
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(targetPitch - player.getPitch()) * 0.45f);
     }
 
     private void sendNotify(String module, boolean state) {
@@ -189,16 +172,16 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI (Без изменений функций) ---
+    // --- GUI (Полный функционал) ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             int x = width/2-90, y = height/2-105;
-            ctx.fill(x, y, x+180, y+185, 0xFF0A0A0A);
-            ctx.drawBorder(x, y, 180, 185, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width/2, y+10, -1);
+            ctx.fill(x, y, x+180, y+165, 0xFF0A0A0A);
+            ctx.drawBorder(x, y, 180, 165, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT §7[ELITE]", width/2, y+10, -1);
             String[] n = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "NoFire", "Waypoint"};
             boolean[] s = {killaura, triggerbot, fullbright, autoTotem, noFire, waypointActive};
             int[] k = {keyKA, keyTB, keyFB, keyAT, keyNF, keyWP};
@@ -244,7 +227,7 @@ public class ExampleMod implements ModInitializer {
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0,0,width,height, 0xDD000000);
-            ctx.drawCenteredTextWithShadow(textRenderer, "PRESS KEY TO BIND", width/2, height/2, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "ЖМЯКНИ КНОПКУ ДЛЯ БИНДА", width/2, height/2, -1);
         }
     }
 
@@ -263,27 +246,25 @@ public class ExampleMod implements ModInitializer {
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xF0000000);
-            ctx.drawCenteredTextWithShadow(textRenderer, "SETTINGS: " + t, width/2, height/2-75, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "НАСТРОЙКИ: " + t, width/2, height/2-75, 0xFF00AAFF);
             if(t.equals("KA")) {
-                ctx.drawTextWithShadow(textRenderer, "Range:", width/2-95, height/2-41, -1);
-                ctx.drawTextWithShadow(textRenderer, "Walls:", width/2-95, height/2-16, -1);
-                ctx.drawTextWithShadow(textRenderer, "Shake:", width/2-95, height/2+9, -1);
-                renderCheck(ctx, "AutoRun", autoRun, height/2+35, mx, my);
-                renderCheck(ctx, "AntiVelocity", antiVelocity, height/2+50, mx, my);
-                renderCheck(ctx, "360 Mode", mode360, height/2+65, mx, my);
+                ctx.drawTextWithShadow(textRenderer, "Дистанция:", width/2-95, height/2-41, -1);
+                ctx.drawTextWithShadow(textRenderer, "Сквозь стены:", width/2-95, height/2-16, -1);
+                ctx.drawTextWithShadow(textRenderer, "Тряска:", width/2-95, height/2+9, -1);
+                renderCheck(ctx, "Авто-Бег", autoRun, height/2+35, mx, my);
+                renderCheck(ctx, "Анти-Отдача", antiVelocity, height/2+50, mx, my);
             }
             super.render(ctx, mx, my, d);
         }
         private void renderCheck(DrawContext ctx, String n, boolean s, int y, int mx, int my) {
             boolean h = mx>=width/2-60 && mx<=width/2+60 && my>=y && my<=y+12;
-            ctx.drawTextWithShadow(textRenderer, n + ": " + (s?"§aON":"§cOFF"), width/2-55, y, h ? -1 : 0xFFCCCCCC);
+            ctx.drawTextWithShadow(textRenderer, n + ": " + (s?"§aВКЛ":"§cВЫКЛ"), width/2-55, y, h ? -1 : 0xFFCCCCCC);
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             if(t.equals("KA") && mx>=width/2-60 && mx<=width/2+60) {
                 if(my>=height/2+35 && my<=height/2+47) autoRun=!autoRun;
                 if(my>=height/2+50 && my<=height/2+62) antiVelocity=!antiVelocity;
-                if(my>=height/2+65 && my<=height/2+77) mode360=!mode360;
             }
             return super.mouseClicked(mx, my, b);
         }
@@ -309,7 +290,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange+":"+kaWallsRange+":"+wpX+":"+wpY+":"+wpZ+":0:0:0:"+autoRun+":"+keyKA+":"+keyTB+":"+keyFB+":"+keyAT+":"+keyNF+":"+keyWP+":"+shakeIntensity+":"+antiVelocity+":"+mode360);
+            w.println(kaRange+":"+kaWallsRange+":"+wpX+":"+wpY+":"+wpZ+":0:0:0:"+autoRun+":"+keyKA+":"+keyTB+":"+keyFB+":"+keyAT+":"+keyNF+":"+keyWP+":"+shakeIntensity+":"+antiVelocity);
         } catch (Exception ignored) {}
     }
 
@@ -317,14 +298,14 @@ public class ExampleMod implements ModInitializer {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":");
-            if(p.length >= 18) {
+            if(p.length >= 17) {
                 kaRange=Double.parseDouble(p[0]); kaWallsRange=Double.parseDouble(p[1]);
                 wpX=Double.parseDouble(p[2]); wpY=Double.parseDouble(p[3]); wpZ=Double.parseDouble(p[4]);
                 autoRun=Boolean.parseBoolean(p[8]);
                 keyKA=Integer.parseInt(p[9]); keyTB=Integer.parseInt(p[10]); keyFB=Integer.parseInt(p[11]);
                 keyAT=Integer.parseInt(p[12]); keyNF=Integer.parseInt(p[13]); keyWP=Integer.parseInt(p[14]);
                 shakeIntensity=Float.parseFloat(p[15]);
-                antiVelocity=Boolean.parseBoolean(p[16]); mode360=Boolean.parseBoolean(p[17]);
+                antiVelocity=Boolean.parseBoolean(p[16]);
             }
         } catch (Exception ignored) {}
     }
