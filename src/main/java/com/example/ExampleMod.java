@@ -116,8 +116,8 @@ public class ExampleMod implements ModInitializer {
         EntityHitResult hit = raycastEntity(client, kaRange);
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
             if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
-                // ФИКС ТРИГГЕРА: Криты работают только если игрок падает и не в воде/на лестнице
-                boolean isFalling = client.player.fallDistance > 0.0f && !client.player.isOnGround() && !client.player.isClimbing() && !client.player.isTouchingWater();
+                // ФИКС ТРИГГЕРА (КРИТЫ): Проверяем падение более надежно
+                boolean isFalling = client.player.fallDistance > 0.08f && !client.player.isOnGround() && !client.player.isClimbing() && !client.player.isTouchingWater();
                 if (!tbCrits || isFalling) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
@@ -135,24 +135,28 @@ public class ExampleMod implements ModInitializer {
 
     private void renderTargetHUD(DrawContext ctx) {
         MinecraftClient client = MinecraftClient.getInstance();
+        // HUD показывается если есть цель ИЛИ если открыт HudEditor
         if (currentTarget == null && !(client.currentScreen instanceof HudEditor)) return;
+        
         PlayerEntity entity = (currentTarget != null) ? currentTarget : client.player;
 
         int x = thX, y = thY;
-        int w = 140, h = 40;
+        int w = 160, h = 45; // Сделали чуть шире для красоты
 
-        ctx.fill(x, y, x + w, y + h, 0xAA000000); 
-        ctx.drawBorder(x, y, w, h, 0xFF444444); 
+        ctx.fill(x, y, x + w, y + h, 0xCC000000); 
+        ctx.drawBorder(x, y, w, h, 0xFF666666); 
 
-        // ФИКС: Удалены mx/my, которые вызывали ошибку. Статичное положение головы.
-        InventoryScreen.drawEntity(ctx, x + 5, y + 5, x + 35, y + 35, 15, 0.0625f, 0, 0, entity);
+        // Отрисовка ТОЛЬКО головы (масштаб увеличен до 25)
+        InventoryScreen.drawEntity(ctx, x + 5, y + 5, x + 35, y + 35, 25, 0.0625f, 0, 0, entity);
         
-        ctx.drawTextWithShadow(client.textRenderer, entity.getName().getString(), x + 40, y + 6, -1);
-        ctx.drawTextWithShadow(client.textRenderer, "HP: " + String.format("%.1f", entity.getHealth()), x + 40, y + 17, 0xFFBBBBBB);
+        ctx.drawTextWithShadow(client.textRenderer, entity.getName().getString(), x + 42, y + 8, -1);
+        ctx.drawTextWithShadow(client.textRenderer, "HP: " + String.format("%.1f", entity.getHealth()), x + 42, y + 18, 0xFFBBBBBB);
 
-        ctx.fill(x + 40, y + 28, x + w - 10, y + 32, 0x66FFFFFF); 
+        // Длинная и мягкая полоска здоровья
+        int barWidth = w - 50;
+        ctx.fill(x + 42, y + 30, x + 42 + barWidth, y + 35, 0x44FFFFFF); // Фон полоски
         float hpPercent = MathHelper.clamp(entity.getHealth() / entity.getMaxHealth(), 0, 1);
-        ctx.fill(x + 40, y + 28, x + 40 + (int)((w - 50) * hpPercent), y + 32, 0xFF00AAFF); 
+        ctx.fill(x + 42, y + 30, x + 42 + (int)(barWidth * hpPercent), y + 35, 0xFF00AAFF); // Сама полоска
     }
 
     private void renderWaypointArrow(DrawContext ctx) {
@@ -193,40 +197,42 @@ public class ExampleMod implements ModInitializer {
         if (!d) keyStates[k] = false; return false;
     }
 
-    // --- GUI ---
+    // --- GUI (Переработано для красоты) ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x90000000);
-            int x = width/2-90, y = height/2-105;
-            ctx.fill(x, y, x+180, y+155, 0xFF050505);
-            ctx.drawBorder(x, y, 180, 155, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width/2, y+10, -1);
+            ctx.fill(0, 0, width, height, 0x80000000); // Затемнение фона
+            int x = width/2-100, y = height/2-110;
+            ctx.fill(x, y, x+200, y+175, 0xFF0A0A0A); // Основной фон
+            ctx.drawBorder(x, y, 200, 175, 0xFF00AAFF); // Яркая рамка
+            ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT §7| §fv2.0", width/2, y+12, -1);
+            
             String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "Waypoint"};
             boolean[] states = {killaura, triggerbot, fullbright, autoTotem, waypointActive};
             int[] keys = {keyKA, keyTB, keyFB, keyAT, keyWP};
+            
             for(int i=0; i<5; i++) {
-                int iy = y+35+i*22;
-                boolean h = mx>=x+10 && mx<=x+170 && my>=iy && my<=iy+18;
-                ctx.fill(x+10, iy, x+170, iy+18, h ? 0xFF1A1A1A : 0xFF101010);
+                int iy = y+40+i*25;
+                boolean h = mx>=x+10 && mx<=x+190 && my>=iy && my<=iy+20;
+                ctx.fill(x+10, iy, x+190, iy+20, h ? 0xFF222222 : 0xFF151515);
                 String kN = keys[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(keys[i], 0).toUpperCase();
-                ctx.drawTextWithShadow(textRenderer, names[i] + " §7[" + kN + "]", x+15, iy+5, states[i] ? 0xFF00FF00 : 0xFFFF3333);
-                if(i==0 || i==1 || i==4) ctx.drawTextWithShadow(textRenderer, "⚙", x+155, iy+5, -1);
+                ctx.drawTextWithShadow(textRenderer, names[i] + " §7[" + kN + "]", x+18, iy+6, states[i] ? 0xFF00FF00 : 0xFFFF4444);
+                if(i==0 || i==1 || i==4) ctx.drawTextWithShadow(textRenderer, "§b⚙", x+175, iy+6, -1);
             }
         }
         @Override public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
         @Override public boolean mouseClicked(double mx, double my, int b) {
-            int x = width/2-90, y = height/2-105;
+            int x = width/2-100, y = height/2-110;
             for(int i=0; i<5; i++) {
-                int iy = y+35+i*22;
-                if(mx>=x+150 && mx<=x+170 && my>=iy && my<=iy+18) {
+                int iy = y+40+i*25;
+                if(mx>=x+165 && mx<=x+190 && my>=iy && my<=iy+20) { // Клик по шестеренке
                     if(i==0) client.setScreen(new KillAuraSettings(this));
                     if(i==1) client.setScreen(new TriggerSettings(this));
                     if(i==4) client.setScreen(new WaypointSettings(this));
                     return true;
-                } else if(mx>=x+10 && mx<=x+150 && my>=iy && my<=iy+18) {
+                } else if(mx>=x+10 && mx<=x+165 && my>=iy && my<=iy+20) {
                     if(b == 0) {
                         if(i==0) killaura=!killaura; if(i==1) triggerbot=!triggerbot; if(i==2) fullbright=!fullbright;
                         if(i==3) autoTotem=!autoTotem; if(i==4) waypointActive=!waypointActive;
@@ -258,13 +264,8 @@ public class ExampleMod implements ModInitializer {
             drawStatus(ctx, "AntiVelocity:", x-105, y+40, antiVelocity, mx, my);
 
             boolean hHud = mx>=x-105 && mx<=x+105 && my>=y+60 && my<=y+75;
-            ctx.fill(x-105, y+60, x+105, y+75, hHud ? 0xFF222222 : 0xFF111111);
+            ctx.fill(x-105, y+60, x+105, y+75, hHud ? 0xFF333333 : 0xFF151515);
             ctx.drawCenteredTextWithShadow(textRenderer, "EDIT HUD", x, y+64, hHud ? 0xFF00AAFF : -1);
-
-            int safetyColor = 0xFFFFFF00; 
-            if(kaRange <= 3.1 && kaFOV <= 90 && shakeIntensity <= 0.3) safetyColor = 0xFF00FF00;
-            if(kaRange > 3.8 || kaFOV > 180) safetyColor = 0xFFFF0000;
-            ctx.fill(x+95, y-100, x+110, y-85, safetyColor);
 
             int cx = x-240;
             ctx.fill(cx, y-105, cx+120, y+80, 0xFF050505);
@@ -313,16 +314,16 @@ public class ExampleMod implements ModInitializer {
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0x44000000); 
-            ctx.drawCenteredTextWithShadow(textRenderer, "DRAG HUD WITH RIGHT CLICK (ПКМ)", width/2, 50, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "DRAG HUD WITH LEFT CLICK (ЛКМ)", width/2, 50, -1);
             
             boolean hSave = mx >= width/2-40 && mx <= width/2+40 && my >= height-40 && my <= height-20;
             ctx.fill(width/2-40, height-40, width/2+40, height-20, hSave ? 0xFF00CCFF : 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "SAVE", width/2, height-35, -1);
 
-            if(GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS) {
-                if(mx >= thX && mx <= thX + 140 && my >= thY && my <= thY + 40) { 
-                    thX = mx - 70; 
-                    thY = my - 20; 
+            if(GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS) {
+                if(mx >= thX && mx <= thX + 160 && my >= thY && my <= thY + 45) { 
+                    thX = mx - 80; 
+                    thY = my - 22; 
                 }
             }
         }
@@ -334,7 +335,12 @@ public class ExampleMod implements ModInitializer {
 
     public static class TriggerSettings extends Screen {
         private final Screen parent; public TriggerSettings(Screen p) { super(Text.literal("")); this.parent = p; }
-        @Override public void render(DrawContext ctx, int mx, int my, float d) { ctx.fill(0,0,width,height,0x90000000); ctx.drawCenteredTextWithShadow(textRenderer, "Only Crits: " + (tbCrits ? "§aВКЛ" : "§cВЫКЛ"), width/2, height/2, -1); }
+        @Override public void render(DrawContext ctx, int mx, int my, float d) { 
+            ctx.fill(0,0,width,height,0x90000000); 
+            ctx.drawCenteredTextWithShadow(textRenderer, "TriggerBot Mode:", width/2, height/2-20, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, (tbCrits ? "§bCRIT ONLY" : "§7NORMAL"), width/2, height/2, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§8Click to Toggle", width/2, height/2+20, -1);
+        }
         @Override public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
         @Override public boolean mouseClicked(double mx, double my, int b) { tbCrits = !tbCrits; saveConfig(); return true; }
         @Override public boolean keyPressed(int k, int s, int m) { if(k == GLFW.GLFW_KEY_ESCAPE) client.setScreen(parent); return true; }
@@ -342,7 +348,11 @@ public class ExampleMod implements ModInitializer {
 
     public static class WaypointSettings extends Screen {
         private final Screen parent; public WaypointSettings(Screen p) { super(Text.literal("")); this.parent = p; }
-        @Override public void render(DrawContext ctx, int mx, int my, float d) { ctx.fill(0,0,width,height,0x90000000); ctx.drawCenteredTextWithShadow(textRenderer, "X: "+(int)wpX+" Y: "+(int)wpY+" Z: "+(int)wpZ, width/2, height/2, -1); }
+        @Override public void render(DrawContext ctx, int mx, int my, float d) { 
+            ctx.fill(0,0,width,height,0x90000000); 
+            ctx.drawCenteredTextWithShadow(textRenderer, "Waypoint Coordinates", width/2, height/2-20, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "X: "+(int)wpX+" Y: "+(int)wpY+" Z: "+(int)wpZ, width/2, height/2, -1); 
+        }
         @Override public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
         @Override public boolean keyPressed(int k, int s, int m) { if(k == GLFW.GLFW_KEY_ESCAPE) client.setScreen(parent); return true; }
     }
@@ -356,7 +366,10 @@ public class ExampleMod implements ModInitializer {
             saveConfig(); client.setScreen(parent); return true;
         }
         @Override public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
-        @Override public void render(DrawContext ctx, int mx, int my, float d) { ctx.fill(0,0,width,height,0x90000000); ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width/2, height/2, -1); }
+        @Override public void render(DrawContext ctx, int mx, int my, float d) { 
+            ctx.fill(0,0,width,height,0x90000000); 
+            ctx.drawCenteredTextWithShadow(textRenderer, "PRESS ANY KEY TO BIND", width/2, height/2, -1); 
+        }
     }
 
     public static void saveConfig() {
@@ -384,3 +397,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
