@@ -139,8 +139,11 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient client) {
         EntityHitResult hit = raycastEntity(client, kaRange);
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
-            boolean critCondition = !tbCrits || (client.player.fallDistance > 0.05f && !client.player.isOnGround() && !client.player.isClimbing());
-            if (client.player.getAttackCooldownProgress(0) >= 0.95f && critCondition) {
+            // ФИКС ТРИГГЕРБОТА: проверяем условия и бьем
+            boolean canAttack = client.player.getAttackCooldownProgress(0) >= 0.95f;
+            boolean crit = !tbCrits || (client.player.fallDistance > 0.05f && !client.player.isOnGround());
+            
+            if (canAttack && crit) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -182,6 +185,12 @@ public class ExampleMod implements ModInitializer {
                 if(i==0 || i==1 || i==4) ctx.drawTextWithShadow(textRenderer, "⚙", x+155, iy+5, -1);
             }
         }
+        
+        @Override
+        public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+            // ПУСТО: Чтобы не было размытия
+        }
+
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2-90, y = height/2-105;
@@ -210,16 +219,15 @@ public class ExampleMod implements ModInitializer {
 
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            // ФИКС РАЗМЫТИЯ: используем один четкий слой фона
-            ctx.fill(0, 0, width, height, 0x90000000); 
+            // ФИКС РАЗМЫТИЯ: Используем плотный черный цвет
+            ctx.fill(0, 0, width, height, 0xBF000000); 
             int x = width/2, y = height/2;
             
-            // Основное окно
             ctx.fill(x-115, y-95, x+115, y+110, 0xFF050505);
             ctx.drawBorder(x-115, y-95, 230, 205, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lKILL AURA SETTINGS", x, y-85, -1);
             
-            // Отрисовка параметров с РОВНЫМИ цифрами
+            // Отрисовка с выровненными цифрами
             drawSetting(ctx, "Range:", kaRange, x-105, y-41, x+50, mx, my);
             drawSetting(ctx, "WallsRange:", kaWallsRange, x-105, y-18, x+50, mx, my);
             drawSetting(ctx, "Shake:", (double)shakeIntensity, x-105, y+5, x+50, mx, my);
@@ -227,7 +235,6 @@ public class ExampleMod implements ModInitializer {
             drawStatus(ctx, "Auto-run:", x-105, y+35, autoRun, mx, my);
             drawStatus(ctx, "AntiVelocity:", x-105, y+55, antiVelocity, mx, my);
             
-            // Конфиги
             int cx = x-240;
             ctx.fill(cx, y-95, cx+120, y+90, 0xFF050505);
             ctx.drawBorder(cx, y-95, 120, 185, 0xFF00AAFF);
@@ -238,26 +245,28 @@ public class ExampleMod implements ModInitializer {
             super.render(ctx, mx, my, d);
         }
 
+        @Override
+        public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+            // ПУСТО: Блокируем блюр
+        }
+
         private void drawSetting(DrawContext ctx, String label, double val, int x, int y, int startX, int mx, int my) {
             ctx.drawTextWithShadow(textRenderer, label, x, y, -1);
+            int arrowLX = startX;
+            int arrowRX = startX + 50;
             
-            // Координаты стрелок
-            int arrowLeftX = startX;
-            int arrowRightX = startX + 50;
+            boolean hL = mx >= arrowLX && mx <= arrowLX + 10 && my >= y && my <= y + 10;
+            boolean hR = mx >= arrowRX && mx <= arrowRX + 10 && my >= y && my <= y + 10;
             
-            // Сами стрелки
-            boolean hL = mx >= arrowLeftX && mx <= arrowLeftX + 10 && my >= y && my <= y + 10;
-            boolean hR = mx >= arrowRightX && mx <= arrowRightX + 10 && my >= y && my <= y + 10;
+            ctx.drawTextWithShadow(textRenderer, "<", arrowLX, y, hL ? 0xFF00AAFF : -1);
+            ctx.drawTextWithShadow(textRenderer, ">", arrowRX, y, hR ? 0xFF00AAFF : -1);
             
-            ctx.drawTextWithShadow(textRenderer, "<", arrowLeftX, y, hL ? 0xFF00AAFF : -1);
-            ctx.drawTextWithShadow(textRenderer, ">", arrowRightX, y, hR ? 0xFF00AAFF : -1);
-            
-            // РОВНЫЕ ЦИФРЫ ПО ЦЕНТРУ МЕЖДУ СТРЕЛКАМИ
+            // ИДЕАЛЬНАЯ ЦЕНТРОВКА
             String s = String.format("%.1f", val).replace(".", ",");
-            int textWidth = textRenderer.getWidth(s);
-            // Центр между стрелками: (arrowLeftX + 10 + arrowRightX) / 2
-            int centerX = (arrowLeftX + 8 + arrowRightX) / 2; 
-            ctx.drawTextWithShadow(textRenderer, s, centerX - (textWidth / 2), y, -1);
+            int textW = textRenderer.getWidth(s);
+            // Середина между стрелками = (LX + 10 + RX) / 2 = (startX + 60) / 2 = startX + 30
+            int centerPos = startX + 30; 
+            ctx.drawTextWithShadow(textRenderer, s, centerPos - (textW / 2), y, -1);
         }
 
         private void drawStatus(DrawContext ctx, String t, int x, int y, boolean s, int mx, int my) {
@@ -276,34 +285,27 @@ public class ExampleMod implements ModInitializer {
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2, cx = x-240;
             int bx = x+50;
-            
-            // Клик Range
             if(my>=y-41 && my<=y-31) {
                 if(mx>=bx && mx<=bx+15) kaRange -= 0.1;
                 if(mx>=bx+45 && mx<=bx+60) kaRange += 0.1;
             }
-            // Клик WallsRange
             if(my>=y-18 && my<=y-8) {
                 if(mx>=bx && mx<=bx+15) kaWallsRange -= 0.1;
                 if(mx>=bx+45 && mx<=bx+60) kaWallsRange += 0.1;
             }
-            // Клик Shake
             if(my>=y+5 && my<=y+15) {
                 if(mx>=bx && mx<=bx+15) shakeIntensity -= 0.1f;
                 if(mx>=bx+45 && mx<=bx+60) shakeIntensity += 0.1f;
             }
-            // Статусы
             if(mx>=x-105 && mx<=x+20) {
                 if(my>=y+35 && my<=y+45) autoRun = !autoRun;
                 if(my>=y+55 && my<=y+65) antiVelocity = !antiVelocity;
             }
-            // Конфиги
             if(mx>=cx+10 && mx<=cx+110) {
                 if(my>=y-50 && my<=y-32) { kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; }
                 if(my>=y-25 && my<=y-7) { kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.6f; }
             }
-            saveConfig(); 
-            return super.mouseClicked(mx, my, b);
+            saveConfig(); return super.mouseClicked(mx, my, b);
         }
 
         @Override
@@ -321,20 +323,22 @@ public class ExampleMod implements ModInitializer {
             ctx.drawCenteredTextWithShadow(textRenderer, "Only Crits: " + (tbCrits ? "§aВКЛ" : "§cВЫКЛ"), width/2, height/2, -1);
         }
         @Override
+        public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
+        @Override
         public boolean mouseClicked(double mx, double my, int b) { tbCrits = !tbCrits; saveConfig(); return true; }
         @Override
         public boolean keyPressed(int k, int s, int m) { if(k == GLFW.GLFW_KEY_ESCAPE) client.setScreen(parent); return true; }
     }
 
     public static class WaypointSettings extends Screen {
-        private final Screen parent; 
-        public WaypointSettings(Screen p) { super(Text.literal("")); this.parent = p; }
+        private final Screen parent; public WaypointSettings(Screen p) { super(Text.literal("")); this.parent = p; }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0x90000000);
             ctx.drawCenteredTextWithShadow(textRenderer, "X: " + (int)wpX + " Y: " + (int)wpY + " Z: " + (int)wpZ, width/2, height/2, -1);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§7(Используй чат .wp для смены)", width/2, height/2 + 20, -1);
         }
+        @Override
+        public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
         @Override
         public boolean keyPressed(int k, int s, int m) { if(k == GLFW.GLFW_KEY_ESCAPE) client.setScreen(parent); return true; }
     }
@@ -350,6 +354,8 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) { ctx.fill(0,0,width,height, 0x90000000); ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width/2, height/2, -1); }
+        @Override
+        public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
     }
 
     public static void saveConfig() {
