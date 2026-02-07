@@ -2,6 +2,7 @@ package com.example;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
@@ -62,11 +63,42 @@ public class ExampleMod implements ModInitializer {
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) handleAutoTotem(client);
             if (autoRun && (client.player.forwardSpeed > 0 || killaura)) client.player.setSprinting(true);
-            
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
         });
-        WorldRenderEvents.LAST.register(this::renderWaypoint);
+
+        WorldRenderEvents.LAST.register(this::renderWaypointInWorld);
+        HudRenderCallback.EVENT.register(this::renderWaypointHud);
+    }
+
+    // --- КИЛЛАУРА И МЕХАНИКИ ---
+
+    private void runAura(MinecraftClient client) {
+        PlayerEntity target = null;
+        double bestDist = Double.MAX_VALUE;
+        for (PlayerEntity p : client.world.getPlayers()) {
+            if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
+            double d = client.player.distanceTo(p);
+            if (d <= kaRange && d < bestDist) {
+                if (!client.player.canSee(p) && d > kaWallsRange) continue;
+                bestDist = d; target = p;
+            }
+        }
+        if (target != null) {
+            updateRotations(client.player, target.getPos().add(0, target.getHeight() * 0.5, 0));
+            if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
+                client.interactionManager.attackEntity(client.player, target);
+                client.player.swingHand(Hand.MAIN_HAND);
+            }
+        }
+    }
+
+    private void updateRotations(PlayerEntity player, Vec3d target) {
+        Vec3d diff = target.subtract(player.getEyePos());
+        float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(tYaw - player.getYaw()));
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(tPitch - player.getPitch()));
     }
 
     private void handleAutoTotem(MinecraftClient client) {
@@ -80,51 +112,12 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void runAura(MinecraftClient client) {
-        PlayerEntity target = null;
-        double bestDist = Double.MAX_VALUE;
-        for (PlayerEntity p : client.world.getPlayers()) {
-            if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
-            double d = client.player.distanceTo(p);
-            if (d <= kaRange && d < bestDist) {
-                if (!client.player.canSee(p) && d > kaWallsRange) continue;
-                bestDist = d; target = p;
-            }
-        }
-
-        if (target != null) {
-            // Наводимся на центр хитбокса
-            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
-            
-            // ВЫЗОВ ЛОГИКИ НАВОДКИ (БЕЗ ТРЯСКИ)
-            updateRotations(client.player, targetPos);
-
-            if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                client.interactionManager.attackEntity(client.player, target);
-                client.player.swingHand(Hand.MAIN_HAND);
-            }
-        }
-    }
-
-    private void updateRotations(PlayerEntity player, Vec3d target) {
-        Vec3d diff = target.subtract(player.getEyePos());
-        double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
-        
-        float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-        float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
-
-        // Используем нормализацию углов, чтобы убрать рывки при переходе через 180/-180 градусов
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(targetYaw - player.getYaw()));
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(targetPitch - player.getPitch()));
-    }
-
     private void runTrigger(MinecraftClient client) {
         double reach = kaRange;
         Vec3d eye = client.player.getEyePos();
         Vec3d look = client.player.getRotationVec(1.0F).multiply(reach);
         Box box = client.player.getBoundingBox().expand(look.x, look.y, look.z).expand(1.0);
         EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e instanceof PlayerEntity && e.isAlive() && e != client.player, reach * reach);
-        
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
             if (client.player.getAttackCooldownProgress(0) >= (tbCrits ? 1.0f : 0.95f)) {
                 client.interactionManager.attackEntity(client.player, target);
@@ -133,29 +126,74 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void sendNotify(String module, boolean state) {
-        if (MinecraftClient.getInstance().player != null) {
-            MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[Bubble] §f" + module + ": " + (state ? "§aON" : "§cOFF")), true);
-        }
-    }
+    // --- УЛУЧШЕННЫЙ ВАЙПОИНТ ---
 
-    private void renderWaypoint(WorldRenderContext context) {
+    private void renderWaypointInWorld(WorldRenderContext context) {
         if (!waypointActive) return;
         MinecraftClient client = MinecraftClient.getInstance();
-        double d = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
+        double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
+        
+        // Показываем в мире только если ближе 450 блоков
+        if (dist > 450) return;
+
         MatrixStack ms = context.matrixStack();
         ms.push();
         ms.translate(wpX - context.camera().getPos().x, (wpY - context.camera().getPos().y) + 1.5, wpZ - context.camera().getPos().z);
         ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
         ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
-        float s = (float) Math.max(0.02, d * 0.012);
+        float s = (float) Math.max(0.02, dist * 0.012);
         ms.scale(-s, -s, s);
         VertexConsumerProvider vcp = context.consumers();
         if (vcp != null) client.textRenderer.draw("§b[!] TARGET", -client.textRenderer.getWidth("[!] TARGET")/2f, 0, -1, false, ms.peek().getPositionMatrix(), vcp, net.minecraft.client.font.TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
         ms.pop();
     }
 
-    // --- GUI СЕКЦИЯ ---
+    private void renderWaypointHud(DrawContext ctx, float delta) {
+        if (!waypointActive) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return;
+
+        double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
+        
+        // Если дальше 450 метров - рисуем навигатор сверху
+        if (dist > 450) {
+            int centerX = client.getWindow().getScaledWidth() / 2;
+            
+            // Информация о цели
+            String info = String.format("§bЦЕЛЬ: §f%.0f, %.0f, %.0f §7(%.0fm)", wpX, wpY, wpZ, dist);
+            ctx.drawCenteredTextWithShadow(client.textRenderer, info, centerX, 10, -1);
+
+            // Логика поворота
+            Vec3d diff = new Vec3d(wpX, wpY, wpZ).subtract(client.player.getPos());
+            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+            float yawDiff = MathHelper.wrapDegrees(targetYaw - client.player.getYaw());
+
+            String direction;
+            int color;
+            if (yawDiff > 15) { direction = "◄◄◄ ПОВЕРНИ НАЛЕВО"; color = 0xFFFF5555; }
+            else if (yawDiff < -15) { direction = "ПОВЕРНИ НАПРАВО ►►►"; color = 0xFFFF5555; }
+            else { direction = "▲▲▲ ИДИ ПРЯМО ▲▲▲"; color = 0xFF55FF55; }
+
+            ctx.drawCenteredTextWithShadow(client.textRenderer, direction, centerX, 22, color);
+        }
+    }
+
+    // --- СИСТЕМНОЕ ---
+
+    private void sendNotify(String module, boolean state) {
+        if (MinecraftClient.getInstance().player != null) {
+            MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[Bubble] §f" + module + ": " + (state ? "§aON" : "§cOFF")), true);
+        }
+    }
+
+    private boolean isPressed(long h, int k) {
+        if(k==GLFW.GLFW_KEY_UNKNOWN) return false;
+        boolean d = InputUtil.isKeyPressed(h, k);
+        if (d && !keyStates[k]) { keyStates[k] = true; return true; }
+        if (!d) keyStates[k] = false; return false;
+    }
+
+    // --- GUI И КОНФИГ (БЕЗ ИЗМЕНЕНИЙ) ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
@@ -353,13 +391,6 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float d) { ctx.fill(0,0,width,height, 0xEE000000); ctx.drawCenteredTextWithShadow(textRenderer, "PRESS KEY", width/2, height/2, -1); }
     }
 
-    private boolean isPressed(long h, int k) {
-        if(k==GLFW.GLFW_KEY_UNKNOWN) return false;
-        boolean d = InputUtil.isKeyPressed(h, k);
-        if (d && !keyStates[k]) { keyStates[k] = true; return true; }
-        if (!d) keyStates[k] = false; return false;
-    }
-
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange+":"+kaWallsRange+":"+wpX+":"+wpY+":"+wpZ+":0:0:0:"+autoRun+":"+keyKA+":"+keyTB+":"+keyFB+":"+keyAT+":"+keyWP+":"+shakeIntensity+":"+antiVelocity+":"+tbCrits);
@@ -382,3 +413,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
