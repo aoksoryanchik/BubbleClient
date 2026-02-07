@@ -1,3 +1,4 @@
+
 package com.example;
 
 import net.fabricmc.api.ModInitializer;
@@ -16,7 +17,6 @@ import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -96,23 +96,12 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
             
-            // --- СЕКЦИЯ НАВОДКИ (SILENT) ---
-            Vec3d diff = targetPos.subtract(client.player.getEyePos());
-            double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
-            float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-            float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
+            // Прямая наводка как в старом коде, но БЕЗ тряски в методе updateRotations
+            updateRotations(client.player, targetPos, 100.0f); // 100.0f - мгновенная наводка
 
-            // Добавляем невидимую тряску
-            if (screenShake) {
-                tYaw += (random.nextFloat() - 0.5f) * shakeIntensity;
-                tPitch += (random.nextFloat() - 0.5f) * shakeIntensity;
-            }
-
-            // Отправляем ротации серверу КАЖДЫЙ ТИК, чтобы наводка "существовала"
-            client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(tYaw, tPitch, client.player.isOnGround(), true));
-
-            // --- СЕКЦИЯ АТАКИ ---
             if (client.player.getAttackCooldownProgress(0) >= 0.94f) {
+                // Если нужна тряска ДЛЯ СЕРВЕРА, она должна быть тут, но ты просил убрать
+                // Поэтому просто бьем. Прицел УЖЕ наведен методом выше.
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -132,6 +121,17 @@ public class ExampleMod implements ModInitializer {
                 client.player.swingHand(Hand.MAIN_HAND);
             }
         }
+    }
+
+    private void updateRotations(PlayerEntity player, Vec3d target, float speed) {
+        Vec3d diff = target.subtract(player.getEyePos());
+        double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
+        float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
+        
+        // Убрана случайная тряска (random) для плавной наводки
+        player.setYaw(player.getYaw() + MathHelper.clamp(MathHelper.wrapDegrees(tYaw - player.getYaw()), -speed, speed));
+        player.setPitch(player.getPitch() + MathHelper.clamp(MathHelper.wrapDegrees(tPitch - player.getPitch()), -speed, speed));
     }
 
     private void sendNotify(String module, boolean state) {
@@ -156,7 +156,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI СЕКЦИЯ ---
+    // --- GUI ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
@@ -226,12 +226,14 @@ public class ExampleMod implements ModInitializer {
             drawArr(ctx, x, y, mx, my);
             drawChk(ctx, "Авто-Бег", autoRun, y+35, mx, my);
             drawChk(ctx, "Анти-Отдача", antiVelocity, y+50, mx, my);
+            
             int cx = x-240;
             ctx.fill(cx, y-95, cx+120, y+90, 0xFF0A0A0A);
             ctx.drawBorder(cx, y-95, 120, 185, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bКОНФИГИ", cx+60, y-85, -1);
             drawCfgBtn(ctx, "AresMine", cx+10, y-45, mx, my);
             drawCfgBtn(ctx, "MineBlaze", cx+10, y-20, mx, my);
+
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
         }
         private void drawCfgBtn(DrawContext ctx, String n, int x, int y, int mx, int my) {
