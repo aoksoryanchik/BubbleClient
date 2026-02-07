@@ -11,17 +11,13 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.Entity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
@@ -93,7 +89,6 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.45, 0);
             updateRotations(client.player, targetPos);
-            
             if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
                 if (screenShake) client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                 client.interactionManager.attackEntity(client.player, target);
@@ -133,13 +128,13 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI С НУЛЕВЫМ РАЗМЫТИЕМ ---
+    // --- GUI ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x90000000); // Ручное затемнение вместо блюра
+            ctx.fill(0, 0, width, height, 0x90000000);
             int x = width/2-90, y = height/2-105;
             ctx.fill(x, y, x+180, y+155, 0xFF050505);
             ctx.drawBorder(x, y, 180, 155, 0xFF00AAFF);
@@ -153,7 +148,7 @@ public class ExampleMod implements ModInitializer {
                 ctx.fill(x+10, iy, x+170, iy+18, h ? 0xFF1A1A1A : 0xFF101010);
                 String kN = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(k[i], 0).toUpperCase();
                 ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + kN + "]", x+15, iy+5, s[i] ? 0xFF00FF00 : 0xFFFF3333);
-                [span_0](start_span)[span_1](start_span)if(i==0 || i[span_0](end_span)[span_1](end_span)) ctx.drawTextWithShadow(textRenderer, "⚙", x+155, iy+5, -1);
+                if(i==0 || i==4) ctx.drawTextWithShadow(textRenderer, "⚙", x+155, iy+5, -1);
             }
         }
         @Override
@@ -191,7 +186,8 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xEE000000); // Никакого размытия!
+            // ВАЖНО: Мы не вызываем super.render и renderBackground, чтобы не было размытия
+            ctx.fill(0, 0, width, height, 0xEE000000); 
             int x = width/2, y = height/2;
             ctx.fill(x-115, y-90, x+115, y+90, 0xFF0A0A0A);
             ctx.drawBorder(x-115, y-90, 230, 180, 0xFF00AAFF);
@@ -199,10 +195,12 @@ public class ExampleMod implements ModInitializer {
             ctx.drawTextWithShadow(textRenderer, "Дистанция:", x-105, y-41, -1);
             ctx.drawTextWithShadow(textRenderer, "Стены:", x-105, y-16, -1);
             ctx.drawTextWithShadow(textRenderer, "Тряска:", x-105, y+9, -1);
+            
             drawArr(ctx, x, y, mx, my);
             drawChk(ctx, "Авто-Бег", autoRun, y+35, mx, my);
             drawChk(ctx, "Анти-Отдача", antiVelocity, y+50, mx, my);
             drawChk(ctx, "Elite Mode", eliteLogic, y+65, mx, my);
+
             int cx = x-230;
             ctx.fill(cx, y-90, cx+110, y+90, 0xFF0A0A0A);
             ctx.drawBorder(cx, y-90, 110, 180, 0xFF00AAFF);
@@ -210,7 +208,8 @@ public class ExampleMod implements ModInitializer {
             boolean h = mx >= cx+10 && mx <= cx+100 && my >= y-40 && my <= y-20;
             ctx.fill(cx+10, y-40, cx+100, y-20, h ? 0xFF222222 : 0xFF111111);
             ctx.drawCenteredTextWithShadow(textRenderer, "AresMine", cx+55, y-35, h ? 0xFF00AAFF : -1);
-            super.render(ctx, mx, my, d);
+            
+            f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
         }
         private void drawArr(DrawContext ctx, int x, int y, int mx, int my) {
             int[] ys = {-45, -20, 5};
@@ -241,6 +240,7 @@ public class ExampleMod implements ModInitializer {
                 kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 1.0f; autoRun = true; antiVelocity = true;
                 f1.setText("3.8"); f2.setText("3.0"); f3.setText("1.0");
             }
+            f1.mouseClicked(mx, my, b); f2.mouseClicked(mx, my, b); f3.mouseClicked(mx, my, b);
             return super.mouseClicked(mx, my, b);
         }
         @Override
@@ -249,7 +249,7 @@ public class ExampleMod implements ModInitializer {
                 try { kaRange=Double.parseDouble(f1.getText().replace(",", ".")); kaWallsRange=Double.parseDouble(f2.getText().replace(",", ".")); shakeIntensity=Float.parseFloat(f3.getText().replace(",", ".")); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(p); return true;
             }
-            return super.keyPressed(k, s, m);
+            return f1.keyPressed(k, s, m) || f2.keyPressed(k, s, m) || f3.keyPressed(k, s, m) || super.keyPressed(k, s, m);
         }
     }
 
@@ -275,7 +275,12 @@ public class ExampleMod implements ModInitializer {
             ctx.drawTextWithShadow(textRenderer, "X:", x-105, y-41, -1);
             ctx.drawTextWithShadow(textRenderer, "Y:", x-105, y-16, -1);
             ctx.drawTextWithShadow(textRenderer, "Z:", x-105, y+9, -1);
-            super.render(ctx, mx, my, d);
+            f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
+        }
+        @Override
+        public boolean mouseClicked(double mx, double my, int b) {
+            f1.mouseClicked(mx, my, b); f2.mouseClicked(mx, my, b); f3.mouseClicked(mx, my, b);
+            return super.mouseClicked(mx, my, b);
         }
         @Override
         public boolean keyPressed(int k, int s, int m) {
@@ -283,7 +288,7 @@ public class ExampleMod implements ModInitializer {
                 try { wpX=Double.parseDouble(f1.getText()); wpY=Double.parseDouble(f2.getText()); wpZ=Double.parseDouble(f3.getText()); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(p); return true;
             }
-            return super.keyPressed(k, s, m);
+            return f1.keyPressed(k, s, m) || f2.keyPressed(k, s, m) || f3.keyPressed(k, s, m) || super.keyPressed(k, s, m);
         }
     }
 
