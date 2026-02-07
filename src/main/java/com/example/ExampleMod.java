@@ -34,11 +34,11 @@ import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
-    public static boolean autoTotem = true, autoRun = false, antiVelocity = true, screenShake = true, eliteLogic = false;
+    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, screenShake = true, eliteLogic = false;
 
-    public static double kaRange = 4.2, kaWallsRange = 3.5;
+    public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
-    public static float shakeIntensity = 0.12f;
+    public static float shakeIntensity = 1.0f;
     
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN, 
                       keyAT = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
@@ -91,12 +91,10 @@ public class ExampleMod implements ModInitializer {
             if (d <= kaRange && d < bestDist) { bestDist = d; target = p; }
         }
         if (target != null) {
-            Vec3d targetPos = target.getPos().add(0, target.getHeight() * (eliteLogic ? 0.5 : 0.4), 0);
+            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.45, 0);
             updateRotations(client.player, targetPos);
             
-            // Логика Artefacts 27: высокий приоритет критов
-            boolean canAttack = !eliteLogic || isLookingAtEntity(client.player, target, kaRange);
-            if (canAttack && client.player.getAttackCooldownProgress(0) >= 0.9f) {
+            if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
                 if (screenShake) client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * shakeIntensity);
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
@@ -104,23 +102,13 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private boolean isLookingAtEntity(PlayerEntity player, Entity target, double range) {
-        Vec3d eyePos = player.getEyePos();
-        Vec3d lookVec = player.getRotationVec(1.0F);
-        Vec3d endPos = eyePos.add(lookVec.multiply(range));
-        Box box = target.getBoundingBox().expand(0.1);
-        EntityHitResult hit = ProjectileUtil.raycast(player, eyePos, endPos, box, (entity) -> entity == target, range * range);
-        return hit != null && hit.getEntity() == target;
-    }
-
     private void updateRotations(PlayerEntity player, Vec3d target) {
         Vec3d diff = target.subtract(player.getEyePos());
         double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
-        float s = eliteLogic ? 0.45f : 1.0f; 
-        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(tYaw - player.getYaw()) * s);
-        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(tPitch - player.getPitch()) * s);
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(tYaw - player.getYaw()));
+        player.setPitch(player.getPitch() + MathHelper.wrapDegrees(tPitch - player.getPitch()));
     }
 
     private void sendNotify(String module, boolean state) {
@@ -151,6 +139,7 @@ public class ExampleMod implements ModInitializer {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
+            ctx.fill(0, 0, width, height, 0x90000000); // Обычный темный фон без блюра
             int x = width/2-90, y = height/2-105;
             ctx.fill(x, y, x+180, y+155, 0xFF050505);
             ctx.drawBorder(x, y, 180, 155, 0xFF00AAFF);
@@ -193,23 +182,23 @@ public class ExampleMod implements ModInitializer {
         public KillAuraSettings(Screen p) { super(Text.literal("")); this.p = p; }
         @Override
         protected void init() {
-            int x = width/2 + 20;
-            f1 = new TextFieldWidget(textRenderer, x, height/2-45, 50, 16, Text.literal(""));
-            f2 = new TextFieldWidget(textRenderer, x, height/2-20, 50, 16, Text.literal(""));
-            f3 = new TextFieldWidget(textRenderer, x, height/2+5, 50, 16, Text.literal(""));
-            f1.setText(String.format("%.1f", kaRange)); f2.setText(String.format("%.1f", kaWallsRange)); f3.setText(String.format("%.2f", shakeIntensity));
+            int x = width/2 + 25;
+            f1 = new TextFieldWidget(textRenderer, x, height/2-45, 45, 16, Text.literal(""));
+            f2 = new TextFieldWidget(textRenderer, x, height/2-20, 45, 16, Text.literal(""));
+            f3 = new TextFieldWidget(textRenderer, x, height/2+5, 45, 16, Text.literal(""));
+            f1.setText(String.format("%.1f", kaRange)); f2.setText(String.format("%.1f", kaWallsRange)); f3.setText(String.format("%.1f", shakeIntensity));
             addDrawableChild(f1); addDrawableChild(f2); addDrawableChild(f3);
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xEE000000); // Четкий фон без размытия
-            int x = width/2; int y = height/2;
+            ctx.fill(0, 0, width, height, 0xEE000000); // Сплошная заливка вместо размытия
+            int x = width/2, y = height/2;
             ctx.fill(x-115, y-90, x+115, y+90, 0xFF0A0A0A);
             ctx.drawBorder(x-115, y-90, 230, 180, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bKILL AURA", x, y-80, -1);
             
-            int c = (kaRange > 4.4 || shakeIntensity > 0.4) ? 0xFFFF0000 : (kaRange > 3.6 || !eliteLogic ? 0xFFFFFF00 : 0xFF00FF00);
-            ctx.fill(x+100, y-85, x+110, y-75, c); // Детект-метр
+            int c = (kaRange > 4.0) ? 0xFFFF0000 : (kaRange > 3.6 ? 0xFFFFFF00 : 0xFF00FF00);
+            ctx.fill(x+100, y-85, x+110, y-75, c);
 
             ctx.drawTextWithShadow(textRenderer, "Дистанция:", x-105, y-41, -1);
             ctx.drawTextWithShadow(textRenderer, "Стены:", x-105, y-16, -1);
@@ -232,7 +221,7 @@ public class ExampleMod implements ModInitializer {
         private void drawArr(DrawContext ctx, int x, int y, int mx, int my) {
             int[] ys = {-45, -20, 5};
             for(int iy : ys) {
-                drawB(ctx, x+75, y+iy, ">", mx, my); drawB(ctx, x, y+iy, "<", mx, my);
+                drawB(ctx, x+72, y+iy, ">", mx, my); drawB(ctx, x+10, y+iy, "<", mx, my);
             }
         }
         private void drawB(DrawContext ctx, int x, int y, String t, int mx, int my) {
@@ -247,16 +236,16 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
-            if(my>=y-45 && my<=y-29) { if(mx>=x+75 && mx<=x+87) kaRange+=0.1; if(mx>=x && mx<=x+12) kaRange-=0.1; f1.setText(String.format("%.1f", kaRange)); }
-            if(my>=y-20 && my<=y-4) { if(mx>=x+75 && mx<=x+87) kaWallsRange+=0.1; if(mx>=x && mx<=x+12) kaWallsRange-=0.1; f2.setText(String.format("%.1f", kaWallsRange)); }
-            if(my>=y+5 && my<=y+21) { if(mx>=x+75 && mx<=x+87) shakeIntensity+=0.01; if(mx>=x && mx<=x+12) shakeIntensity-=0.01; f3.setText(String.format("%.2f", shakeIntensity)); }
+            if(my>=y-45 && my<=y-29) { if(mx>=x+72 && mx<=x+84) kaRange+=0.1; if(mx>=x+10 && mx<=x+22) kaRange-=0.1; f1.setText(String.format("%.1f", kaRange)); }
+            if(my>=y-20 && my<=y-4) { if(mx>=x+72 && mx<=x+84) kaWallsRange+=0.1; if(mx>=x+10 && mx<=x+22) kaWallsRange-=0.1; f2.setText(String.format("%.1f", kaWallsRange)); }
+            if(my>=y+5 && my<=y+21) { if(mx>=x+72 && mx<=x+84) shakeIntensity+=0.1; if(mx>=x+10 && mx<=x+22) shakeIntensity-=0.1; f3.setText(String.format("%.1f", shakeIntensity)); }
             if(mx>=x-60 && mx<=x+60) {
                 if(my>=y+35 && my<=y+47) autoRun=!autoRun; if(my>=y+50 && my<=y+62) antiVelocity=!antiVelocity; if(my>=y+65 && my<=y+77) eliteLogic=!eliteLogic;
             }
             int cx = x-230;
             if(mx >= cx+10 && mx <= cx+100 && my >= y-40 && my <= y-20) {
-                kaRange = 4.5; kaWallsRange = 3.5; shakeIntensity = 0.15f; eliteLogic = false; autoRun = true;
-                f1.setText("4.5"); f2.setText("3.5"); f3.setText("0.15");
+                kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 1.0f; autoRun = true; antiVelocity = true; eliteLogic = true;
+                f1.setText("3.8"); f2.setText("3.0"); f3.setText("1.0");
             }
             return super.mouseClicked(mx, my, b);
         }
