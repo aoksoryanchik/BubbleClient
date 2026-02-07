@@ -28,7 +28,7 @@ import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
 
-    // --- ВНУТРЕННИЕ КЛАССЫ НАСТРОЕК (Полное восстановление из .jar) ---
+    // --- КЛАССЫ НАСТРОЕК (ПОЛНАЯ ВЕРСИЯ) ---
     public static class KillAuraSettings {
         public static double range = 3.8;
         public static double wallsRange = 3.0;
@@ -46,7 +46,7 @@ public class ExampleMod implements ModInitializer {
         public static boolean active = false;
     }
 
-    // --- СОСТОЯНИЯ МОДУЛЕЙ ---
+    // --- ПЕРЕМЕННЫЕ СОСТОЯНИЯ ---
     public static boolean killaura = false;
     public static boolean triggerbot = false;
     public static boolean fullbright = false;
@@ -54,7 +54,8 @@ public class ExampleMod implements ModInitializer {
     public static boolean targetHudActive = true;
     public static int thX = 30, thY = 30;
 
-    // --- КЛАВИШИ (БИНДЫ) ---
+    // --- БИНДЫ ---
+    public static int keyMenu = GLFW.GLFW_KEY_0; // МЕНЮ НА 0
     public static int keyKA = GLFW.GLFW_KEY_R;
     public static int keyTB = GLFW.GLFW_KEY_Z;
     public static int keyFB = GLFW.GLFW_KEY_B;
@@ -70,19 +71,18 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // РЕГИСТРАЦИЯ ТИКОВ (Здесь всё: и меню, и модули)
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long handle = client.getWindow().getHandle();
 
-            // 1. ПРОВЕРКА ОТКРЫТИЯ МЕНЮ (Right Shift)
-            if (isPressed(handle, GLFW.GLFW_KEY_RIGHT_SHIFT)) {
+            // ОТКРЫТИЕ МЕНЮ НА 0
+            if (isPressed(handle, keyMenu)) {
                 if (client.currentScreen == null) {
                     client.setScreen(new BubbleMenu());
                 }
             }
 
-            // 2. ОБРАБОТКА БИНДОВ (Только если меню закрыто)
+            // ОБРАБОТКА ОСТАЛЬНЫХ БИНДОВ
             if (client.currentScreen == null) {
                 if (isPressed(handle, keyKA)) killaura = !killaura;
                 if (isPressed(handle, keyTB)) triggerbot = !triggerbot;
@@ -90,12 +90,10 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(handle, keyAT)) autoTotem = !autoTotem;
             }
 
-            // 3. ЛОГИКА МОДУЛЕЙ
+            // МОДУЛИ
             if (fullbright) {
                 client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
                         net.minecraft.entity.effect.StatusEffects.NIGHT_VISION, 1000, 0, false, false));
-            } else {
-                client.player.removeStatusEffect(net.minecraft.entity.effect.StatusEffects.NIGHT_VISION);
             }
             
             if (autoTotem) handleAutoTotem(client);
@@ -103,7 +101,6 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot) runTrigger(client);
         });
 
-        // РЕНДЕР HUD ЭЛЕМЕНТОВ
         HudRenderCallback.EVENT.register(this::renderEverything);
     }
 
@@ -112,7 +109,7 @@ public class ExampleMod implements ModInitializer {
         if (WaypointSettings.active) renderWaypointArrow(ctx);
     }
 
-    // --- КИЛЛАУРА И ТАРГЕТ СТИК ---
+    // --- ЛОГИКА КИЛЛАУРЫ + ПРИСОСКА ---
     private void runAura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
@@ -128,18 +125,18 @@ public class ExampleMod implements ModInitializer {
 
         currentTarget = target;
         if (target != null) {
-            // Shake logic
-            float s = KillAuraSettings.shake * 2.1f;
+            // Тряска
+            float s = KillAuraSettings.shake * 2.2f;
             client.player.setYaw(client.player.getYaw() + (random.nextFloat() - 0.5f) * s);
             client.player.setPitch(client.player.getPitch() + (random.nextFloat() - 0.5f) * s);
 
-            // Target Stick (Присоска)
-            if (KillAuraSettings.stick && target.getHealth() < 14.0f) {
-                Vec3d velocity = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.048);
-                client.player.addVelocity(velocity.x, 0, velocity.z);
+            // ПРИСОСКА (Target Stick)
+            if (KillAuraSettings.stick && target.getHealth() < 12.0f) {
+                Vec3d vec = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.05);
+                client.player.addVelocity(vec.x, 0, vec.z);
             }
 
-            // Attack logic (Strict 0.95 CD)
+            // УДАР (0.95 КД)
             if (client.player.getAttackCooldownProgress(0) >= 0.95f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
@@ -164,43 +161,42 @@ public class ExampleMod implements ModInitializer {
         return ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e instanceof PlayerEntity && e.isAlive(), range * range);
     }
 
-    // --- TARGET HUD (Nursultan Style) ---
+    // --- ВИЗУАЛ: TARGET HUD ---
     private void renderTargetHUD(DrawContext ctx) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (currentTarget == null) return;
 
-        int x = thX, y = thY, w = 140, h = 48;
-        ctx.fill(x, y, x + w, y + h, 0xDD0C0C0C); 
+        int x = thX, y = thY, w = 140, h = 45;
+        ctx.fill(x, y, x + w, y + h, 0xCC0A0A0A); 
 
-        // ИСПРАВЛЕНИЕ ОШИБКИ ИЗ-ЗА IDENTIFIER
         PlayerListEntry entry = client.getNetworkHandler().getPlayerListEntry(currentTarget.getUuid());
         if (entry != null) {
-            Identifier skinTexture = entry.getSkinTextures().texture();
-            ctx.drawTexture(RenderLayer::getGuiTextured, skinTexture, x + 6, y + 6, 8, 8, 36, 36, 64, 64);
+            Identifier skin = entry.getSkinTextures().texture();
+            ctx.drawTexture(RenderLayer::getGuiTextured, skin, x + 5, y + 5, 8, 8, 35, 35, 64, 64);
         }
 
-        ctx.drawTextWithShadow(client.textRenderer, currentTarget.getName().getString(), x + 48, y + 8, -1);
+        ctx.drawTextWithShadow(client.textRenderer, currentTarget.getName().getString(), x + 45, y + 6, -1);
         
-        float hpRatio = MathHelper.clamp(currentTarget.getHealth() / currentTarget.getMaxHealth(), 0, 1);
-        animatedHP += (hpRatio - animatedHP) * 0.15f;
+        float hpPercent = MathHelper.clamp(currentTarget.getHealth() / currentTarget.getMaxHealth(), 0, 1);
+        animatedHP += (hpPercent - animatedHP) * 0.12f;
         
-        int barW = (int) (86 * animatedHP);
+        int barW = (int) (85 * animatedHP);
         long time = System.currentTimeMillis();
         for (int i = 0; i < barW; i++) {
-            float wave = (float) Math.sin((time / 300.0) + (i / 12.0)) * 0.5f + 0.5f;
-            int color = (255 << 24) | ((int)(140 + wave * 115) << 16) | ((int)(140 + wave * 115) << 8) | (int)(140 + wave * 115);
-            ctx.fill(x + 48 + i, y + 22, x + 49 + i, y + 28, color);
+            float wave = (float) Math.sin((time / 350.0) + (i / 10.0)) * 0.5f + 0.5f;
+            int color = (255 << 24) | ((int)(150 + wave * 105) << 16) | ((int)(150 + wave * 105) << 8) | (int)(150 + wave * 105);
+            ctx.fill(x + 45 + i, y + 20, x + 46 + i, y + 26, color);
         }
-        ctx.drawText(client.textRenderer, "HP: " + String.format("%.1f", currentTarget.getHealth()), x + 48, y + 32, 0xFFAAAAAA, false);
+        ctx.drawText(client.textRenderer, "Health: " + (int)currentTarget.getHealth(), x + 45, y + 30, 0xFFAAAAAA, false);
     }
 
     private void renderWaypointArrow(DrawContext ctx) {
         MinecraftClient client = MinecraftClient.getInstance();
-        Vec3d vec = new Vec3d(WaypointSettings.x, WaypointSettings.y, WaypointSettings.z).subtract(client.player.getPos());
-        float targetYaw = (float) Math.toDegrees(Math.atan2(vec.z, vec.x)) - 90F;
-        float diff = MathHelper.wrapDegrees(targetYaw - client.player.getYaw());
+        Vec3d targetVec = new Vec3d(WaypointSettings.x, WaypointSettings.y, WaypointSettings.z).subtract(client.player.getPos());
+        float tYaw = (float) Math.toDegrees(Math.atan2(targetVec.z, targetVec.x)) - 90F;
+        float diff = MathHelper.wrapDegrees(tYaw - client.player.getYaw());
         ctx.getMatrices().push();
-        ctx.getMatrices().translate(client.getWindow().getScaledWidth() / 2f, client.getWindow().getScaledHeight() / 2f - 45, 0);
+        ctx.getMatrices().translate(client.getWindow().getScaledWidth() / 2f, client.getWindow().getScaledHeight() / 2f - 40, 0);
         ctx.getMatrices().multiply(RotationAxis.POSITIVE_Z.rotationDegrees(diff));
         ctx.drawCenteredTextWithShadow(client.textRenderer, "▲", 0, 0, 0xFF00AAFF);
         ctx.getMatrices().pop();
@@ -219,12 +215,12 @@ public class ExampleMod implements ModInitializer {
 
     private boolean isPressed(long h, int k) {
         if (k == GLFW.GLFW_KEY_UNKNOWN) return false;
-        boolean down = InputUtil.isKeyPressed(h, k);
-        if (down && !keyStates[k]) { keyStates[k] = true; return true; }
-        if (!down) keyStates[k] = false; return false;
+        boolean d = InputUtil.isKeyPressed(h, k);
+        if (d && !keyStates[k]) { keyStates[k] = true; return true; }
+        if (!d) keyStates[k] = false; return false;
     }
 
-    // --- ГЛАВНОЕ МЕНЮ (BubbleMenu.class) ---
+    // --- КЛАСС ГЛАВНОГО МЕНЮ ---
     public static class BubbleMenu extends Screen {
         private String inputVal = "";
         private int selectedParam = -1; 
@@ -233,75 +229,71 @@ public class ExampleMod implements ModInitializer {
 
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
-            ctx.fill(0, 0, width, height, 0x90000000);
-            int startX = width / 2 - 170, startY = height / 2 - 115;
+            ctx.fill(0, 0, width, height, 0x85000000);
+            int x = width / 2 - 165, y = height / 2 - 110;
 
             // CONFIGS
-            ctx.fill(startX, startY, startX + 100, startY + 200, 0xFF101010);
-            ctx.drawBorder(startX, startY, 100, 200, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "CONFIGS", startX + 50, startY + 12, 0xFF00AAFF);
+            ctx.fill(x, y, x + 90, y + 190, 0xFF121212);
+            ctx.drawBorder(x, y, 90, 190, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "CONFIGS", x + 45, y + 12, 0xFF00AAFF);
             
-            renderConfigBtn(ctx, "MineBlaze", startX + 10, startY + 45, mx, my);
-            renderConfigBtn(ctx, "AresMine", startX + 10, startY + 75, mx, my);
+            drawBtn(ctx, "MineBlaze", x + 10, y + 45, mx, my);
+            drawBtn(ctx, "AresMine", x + 10, y + 75, mx, my);
 
             // SETTINGS
-            ctx.fill(startX + 105, startY, startX + 350, startY + 200, 0xFF101010);
-            ctx.drawBorder(startX + 105, startY, 245, 200, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "MODULE PARAMETERS", startX + 227, startY + 12, 0xFF00AAFF);
+            ctx.fill(x + 95, y, x + 335, y + 190, 0xFF121212);
+            ctx.drawBorder(x + 95, y, 240, 190, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "AURA PARAMETERS", x + 215, y + 12, 0xFF00AAFF);
 
-            renderSetting(ctx, "Aura Range", KillAuraSettings.range, startX + 120, startY + 50, selectedParam == 0);
-            renderSetting(ctx, "Wall Range", KillAuraSettings.wallsRange, startX + 120, startY + 75, selectedParam == 1);
-            renderSetting(ctx, "Shake Power", (double) KillAuraSettings.shake, startX + 120, startY + 100, selectedParam == 2);
+            drawRow(ctx, "Range", KillAuraSettings.range, x + 110, y + 50, selectedParam == 0);
+            drawRow(ctx, "Walls", KillAuraSettings.wallsRange, x + 110, y + 75, selectedParam == 1);
+            drawRow(ctx, "Shake", (double) KillAuraSettings.shake, x + 110, y + 100, selectedParam == 2);
             
-            renderToggle(ctx, "Stick (Magnet)", KillAuraSettings.stick, startX + 120, startY + 130);
-            renderToggle(ctx, "Target HUD", targetHudActive, startX + 120, startY + 155);
-            renderToggle(ctx, "Waypoint", WaypointSettings.active, startX + 120, startY + 175);
+            drawBool(ctx, "Target Stick", KillAuraSettings.stick, x + 110, y + 130);
+            drawBool(ctx, "Target HUD", targetHudActive, x + 110, y + 155);
 
             if (selectedParam != -1) {
-                ctx.drawCenteredTextWithShadow(textRenderer, "Value: §a" + inputVal + "_", startX + 227, startY + 188, -1);
+                ctx.drawCenteredTextWithShadow(textRenderer, "Input: §a" + inputVal + "_", x + 215, y + 175, -1);
             }
         }
 
-        private void renderSetting(DrawContext ctx, String label, double val, int x, int y, boolean active) {
-            ctx.drawTextWithShadow(textRenderer, label, x, y, -1);
-            ctx.drawTextWithShadow(textRenderer, (active ? "§b" : "") + "< " + String.format("%.1f", val) + " >", x + 155, y, -1);
+        private void drawRow(DrawContext ctx, String n, double v, int x, int y, boolean s) {
+            ctx.drawTextWithShadow(textRenderer, n, x, y, -1);
+            ctx.drawTextWithShadow(textRenderer, (s ? "§b" : "") + "< " + String.format("%.1f", v) + " >", x + 150, y, -1);
         }
 
-        private void renderToggle(DrawContext ctx, String label, boolean state, int x, int y) {
-            ctx.drawTextWithShadow(textRenderer, label, x, y, -1);
-            ctx.drawTextWithShadow(textRenderer, state ? "§aON" : "§cOFF", x + 155, y, -1);
+        private void drawBool(DrawContext ctx, String n, boolean st, int x, int y) {
+            ctx.drawTextWithShadow(textRenderer, n, x, y, -1);
+            ctx.drawTextWithShadow(textRenderer, st ? "§aON" : "§cOFF", x + 150, y, -1);
         }
 
-        private void renderConfigBtn(DrawContext ctx, String name, int x, int y, int mx, int my) {
-            boolean hover = mx >= x && mx <= x + 80 && my >= y && my <= y + 22;
-            ctx.fill(x, y, x + 80, y + 22, hover ? 0xFF404040 : 0xFF202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, name, x + 40, y + 7, -1);
+        private void drawBtn(DrawContext ctx, String t, int x, int y, int mx, int my) {
+            boolean h = mx >= x && mx <= x + 70 && my >= y && my <= y + 22;
+            ctx.fill(x, y, x + 70, y + 22, h ? 0xFF353535 : 0xFF202020);
+            ctx.drawCenteredTextWithShadow(textRenderer, t, x + 35, y + 7, -1);
         }
 
         @Override
-        public boolean mouseClicked(double mx, double my, int button) {
-            int startX = width / 2 - 170, startY = height / 2 - 115;
-            // Config logic
-            if (mx >= startX + 10 && mx <= startX + 90) {
-                if (my >= startY + 45 && my <= startY + 67) { KillAuraSettings.range = 3.1; KillAuraSettings.wallsRange = 3.1; KillAuraSettings.shake = 0.3f; }
-                if (my >= startY + 75 && my <= startY + 97) { KillAuraSettings.range = 3.8; KillAuraSettings.wallsRange = 3.0; KillAuraSettings.shake = 0.5f; }
+        public boolean mouseClicked(double mx, double my, int b) {
+            int x = width / 2 - 165, y = height / 2 - 110;
+            if (mx >= x + 10 && mx <= x + 80) {
+                if (my >= y + 45 && my <= y + 67) { KillAuraSettings.range = 3.1; KillAuraSettings.wallsRange = 3.1; KillAuraSettings.shake = 0.3f; }
+                if (my >= y + 75 && my <= y + 97) { KillAuraSettings.range = 3.8; KillAuraSettings.wallsRange = 3.0; KillAuraSettings.shake = 0.5f; }
             }
-            // Value editing
-            if (mx >= startX + 260 && mx <= startX + 340) {
-                if (my >= startY + 50 && my <= startY + 65) { selectedParam = 0; inputVal = ""; }
-                if (my >= startY + 75 && my <= startY + 90) { selectedParam = 1; inputVal = ""; }
-                if (my >= startY + 100 && my <= startY + 115) { selectedParam = 2; inputVal = ""; }
-                if (my >= startY + 130 && my <= startY + 145) KillAuraSettings.stick = !KillAuraSettings.stick;
-                if (my >= startY + 155 && my <= startY + 170) targetHudActive = !targetHudActive;
-                if (my >= startY + 175 && my <= startY + 190) WaypointSettings.active = !WaypointSettings.active;
+            if (mx >= x + 250 && mx <= x + 320) {
+                if (my >= y + 50 && my <= y + 65) { selectedParam = 0; inputVal = ""; }
+                if (my >= y + 75 && my <= y + 90) { selectedParam = 1; inputVal = ""; }
+                if (my >= y + 100 && my <= y + 115) { selectedParam = 2; inputVal = ""; }
+                if (my >= y + 130 && my <= y + 145) KillAuraSettings.stick = !KillAuraSettings.stick;
+                if (my >= y + 155 && my <= y + 170) targetHudActive = !targetHudActive;
             }
             saveConfig();
             return true;
         }
 
         @Override
-        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-            if (keyCode == GLFW.GLFW_KEY_ENTER && selectedParam != -1) {
+        public boolean keyPressed(int k, int s, int m) {
+            if (k == GLFW.GLFW_KEY_ENTER && selectedParam != -1) {
                 try {
                     double v = Double.parseDouble(inputVal);
                     if (selectedParam == 0) KillAuraSettings.range = v;
@@ -310,17 +302,17 @@ public class ExampleMod implements ModInitializer {
                 } catch (Exception ignored) {}
                 selectedParam = -1; return true;
             }
-            if ((keyCode >= 48 && keyCode <= 57) || keyCode == 46) inputVal += (char) keyCode;
-            if (keyCode == 259 && inputVal.length() > 0) inputVal = inputVal.substring(0, inputVal.length() - 1);
-            if (keyCode == 256) client.setScreen(null);
+            if ((k >= 48 && k <= 57) || k == 46) inputVal += (char) k;
+            if (k == 259 && inputVal.length() > 0) inputVal = inputVal.substring(0, inputVal.length() - 1);
+            if (k == 256) client.setScreen(null);
             return true;
         }
     }
 
     // --- КОНФИГИ ---
     public static void saveConfig() {
-        try (PrintWriter writer = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            writer.println(KillAuraSettings.range + ":" + KillAuraSettings.wallsRange + ":" + KillAuraSettings.shake + ":" + KillAuraSettings.stick + ":" + targetHudActive + ":" + WaypointSettings.active);
+        try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
+            w.println(KillAuraSettings.range + ":" + KillAuraSettings.wallsRange + ":" + KillAuraSettings.shake + ":" + KillAuraSettings.stick + ":" + targetHudActive);
         } catch (Exception ignored) {}
     }
 
@@ -328,10 +320,10 @@ public class ExampleMod implements ModInitializer {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":");
-            if (p.length >= 6) {
+            if (p.length >= 5) {
                 KillAuraSettings.range = Double.parseDouble(p[0]); KillAuraSettings.wallsRange = Double.parseDouble(p[1]);
                 KillAuraSettings.shake = Float.parseFloat(p[2]); KillAuraSettings.stick = Boolean.parseBoolean(p[3]);
-                targetHudActive = Boolean.parseBoolean(p[4]); WaypointSettings.active = Boolean.parseBoolean(p[5]);
+                targetHudActive = Boolean.parseBoolean(p[4]);
             }
         } catch (Exception ignored) {}
     }
