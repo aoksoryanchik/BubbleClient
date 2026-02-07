@@ -94,24 +94,26 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // ВЫЧИСЛЯЕМ УГЛЫ ДЛЯ ПАКЕТОВ (SILENT)
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
+            
+            // ВЫЧИСЛЯЕМ РОТАЦИИ (SILENT)
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
             double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
             float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
 
-            // Добавляем невидимую тряску только для пакетов
+            // Добавляем тряску только для сервера
+            float packetYaw = tYaw;
+            float packetPitch = tPitch;
             if (screenShake) {
-                tYaw += (random.nextFloat() - 0.5f) * shakeIntensity;
-                tPitch += (random.nextFloat() - 0.5f) * shakeIntensity;
+                packetYaw += (random.nextFloat() - 0.5f) * shakeIntensity;
+                packetPitch += (random.nextFloat() - 0.5f) * shakeIntensity;
             }
 
-            // ОТПРАВЛЯЕМ ПАКЕТ НА СЕРВЕР (Твоя камера визуально не шелохнется)
-            client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(tYaw, tPitch, client.player.isOnGround(), true));
-
-            // АТАКА
+            // ПАКЕТ НА СЕРВЕР: Это фиксит "заморозку" персонажа
+            // Мы отправляем только LookAndOnGround в момент удара, чтобы не блокировать движение
             if (client.player.getAttackCooldownProgress(0) >= 0.94f) {
+                client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(packetYaw, packetPitch, client.player.isOnGround(), true));
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -155,7 +157,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI ---
+    // --- GUI СЕКЦИЯ ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
@@ -200,33 +202,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    public static class TriggerSettings extends Screen {
-        private final Screen p;
-        public TriggerSettings(Screen p) { super(Text.literal("")); this.p = p; }
-        @Override
-        public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xEE000000);
-            int x = width/2, y = height/2;
-            ctx.fill(x-80, y-40, x+80, y+40, 0xFF0A0A0A);
-            ctx.drawBorder(x-80, y-40, 160, 80, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§bTRIGGER BOT", x, y-30, -1);
-            boolean h = mx >= x-70 && mx <= x+70 && my >= y && my <= y+12;
-            ctx.drawCenteredTextWithShadow(textRenderer, "Only Crits: " + (tbCrits ? "§aON" : "§cOFF"), x, y, h ? -1 : 0xFFCCCCCC);
-        }
-        @Override
-        public boolean mouseClicked(double mx, double my, int b) {
-            if(mx >= width/2-70 && mx <= width/2+70 && my >= height/2 && my <= height/2+12) {
-                tbCrits = !tbCrits; saveConfig(); return true;
-            }
-            return false;
-        }
-        @Override
-        public boolean keyPressed(int k, int s, int m) {
-            if(k == GLFW.GLFW_KEY_ESCAPE) { client.setScreen(p); return true; }
-            return false;
-        }
-    }
-
     public static class KillAuraSettings extends Screen {
         private final Screen p; private TextFieldWidget f1, f2, f3;
         public KillAuraSettings(Screen p) { super(Text.literal("")); this.p = p; }
@@ -252,14 +227,12 @@ public class ExampleMod implements ModInitializer {
             drawArr(ctx, x, y, mx, my);
             drawChk(ctx, "Авто-Бег", autoRun, y+35, mx, my);
             drawChk(ctx, "Анти-Отдача", antiVelocity, y+50, mx, my);
-            
             int cx = x-240;
             ctx.fill(cx, y-95, cx+120, y+90, 0xFF0A0A0A);
             ctx.drawBorder(cx, y-95, 120, 185, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bКОНФИГИ", cx+60, y-85, -1);
             drawCfgBtn(ctx, "AresMine", cx+10, y-45, mx, my);
             drawCfgBtn(ctx, "MineBlaze", cx+10, y-20, mx, my);
-
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
         }
         private void drawCfgBtn(DrawContext ctx, String n, int x, int y, int mx, int my) {
@@ -312,6 +285,27 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    public static class TriggerSettings extends Screen {
+        private final Screen p; public TriggerSettings(Screen p) { super(Text.literal("")); this.p = p; }
+        @Override
+        public void render(DrawContext ctx, int mx, int my, float d) {
+            ctx.fill(0, 0, width, height, 0xEE000000);
+            int x = width/2, y = height/2;
+            ctx.fill(x-80, y-40, x+80, y+40, 0xFF0A0A0A);
+            ctx.drawBorder(x-80, y-40, 160, 80, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§bTRIGGER BOT", x, y-30, -1);
+            boolean h = mx >= x-70 && mx <= x+70 && my >= y && my <= y+12;
+            ctx.drawCenteredTextWithShadow(textRenderer, "Only Crits: " + (tbCrits ? "§aON" : "§cOFF"), x, y, h ? -1 : 0xFFCCCCCC);
+        }
+        @Override
+        public boolean mouseClicked(double mx, double my, int b) {
+            if(mx >= width/2-70 && mx <= width/2+70 && my >= height/2 && my <= height/2+12) { tbCrits = !tbCrits; saveConfig(); return true; }
+            return false;
+        }
+        @Override
+        public boolean keyPressed(int k, int s, int m) { if(k == GLFW.GLFW_KEY_ESCAPE) { client.setScreen(p); return true; } return false; }
+    }
+
     public static class WaypointSettings extends Screen {
         private final Screen p; private TextFieldWidget f1, f2, f3;
         public WaypointSettings(Screen p) { super(Text.literal("")); this.p = p; }
@@ -358,10 +352,7 @@ public class ExampleMod implements ModInitializer {
             saveConfig(); client.setScreen(p); return true;
         }
         @Override
-        public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0,0,width,height, 0xEE000000);
-            ctx.drawCenteredTextWithShadow(textRenderer, "PRESS KEY", width/2, height/2, -1);
-        }
+        public void render(DrawContext ctx, int mx, int my, float d) { ctx.fill(0,0,width,height, 0xEE000000); ctx.drawCenteredTextWithShadow(textRenderer, "PRESS KEY", width/2, height/2, -1); }
     }
 
     private boolean isPressed(long h, int k) {
