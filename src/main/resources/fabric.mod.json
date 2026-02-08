@@ -8,7 +8,7 @@
   "contact": {},
   "license": "MIT",
   "mixins": [
-    "bubble.mixins.json"
+    "modid.mixins.json"
   ],
   "environment": "*",
   "entrypoints": {
