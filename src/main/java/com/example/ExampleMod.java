@@ -24,7 +24,7 @@ import org.lwjgl.glfw.GLFW;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Random;
+import java.util.Comparator;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
@@ -40,7 +40,7 @@ public class ExampleMod implements ModInitializer {
     private static final String CONFIG_FILE = "bubble_config.txt";
     public static PlayerEntity auraTarget = null;
     
-    private static float silentYaw, silentPitch;
+    private static float lastYaw, lastPitch;
 
     @Override
     public void onInitialize() {
@@ -49,10 +49,12 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
+            // Открытие меню на '0'
             if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
+            // Хоткеи
             if (client.currentScreen == null) {
                 if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
                 if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
@@ -61,18 +63,16 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
             }
 
+            // Логика функций
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) handleAutoTotem(client);
             
-            if (autoRun && killaura && auraTarget != null && auraTarget.isAlive()) {
-                client.player.setSprinting(true);
-            }
-
-            if (killaura) runAura(client); else { auraTarget = null; }
+            if (killaura) runAura(client); else auraTarget = null;
             if (triggerbot) runTrigger(client);
 
             if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(0, client.player.getVelocity().y, 0);
+                Vec3d vel = client.player.getVelocity();
+                client.player.setVelocity(0, vel.y, 0);
             }
         });
 
@@ -101,30 +101,27 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
-        auraTarget = null;
-        double bestDist = Double.MAX_VALUE;
-        for (PlayerEntity p : client.world.getPlayers()) {
-            if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
-            double d = client.player.distanceTo(p);
-            if (d <= kaRange && d < bestDist) {
-                if (!client.player.canSee(p) && d > kaWallsRange) continue;
-                bestDist = d; auraTarget = p;
-            }
-        }
-        
-        if (auraTarget != null) {
-            Vec3d targetVec = auraTarget.getPos().add(0, auraTarget.getHeight() * 0.5, 0);
-            Vec3d diff = targetVec.subtract(client.player.getEyePos());
-            silentYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-            silentPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+        // Поиск ближайшей цели
+        auraTarget = client.world.getPlayers().stream()
+                .filter(p -> p != client.player && p.isAlive() && !p.isCreative() && !p.isInvisible())
+                .filter(p -> client.player.distanceTo(p) <= kaRange)
+                .filter(p -> client.player.canSee(p) || client.player.distanceTo(p) <= kaWallsRange)
+                .min(Comparator.comparingDouble(client.player::distanceTo))
+                .orElse(null);
 
-            // ФИКС ОШИБКИ 11632.jpg: Добавлен 7-й аргумент (false для horizontalCollision)
-            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.Full(
-                client.player.getX(), client.player.getY(), client.player.getZ(),
-                silentYaw, silentPitch, client.player.isOnGround(), false
-            ));
+        if (auraTarget != null) {
+            // Рассчет ротаций
+            Vec3d targetPos = auraTarget.getPos().add(0, auraTarget.getHeight() * 0.7, 0);
+            Vec3d diff = targetPos.subtract(client.player.getEyePos());
+            float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+            float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+
+            // Silent Rotation: Отправляем пакет поворота ПЕРЕД ударом
+            // Используем 4 аргумента для LookAndOnGround (yaw, pitch, onGround, horizontalCollision)
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(yaw, pitch, client.player.isOnGround(), false));
 
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
+                if (autoRun) client.player.setSprinting(true);
                 client.interactionManager.attackEntity(client.player, auraTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -132,11 +129,12 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runTrigger(MinecraftClient client) {
-        double reach = kaRange;
+        double reach = 3.5;
         Vec3d eye = client.player.getEyePos();
         Vec3d look = client.player.getRotationVec(1.0f).multiply(reach);
         Box box = client.player.getBoundingBox().expand(look.x, look.y, look.z).expand(1.0);
         EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e instanceof PlayerEntity && e.isAlive(), reach * reach);
+        
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
             if (client.player.getAttackCooldownProgress(0) >= (tbCrits ? 1.0f : 0.92f)) {
                 client.interactionManager.attackEntity(client.player, target);
@@ -180,6 +178,8 @@ public class ExampleMod implements ModInitializer {
             }
         } catch (Exception ignored) {}
     }
+
+    // --- GUI СЕКЦИЯ ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
