@@ -5,7 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [],
   "client": [
-    "ViewModelMixin"
+    "ExampleMixin.java"
   ],
   "injectors": {
     "defaultRequire": 1
