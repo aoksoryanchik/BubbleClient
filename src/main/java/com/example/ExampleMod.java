@@ -39,6 +39,8 @@ public class ExampleMod implements ModInitializer {
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
     public static float shakeIntensity = 0.5f;
+    
+    // Координаты рук (Важно: vmLX и прочие теперь тут точно есть)
     public static float vmX = 0.45f, vmY = -0.35f, vmZ = -0.7f;
     public static float vmLX = -0.45f, vmLY = -0.35f, vmLZ = -0.7f;
 
@@ -299,7 +301,7 @@ public class ExampleMod implements ModInitializer {
             ctx.drawCenteredTextWithShadow(textRenderer, "§bKILL AURA SETTINGS", x, y - 80, -1);
             ctx.drawTextWithShadow(textRenderer, "Range:", x - 50, y - 47, -1);
             
-            // Кнопка Anti-Velocity
+            // Кнопка Anti-Velocity (Тут, как ты и хотел)
             ctx.fill(x - 70, y - 20, x + 70, y, antiVelocity ? 0xFF00AAFF : 0xFF222222);
             ctx.drawCenteredTextWithShadow(textRenderer, "Anti-Velocity: " + (antiVelocity ? "ON" : "OFF"), x, y - 14, -1);
             
@@ -313,13 +315,11 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
-            // Клик по AntiVelocity
             if (mx >= x - 70 && mx <= x + 70 && my >= y - 20 && my <= y) {
                 antiVelocity = !antiVelocity;
                 saveConfig();
                 return true;
             }
-            // Клик по FunTime
             if (mx >= x - 70 && mx <= x + 70 && my >= y + 10 && my <= y + 30) {
                 kaRange = 3.1; kaWallsRange = 2.5; antiVelocity = true;
                 rangeField.setText("3.1");
@@ -351,11 +351,8 @@ public class ExampleMod implements ModInitializer {
             int x = width/2, y = height/2;
             ctx.drawCenteredTextWithShadow(textRenderer, "§bVIEWMODEL SETTINGS", x, y - 50, -1);
             
-            // Кнопка Animation 1
             ctx.fill(x - 60, y - 10, x + 60, y + 10, anim1 ? 0xFF00AAFF : 0xFF222222);
             ctx.drawCenteredTextWithShadow(textRenderer, "Animation 1: " + (anim1 ? "§aON" : "§cOFF"), x, y - 4, -1);
-            
-            ctx.drawCenteredTextWithShadow(textRenderer, "§7(Плавные удары и наклон)", x, y + 20, -1);
             super.render(ctx, mx, my, d);
         }
 
