@@ -5,5 +5,5 @@ import net.minecraft.client.gui.screen.TitleScreen;
 
 @Mixin(TitleScreen.class)
 public class ExampleMixin {
-    // Чистый класс без инъекций, чтобы не ломать билд
+    // Оставляем пустым. Вся логика теперь в ExampleMod.java
 }
