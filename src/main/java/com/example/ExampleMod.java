@@ -38,11 +38,9 @@ public class ExampleMod implements ModInitializer {
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    private static final Random rnd = new Random();
     public static PlayerEntity auraTarget = null;
     
     private static float silentYaw, silentPitch;
-    private static boolean needSilent = false;
 
     @Override
     public void onInitialize() {
@@ -70,7 +68,7 @@ public class ExampleMod implements ModInitializer {
                 client.player.setSprinting(true);
             }
 
-            if (killaura) runAura(client); else { auraTarget = null; needSilent = false; }
+            if (killaura) runAura(client); else { auraTarget = null; }
             if (triggerbot) runTrigger(client);
 
             if (antiVelocity && client.player.hurtTime > 0) {
@@ -119,17 +117,17 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = targetVec.subtract(client.player.getEyePos());
             silentYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             silentPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            needSilent = true;
 
-            // ФИКС ОШИБКИ 11628.jpg: Приведение типов для конструктора пакета
-            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(silentYaw, silentPitch, client.player.isOnGround()));
+            // ФИКС ПАКЕТА (11628.jpg): Используем Full для совместимости с 1.21
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.Full(
+                client.player.getX(), client.player.getY(), client.player.getZ(),
+                silentYaw, silentPitch, client.player.isOnGround()
+            ));
 
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
                 client.interactionManager.attackEntity(client.player, auraTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
-        } else {
-            needSilent = false;
         }
     }
 
@@ -161,7 +159,6 @@ public class ExampleMod implements ModInitializer {
         return false;
     }
 
-    // МЕТОДЫ ТЕПЕРЬ STATIC ДЛЯ ИСПРАВЛЕНИЯ ОШИБКИ 11600.jpg
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange + ":" + kaWallsRange + ":" + wpX + ":" + wpY + ":" + wpZ + ":0:0:0:" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + keyWP + ":" + 0.5f + ":" + antiVelocity + ":" + tbCrits);
@@ -329,10 +326,12 @@ public class ExampleMod implements ModInitializer {
     public static class BindScreen extends Screen {
         private final Screen p; private final int id;
         public BindScreen(Screen p, int id) { super(Text.literal("")); this.p = p; this.id = id; }
+        @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xEE000000);
             ctx.drawCenteredTextWithShadow(client.textRenderer, "PRESS KEY", width/2, height/2, -1);
         }
+        @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) k = GLFW.GLFW_KEY_UNKNOWN;
             if(id==0) keyKA=k; if(id==1) keyTB=k; if(id==2) keyFB=k; if(id==3) keyAT=k; if(id==4) keyWP=k;
@@ -340,4 +339,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
