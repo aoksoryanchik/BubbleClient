@@ -31,15 +31,23 @@ import java.nio.file.Paths;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false, esp = false;
-    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, screenShake = true, tbCrits = true;
+    // Состояния модулей
+    public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false, esp = false, viewModel = true;
+    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, screenShake = true, tbCrits = true, anim1 = false;
+    public static boolean isDestructed = false; // Важно для миксинов!
     
+    // Настройки
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
     public static float shakeIntensity = 0.5f;
     
+    // Координаты рук (Восстановлено для миксинов)
+    public static float vmX = 0.45f, vmY = -0.35f, vmZ = -0.7f;
+    public static float vmLX = -0.45f, vmLY = -0.35f, vmLZ = -0.7f;
+
+    // Клавиши
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
-    public static int keyAT = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
+    public static int keyAT = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN, keyESP = GLFW.GLFW_KEY_UNKNOWN, keyVM = GLFW.GLFW_KEY_UNKNOWN;
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
@@ -50,10 +58,11 @@ public class ExampleMod implements ModInitializer {
         loadConfig();
         
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null || client.world == null) return;
+            if (client.player == null || client.world == null || isDestructed) return;
             long h = client.getWindow().getHandle();
 
-            if (isPressed(h, GLFW.GLFW_KEY_G) && client.currentScreen == null) {
+            // Скрытое меню на G или 0
+            if ((isPressed(h, GLFW.GLFW_KEY_G) || isPressed(h, GLFW.GLFW_KEY_0)) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
@@ -67,10 +76,16 @@ public class ExampleMod implements ModInitializer {
 
             if (fullbright) {
                 client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
+            } else {
+                client.player.removeStatusEffect(StatusEffects.NIGHT_VISION);
             }
-
+            
             if (autoTotem) handleAutoTotem(client);
             if (autoRun && (client.player.forwardSpeed > 0 || killaura)) client.player.setSprinting(true);
+
+            if (antiVelocity && client.player.hurtTime > 0) {
+                client.player.setVelocity(client.player.getVelocity().x * 0.6, client.player.getVelocity().y, client.player.getVelocity().z * 0.6);
+            }
 
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
@@ -103,11 +118,18 @@ public class ExampleMod implements ModInitializer {
         }
         
         if (target != null) {
-            final PlayerEntity finalTarget = target; // Исправление ошибки из логов
+            final PlayerEntity finalTarget = target; // ИСПРАВЛЕНИЕ ОШИБКИ ЛЯМБДЫ
             Vec3d targetPos = finalTarget.getPos().add(0, finalTarget.getHeight() * 0.5, 0);
             updateRotations(client.player, targetPos, 100.0f);
 
-            if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
+            // Проверка через Raycast для точности
+            double reach = kaRange;
+            Vec3d eye = client.player.getEyePos();
+            Vec3d look = client.player.getRotationVec(1.0F).multiply(reach);
+            Box box = finalTarget.getBoundingBox().expand(0.1);
+            EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e == finalTarget, reach * reach);
+
+            if (client.player.getAttackCooldownProgress(0) >= 1.0f && hit != null) {
                 client.interactionManager.attackEntity(client.player, finalTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -164,31 +186,35 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
+    // --- GUI СЕКЦИЯ (БЕЗ РАЗМЫТИЯ) ---
+
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int nx, int ny, float d) {
-            ctx.fill(0, 0, width, height, 0x90000000); // Обычное затемнение без размытия
+            ctx.fill(0, 0, width, height, 0x90000000); // Обычное затемнение
             int x = width/2 - 90, y = height/2 - 105;
-            ctx.fill(x, y, x + 180, y + 155, 0xFF050505);
-            ctx.drawBorder(x, y, 180, 155, 0xFF00AAFF);
+            ctx.fill(x, y, x + 180, y + 180, 0xFF050505);
+            ctx.drawBorder(x, y, 180, 180, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width/2, y + 10, -1);
-            String[] n = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "Waypoint"};
-            boolean[] s = {killaura, triggerbot, fullbright, autoTotem, waypointActive};
-            int[] k = {keyKA, keyTB, keyFB, keyAT, keyWP};
-            for(int i = 0; i < 5; i++) {
+            
+            String[] n = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "Waypoint", "Anti-Velocity"};
+            boolean[] s = {killaura, triggerbot, fullbright, autoTotem, waypointActive, antiVelocity};
+            int[] k = {keyKA, keyTB, keyFB, keyAT, keyWP, -1};
+
+            for(int i = 0; i < n.length; i++) {
                 int iy = y + 35 + i * 22;
                 boolean h = nx >= x + 10 && nx <= x + 170 && ny >= iy && ny <= iy + 18;
                 ctx.fill(x + 10, iy, x + 170, iy + 18, h ? 0xFF1A1A1A : 0xFF101010);
-                String kn = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(k[i], 0).toUpperCase();
-                ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + kn + "]", x + 15, iy + 5, s[i] ? 0xFF00FF00 : 0xFFFF3333);
+                String kn = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : (k[i] == -1 ? "" : GLFW.glfwGetKeyName(k[i], 0).toUpperCase());
+                ctx.drawTextWithShadow(textRenderer, n[i] + (k[i] != -1 ? " §7[" + kn + "]" : ""), x + 15, iy + 5, s[i] ? 0xFF00FF00 : 0xFFFF3333);
                 if(i == 0 || i == 1 || i == 4) ctx.drawTextWithShadow(textRenderer, "⚙", x + 155, iy + 5, -1);
             }
         }
         @Override
         public boolean mouseClicked(double nx, double ny, int b) {
             int x = width/2 - 90, y = height/2 - 105;
-            for(int i = 0; i < 5; i++) {
+            for(int i = 0; i < 6; i++) {
                 int iy = y + 35 + i * 22;
                 if(nx >= x + 150 && nx <= x + 170 && ny >= iy && ny <= iy + 18) {
                     if(i == 0) client.setScreen(new KillAuraSettings(this));
@@ -196,13 +222,9 @@ public class ExampleMod implements ModInitializer {
                     if(i == 4) client.setScreen(new WaypointSettings(this));
                     return true;
                 } else if(nx >= x + 10 && nx <= x + 150 && ny >= iy && ny <= iy + 18) {
-                    if(b == 0) {
-                        if(i == 0) killaura = !killaura; if(i == 1) triggerbot = !triggerbot;
-                        if(i == 2) fullbright = !fullbright; if(i == 3) autoTotem = !autoTotem;
-                        if(i == 4) waypointActive = !waypointActive;
-                    } else {
-                        client.setScreen(new BindScreen(this, i));
-                    }
+                    if(i == 0) killaura = !killaura; if(i == 1) triggerbot = !triggerbot;
+                    if(i == 2) fullbright = !fullbright; if(i == 3) autoTotem = !autoTotem;
+                    if(i == 4) waypointActive = !waypointActive; if(i == 5) antiVelocity = !antiVelocity;
                     saveConfig(); return true;
                 }
             }
@@ -228,23 +250,23 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int nx, int ny, float d) {
             ctx.fill(0, 0, width, height, 0xEE000000);
             int x = width/2, y = height/2;
-            ctx.fill(x - 115, y - 95, x + 115, y + 90, 0xFF0A0A0A);
-            ctx.drawBorder(x - 115, y - 95, 230, 185, 0xFF00AAFF);
+            ctx.fill(x - 115, y - 95, x + 115, y + 95, 0xFF0A0A0A);
+            ctx.drawBorder(x - 115, y - 95, 230, 190, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bKILL AURA", x, y - 85, -1);
             ctx.drawTextWithShadow(textRenderer, "Дистанция:", x - 105, y - 41, -1);
             ctx.drawTextWithShadow(textRenderer, "Стены:", x - 105, y - 16, -1);
             ctx.drawTextWithShadow(textRenderer, "Тряска:", x - 105, y + 9, -1);
             
-            // Кнопки КФГ слева
+            // Слева кнопки конфигов
             int cx = x - 240;
-            ctx.fill(cx, y - 95, cx + 120, y + 90, 0xFF0A0A0A);
-            ctx.drawBorder(cx, y - 95, 120, 185, 0xFF00AAFF);
+            ctx.fill(cx, y - 95, cx + 120, y + 95, 0xFF0A0A0A);
+            ctx.drawBorder(cx, y - 95, 120, 190, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bКОНФИГИ", cx + 60, y - 85, -1);
             drawCfgBtn(ctx, "AresMine", cx + 10, y - 45, nx, ny);
             drawCfgBtn(ctx, "MineBlaze", cx + 10, y - 20, nx, ny);
-            drawCfgBtn(ctx, "FunTime", cx + 10, y + 5, nx, ny); // Добавлена кнопка FunTime
+            drawCfgBtn(ctx, "FunTime", cx + 10, y + 5, nx, ny);
             
-            f1.render(ctx, nx, ny, d); f2.render(ctx, nx, ny, d); f3.render(ctx, nx, ny, d);
+            super.render(ctx, nx, ny, d);
         }
         private void drawCfgBtn(DrawContext ctx, String n, int x, int y, int mx, int my) {
             boolean h = mx >= x && mx <= x + 100 && my >= y && my <= y + 18;
@@ -257,7 +279,7 @@ public class ExampleMod implements ModInitializer {
             if (nx >= cx + 10 && nx <= cx + 110) {
                 if (ny >= y - 45 && ny <= y - 27) { kaRange = 3.6; kaWallsRange = 3.0; updateFields(); return true; }
                 if (ny >= y - 20 && ny <= y - 2) { kaRange = 3.9; kaWallsRange = 3.2; updateFields(); return true; }
-                if (ny >= y + 5 && ny <= y + 23) { kaRange = 3.1; kaWallsRange = 2.4; updateFields(); return true; } // Логика для FunTime
+                if (ny >= y + 5 && ny <= y + 23) { kaRange = 3.1; kaWallsRange = 2.4; updateFields(); return true; }
             }
             return super.mouseClicked(nx, ny, b);
         }
@@ -320,7 +342,7 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(x - 115, y - 90, x + 115, y + 90, 0xFF0A0A0A);
             ctx.drawBorder(x - 115, y - 90, 230, 180, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bWAYPOINT", x, y - 80, -1);
-            f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
+            super.render(ctx, mx, my, d);
         }
         @Override
         public boolean keyPressed(int k, int s, int n) {
@@ -331,22 +353,6 @@ public class ExampleMod implements ModInitializer {
                 saveConfig(); client.setScreen(p); return true;
             }
             return super.keyPressed(k, s, n);
-        }
-    }
-
-    public static class BindScreen extends Screen {
-        private final Screen p; private final int id;
-        public BindScreen(Screen p, int id) { super(Text.literal("")); this.p = p; this.id = id; }
-        @Override
-        public boolean keyPressed(int k, int s, int n) {
-            if (k == GLFW.GLFW_KEY_ESCAPE) k = GLFW.GLFW_KEY_UNKNOWN;
-            if(id==0) keyKA=k; if(id==1) keyTB=k; if(id==2) keyFB=k; if(id==3) keyAT=k; if(id==4) keyWP=k;
-            saveConfig(); client.setScreen(p); return true;
-        }
-        @Override
-        public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xEE000000);
-            ctx.drawCenteredTextWithShadow(textRenderer, "PRESS KEY", width/2, height/2, -1);
         }
     }
 
