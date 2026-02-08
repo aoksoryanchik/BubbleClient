@@ -18,10 +18,10 @@ public class ViewModelMixin {
     private void onRenderItem(AbstractClientPlayerEntity player, float tickDelta, float pitch, Hand hand, float swingProgress, ItemStack item, float equipProgress, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
         if (!ExampleMod.isDestructed && ExampleMod.viewModel) {
             if (hand == Hand.MAIN_HAND) {
-                // Правая рука (Main Hand)
+                // Применяем настройки для ПРАВОЙ руки
                 matrices.translate(ExampleMod.vmX, ExampleMod.vmY, ExampleMod.vmZ);
             } else {
-                // Левая рука (Off Hand)
+                // Применяем настройки для ЛЕВОЙ руки
                 matrices.translate(ExampleMod.vmLX, ExampleMod.vmLY, ExampleMod.vmLZ);
             }
         }
