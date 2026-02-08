@@ -49,7 +49,6 @@ public class ExampleMod implements ModInitializer {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Обработка биндов
             if (client.currentScreen == null) {
                 if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
                 if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
@@ -58,15 +57,13 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
             }
 
-            // Функции
             if (fullbright) client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(net.minecraft.entity.effect.StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) handleAutoTotem(client);
-            if (autoRun) client.player.setSprinting(true); // Форсированный спринт
+            if (autoRun && (client.player.forwardSpeed != 0 || client.player.sidewaysSpeed != 0)) client.player.setSprinting(true);
             
             if (killaura) runAura(client); else auraTarget = null;
             if (triggerbot) runTrigger(client);
 
-            // AntiVelocity
             if (antiVelocity && client.player.hurtTime > 0) {
                 Vec3d v = client.player.getVelocity();
                 client.player.setVelocity(v.x * 0.4, v.y, v.z * 0.4);
@@ -113,20 +110,16 @@ public class ExampleMod implements ModInitializer {
             client.player.setYaw(targetYaw);
             client.player.setPitch(targetPitch);
 
-            // --- ОБНОВЛЕННЫЕ СТРЕЙФЫ ---
-            if (client.options.forwardKey.isPressed()) {
-                if (client.player.horizontalCollision || random.nextInt(40) == 0) strafeDir *= -1; // Меняем сторону при столкновении
-                
+            // Агрессивные стрейфы
+            if (client.player.forwardSpeed != 0 || client.player.sidewaysSpeed != 0) {
+                if (client.player.horizontalCollision || random.nextInt(30) == 0) strafeDir *= -1;
                 float moveYaw = targetYaw + (90 * strafeDir);
                 float rad = moveYaw * 0.017453292f;
-                double speed = client.player.isOnGround() ? 0.025 : 0.035; // В воздухе сильнее
-                
-                client.player.addVelocity(-Math.sin(rad) * speed, 0, Math.cos(rad) * speed);
+                double s = client.player.isOnGround() ? 0.026 : 0.038;
+                client.player.addVelocity(-Math.sin(rad) * s, 0, Math.cos(rad) * s);
             }
 
-            // Агрессивная атака
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                // Если падаем - бьем (крит), если на земле - бьем сразу
                 if (client.player.isOnGround() || client.player.getVelocity().y < 0) {
                     client.interactionManager.attackEntity(client.player, auraTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
@@ -136,11 +129,12 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runTrigger(MinecraftClient client) {
+        double r = 3.5;
+        Vec3d start = client.player.getEyePos();
+        Vec3d end = start.add(client.player.getRotationVec(1.0f).multiply(r));
         net.minecraft.util.hit.EntityHitResult hit = net.minecraft.entity.projectile.ProjectileUtil.raycast(
-            client.player, client.player.getEyePos(), 
-            client.player.getEyePos().add(client.player.getRotationVec(1.0f).multiply(3.5)), 
-            client.player.getBoundingBox().stretch(client.player.getRotationVec(1.0f).multiply(3.5)).expand(1.0), 
-            (e) -> e instanceof PlayerEntity && e.isAlive(), 12.25);
+            client.player, start, end, client.player.getBoundingBox().stretch(client.player.getRotationVec(1.0f).multiply(r)).expand(1.0),
+            (e) -> e instanceof PlayerEntity && e.isAlive(), r * r);
         
         if (hit != null && client.player.getAttackCooldownProgress(0) >= (tbCrits ? 1.0f : 0.92f)) {
             client.interactionManager.attackEntity(client.player, hit.getEntity());
@@ -275,7 +269,7 @@ public class ExampleMod implements ModInitializer {
             return super.mouseClicked(mx, my, b);
         }
         @Override
-        public boolean charTyped(char chr, int m) { f1.charTyped(char chr, int m); return true; }
+        public boolean charTyped(char chr, int m) { f1.charTyped(chr, m); f2.charTyped(chr, m); return true; }
         @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
