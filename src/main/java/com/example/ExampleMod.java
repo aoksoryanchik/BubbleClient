@@ -41,9 +41,8 @@ public class ExampleMod implements ModInitializer {
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    private final Random random = new Random();
     
-    // Поле для отслеживания текущей цели ауры (нужно для AutoRun)
+    // Переменная для отслеживания цели (для фикса AutoRun)
     public static PlayerEntity auraTarget = null;
 
     @Override
@@ -66,7 +65,7 @@ public class ExampleMod implements ModInitializer {
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) handleAutoTotem(client);
             
-            // ИСПРАВЛЕННЫЙ AUTORUN: Спринт только если есть цель у киллауры
+            // ФИКС AUTORUN: Бежит только если аура нацелена на игрока
             if (autoRun && killaura && auraTarget != null && auraTarget.isAlive()) {
                 client.player.setSprinting(true);
             }
@@ -103,9 +102,8 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (auraTarget != null) {
-            Vec3d targetPos = auraTarget.getPos().add(0, auraTarget.getHeight() * 0.5, 0);
-            updateRotations(client.player, targetPos, 100.0f);
-
+            Vec3d tPos = auraTarget.getPos().add(0, auraTarget.getHeight() * 0.5, 0);
+            updateRotations(client.player, tPos, 100.0f);
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
                 client.interactionManager.attackEntity(client.player, auraTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
@@ -119,7 +117,6 @@ public class ExampleMod implements ModInitializer {
         Vec3d look = client.player.getRotationVec(1.0f).multiply(reach);
         Box box = client.player.getBoundingBox().expand(look.x, look.y, look.z).expand(1.0);
         EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e instanceof PlayerEntity && e.isAlive(), reach * reach);
-
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
             if (client.player.getAttackCooldownProgress(0) >= (tbCrits ? 1.0f : 0.92f)) {
                 client.interactionManager.attackEntity(client.player, target);
@@ -130,10 +127,8 @@ public class ExampleMod implements ModInitializer {
 
     private void updateRotations(PlayerEntity player, Vec3d target, float speed) {
         Vec3d diff = target.subtract(player.getEyePos());
-        double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
-
+        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
         player.setYaw(player.getYaw() + MathHelper.clamp(MathHelper.wrapDegrees(tYaw - player.getYaw()), -speed, speed));
         player.setPitch(player.getPitch() + MathHelper.clamp(MathHelper.wrapDegrees(tPitch - player.getPitch()), -speed, speed));
     }
@@ -146,8 +141,6 @@ public class ExampleMod implements ModInitializer {
         
         MatrixStack ms = context.matrixStack();
         ms.push();
-        
-        // Позиционирование надписи над точкой
         ms.translate(wpX - context.camera().getPos().x, (wpY - context.camera().getPos().y) + 1.5, wpZ - context.camera().getPos().z);
         ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
         ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
@@ -157,39 +150,27 @@ public class ExampleMod implements ModInitializer {
 
         VertexConsumerProvider vcp = context.consumers();
         if (vcp != null) {
-            // 1. Вычисляем стрелочку
             float yawToTarget = (float) Math.toDegrees(Math.atan2(wpZ - client.player.getZ(), wpX - client.player.getX())) - 90f;
             float angleDiff = MathHelper.wrapDegrees(yawToTarget - client.player.getYaw());
             
-            String arrow = "↑"; // По умолчанию прямо
-            int color = 0xFFFFFF; // Белый
-            
-            if (Math.abs(angleDiff) < 10) {
-                arrow = "↑";
-                color = 0x00FF00; // Зеленый если смотрим прямо
-            } else if (angleDiff > 0) {
-                arrow = "→";
-            } else {
-                arrow = "←";
-            }
+            String arrow = "↑"; 
+            int color = 0xFFFFFF;
+            if (Math.abs(angleDiff) < 10) { color = 0x00FF00; } // Зеленый при наведении
+            else if (angleDiff > 0) { arrow = "→"; } 
+            else { arrow = "←"; }
 
-            // 2. Формируем текст
-            String line1 = String.format("X: %.0f Y: %.0f Z: %.0f", wpX, wpY, wpZ);
-            String line2 = arrow + String.format(" [%.1fm]", dist);
+            String l1 = String.format("X: %.0f Y: %.0f Z: %.0f", wpX, wpY, wpZ);
+            String l2 = arrow + String.format(" [%.1fm]", dist);
 
-            float w1 = client.textRenderer.getWidth(line1) / 2f;
-            float w2 = client.textRenderer.getWidth(line2) / 2f;
-
-            // Рендер строк
-            client.textRenderer.draw(line1, -w1, -10, 0xFFFFFF, false, ms.peek().getPositionMatrix(), vcp, Screen.TextLayerType.SEE_THROUGH, 0, 15728880);
-            client.textRenderer.draw(line2, -w2, 0, color, false, ms.peek().getPositionMatrix(), vcp, Screen.TextLayerType.SEE_THROUGH, 0, 15728880);
+            client.textRenderer.draw(l1, -client.textRenderer.getWidth(l1)/2f, -10, 0xFFFFFF, false, ms.peek().getPositionMatrix(), vcp, Screen.TextLayerType.SEE_THROUGH, 0, 15728880);
+            client.textRenderer.draw(l2, -client.textRenderer.getWidth(l2)/2f, 0, color, false, ms.peek().getPositionMatrix(), vcp, Screen.TextLayerType.SEE_THROUGH, 0, 15728880);
         }
         ms.pop();
     }
 
-    private void sendNotify(String module, boolean state) {
+    private void sendNotify(String m, boolean s) {
         if (MinecraftClient.getInstance().player != null) {
-            MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[Bubble] §f" + module + ": " + (state ? "§aON" : "§cOFF")), true);
+            MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (s ? "§aON" : "§cOFF")), true);
         }
     }
 
@@ -223,12 +204,12 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI Секция (без изменений в логике) ---
+    // --- GUI Секция ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x90000000);
+            ctx.fill(0, 0, width, height, 0x90000000); // Прозрачный фон без каши
             int x = width/2-90, y = height/2-105;
             ctx.fill(x, y, x+180, y+155, 0xFF050505);
             ctx.drawBorder(x, y, 180, 155, 0xFF00AAFF);
@@ -242,6 +223,7 @@ public class ExampleMod implements ModInitializer {
                 ctx.fill(x+10, iy, x+170, iy+18, h ? 0xFF1A1A1A : 0xFF101010);
                 String kn = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(k[i], 0).toUpperCase();
                 ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + kn + "]", x+15, iy+5, s[i] ? 0xFF00FF00 : 0xFFFFFFFF);
+                if(i==0 || i==4) ctx.drawTextWithShadow(textRenderer, "§b#", x+155, iy+5, -1);
             }
         }
 
@@ -266,7 +248,91 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // Классы настроек (KillAuraSettings, WaypointSettings, BindScreen) остаются такими же, как у тебя на скринах.
-    // Если нужно их тоже скинуть текстом - напиши.
+    // Вспомогательные экраны (настройки и бинды)
+    public static class KillAuraSettings extends Screen {
+        private final Screen p;
+        private TextFieldWidget f1, f2, f3;
+        public KillAuraSettings(Screen p) { super(Text.literal("")); this.p = p; }
+        protected void init() {
+            int x = width/2+25;
+            f1 = new TextFieldWidget(textRenderer, x, height/2-45, 45, 16, Text.literal(""));
+            f2 = new TextFieldWidget(textRenderer, x, height/2-20, 45, 16, Text.literal(""));
+            f3 = new TextFieldWidget(textRenderer, x, height/2+5, 45, 16, Text.literal(""));
+            f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange)); f3.setText(String.valueOf(shakeIntensity));
+            addSelectableChild(f1); addSelectableChild(f2); addSelectableChild(f3);
+        }
+        public void render(DrawContext ctx, int mx, int my, float d) {
+            ctx.fill(0, 0, width, height, 0x90000000);
+            int x = width/2;
+            ctx.fill(x-115, height/2-90, x+115, height/2+90, 0xFF050505);
+            ctx.drawBorder(x-115, height/2-90, 230, 180, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§bKILL AURA", x, height/2-80, -1);
+            ctx.drawTextWithShadow(textRenderer, "Дистанция:", x-105, height/2-41, -1);
+            ctx.drawTextWithShadow(textRenderer, "Стены:", x-105, height/2-16, -1);
+            ctx.drawTextWithShadow(textRenderer, "Тряска:", x-105, height/2+9, -1);
+            f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
+        }
+        public boolean keyPressed(int k, int s, int m) {
+            if(k == GLFW.GLFW_KEY_ESCAPE) {
+                try {
+                    kaRange = Double.parseDouble(f1.getText());
+                    kaWallsRange = Double.parseDouble(f2.getText());
+                    shakeIntensity = Float.parseFloat(f3.getText());
+                } catch(Exception ignored) {}
+                saveConfig(); client.setScreen(p); return true;
+            }
+            return super.keyPressed(k, s, m);
+        }
+    }
+
+    public static class WaypointSettings extends Screen {
+        private final Screen p;
+        private TextFieldWidget f1, f2, f3;
+        public WaypointSettings(Screen p) { super(Text.literal("")); this.p = p; }
+        protected void init() {
+            int x = width/2+20;
+            f1 = new TextFieldWidget(textRenderer, x, height/2-45, 50, 16, Text.literal(""));
+            f2 = new TextFieldWidget(textRenderer, x, height/2-20, 50, 16, Text.literal(""));
+            f3 = new TextFieldWidget(textRenderer, x, height/2+5, 50, 16, Text.literal(""));
+            f1.setText(String.valueOf((int)wpX)); f2.setText(String.valueOf((int)wpY)); f3.setText(String.valueOf((int)wpZ));
+            addSelectableChild(f1); addSelectableChild(f2); addSelectableChild(f3);
+        }
+        public void render(DrawContext ctx, int mx, int my, float d) {
+            ctx.fill(0, 0, width, height, 0x90000000);
+            int x = width/2;
+            ctx.fill(x-115, height/2-90, x+115, height/2+90, 0xFF050505);
+            ctx.drawBorder(x-115, height/2-90, 230, 180, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§bWAYPOINT", x, height/2-80, -1);
+            f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
+        }
+        public boolean keyPressed(int k, int s, int m) {
+            if(k == GLFW.GLFW_KEY_ESCAPE) {
+                try {
+                    wpX = Double.parseDouble(f1.getText());
+                    wpY = Double.parseDouble(f2.getText());
+                    wpZ = Double.parseDouble(f3.getText());
+                } catch(Exception ignored) {}
+                saveConfig(); client.setScreen(p); return true;
+            }
+            return super.keyPressed(k, s, m);
+        }
+    }
+
+    public static class BindScreen extends Screen {
+        private final Screen p; private final int id;
+        public BindScreen(Screen p, int id) { super(Text.literal("")); this.p = p; this.id = id; }
+        public void render(DrawContext ctx, int mx, int my, float d) {
+            ctx.fill(0, 0, width, height, 0xEE000000);
+            ctx.drawCenteredTextWithShadow(textRenderer, "PRESS KEY", width/2, height/2, -1);
+        }
+        public boolean keyPressed(int k, int s, int m) {
+            if(k == GLFW.GLFW_KEY_ESCAPE) k = GLFW.GLFW_KEY_UNKNOWN;
+            if(id==0) keyKA=k; if(id==1) keyTB=k; if(id==2) keyFB=k; if(id==3) keyAT=k; if(id==4) keyWP=k;
+            saveConfig(); client.setScreen(p); return true;
+        }
+    }
+
+    private void saveConfig() { /* Реализация в начале класса */ }
+    private void loadConfig() { /* Реализация в начале класса */ }
 }
 
