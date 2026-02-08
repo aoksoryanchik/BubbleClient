@@ -5,6 +5,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -42,7 +43,6 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     
-    // Переменная для отслеживания цели (для фикса AutoRun)
     public static PlayerEntity auraTarget = null;
 
     @Override
@@ -65,7 +65,6 @@ public class ExampleMod implements ModInitializer {
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) handleAutoTotem(client);
             
-            // ФИКС AUTORUN: Бежит только если аура нацелена на игрока
             if (autoRun && killaura && auraTarget != null && auraTarget.isAlive()) {
                 client.player.setSprinting(true);
             }
@@ -155,15 +154,15 @@ public class ExampleMod implements ModInitializer {
             
             String arrow = "↑"; 
             int color = 0xFFFFFF;
-            if (Math.abs(angleDiff) < 10) { color = 0x00FF00; } // Зеленый при наведении
+            if (Math.abs(angleDiff) < 10) { color = 0x00FF00; }
             else if (angleDiff > 0) { arrow = "→"; } 
             else { arrow = "←"; }
 
             String l1 = String.format("X: %.0f Y: %.0f Z: %.0f", wpX, wpY, wpZ);
             String l2 = arrow + String.format(" [%.1fm]", dist);
 
-            client.textRenderer.draw(l1, -client.textRenderer.getWidth(l1)/2f, -10, 0xFFFFFF, false, ms.peek().getPositionMatrix(), vcp, Screen.TextLayerType.SEE_THROUGH, 0, 15728880);
-            client.textRenderer.draw(l2, -client.textRenderer.getWidth(l2)/2f, 0, color, false, ms.peek().getPositionMatrix(), vcp, Screen.TextLayerType.SEE_THROUGH, 0, 15728880);
+            client.textRenderer.draw(l1, -client.textRenderer.getWidth(l1)/2f, -10, 0xFFFFFF, false, ms.peek().getPositionMatrix(), vcp, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
+            client.textRenderer.draw(l2, -client.textRenderer.getWidth(l2)/2f, 0, color, false, ms.peek().getPositionMatrix(), vcp, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
         }
         ms.pop();
     }
@@ -182,13 +181,13 @@ public class ExampleMod implements ModInitializer {
         return false;
     }
 
-    private void saveConfig() {
+    public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange + ":" + kaWallsRange + ":" + wpX + ":" + wpY + ":" + wpZ + ":0:0:0:" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + keyWP + ":" + shakeIntensity + ":" + antiVelocity + ":" + tbCrits);
         } catch (Exception ignored) {}
     }
 
-    private void loadConfig() {
+    public static void loadConfig() {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":");
@@ -204,12 +203,11 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI Секция ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x90000000); // Прозрачный фон без каши
+            ctx.fill(0, 0, width, height, 0x90000000);
             int x = width/2-90, y = height/2-105;
             ctx.fill(x, y, x+180, y+155, 0xFF050505);
             ctx.drawBorder(x, y, 180, 155, 0xFF00AAFF);
@@ -226,7 +224,6 @@ public class ExampleMod implements ModInitializer {
                 if(i==0 || i==4) ctx.drawTextWithShadow(textRenderer, "§b#", x+155, iy+5, -1);
             }
         }
-
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2-90, y = height/2-105;
@@ -248,7 +245,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // Вспомогательные экраны (настройки и бинды)
     public static class KillAuraSettings extends Screen {
         private final Screen p;
         private TextFieldWidget f1, f2, f3;
@@ -331,8 +327,5 @@ public class ExampleMod implements ModInitializer {
             saveConfig(); client.setScreen(p); return true;
         }
     }
-
-    private void saveConfig() { /* Реализация в начале класса */ }
-    private void loadConfig() { /* Реализация в начале класса */ }
 }
 
