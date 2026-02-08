@@ -32,8 +32,7 @@ public class ExampleMod implements ModInitializer {
 
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
-    public static float shakeIntensity = 0.5f;
-
+    
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
     public static int keyAT = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
 
@@ -112,13 +111,20 @@ public class ExampleMod implements ModInitializer {
             }
         }
         if (auraTarget != null) {
-            // Рандомизация наводки (обход MineBlaze)
-            double offset = (rnd.nextDouble() - 0.5) * 0.1;
-            Vec3d tPos = auraTarget.getPos().add(offset, auraTarget.getHeight() * (0.4 + rnd.nextDouble() * 0.3), offset);
-            updateRotations(client.player, tPos, 100.0f);
+            // Предикт и наводка
+            Vec3d targetVec = auraTarget.getPos().add(
+                (auraTarget.getX() - auraTarget.prevX) * 2.0,
+                auraTarget.getHeight() * 0.5,
+                (auraTarget.getZ() - auraTarget.prevZ) * 2.0
+            );
+            updateRotations(client.player, targetVec, 180.0f);
+            
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                client.interactionManager.attackEntity(client.player, auraTarget);
-                client.player.swingHand(Hand.MAIN_HAND);
+                // Дополнительная проверка на дистанцию перед ударом (чтобы не миссать)
+                if (client.player.distanceTo(auraTarget) <= kaRange) {
+                    client.interactionManager.attackEntity(client.player, auraTarget);
+                    client.player.swingHand(Hand.MAIN_HAND);
+                }
             }
         }
     }
@@ -161,7 +167,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange + ":" + kaWallsRange + ":" + wpX + ":" + wpY + ":" + wpZ + ":0:0:0:" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + keyWP + ":" + shakeIntensity + ":" + antiVelocity + ":" + tbCrits);
+            w.println(kaRange + ":" + kaWallsRange + ":" + wpX + ":" + wpY + ":" + wpZ + ":0:0:0:" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + keyWP + ":" + 0.5f + ":" + antiVelocity + ":" + tbCrits);
         } catch (Exception ignored) {}
     }
 
@@ -175,7 +181,7 @@ public class ExampleMod implements ModInitializer {
                 autoRun = Boolean.parseBoolean(p[8]);
                 keyKA = Integer.parseInt(p[9]); keyTB = Integer.parseInt(p[10]); keyFB = Integer.parseInt(p[11]);
                 keyAT = Integer.parseInt(p[12]); keyWP = Integer.parseInt(p[13]);
-                shakeIntensity = Float.parseFloat(p[14]); antiVelocity = Boolean.parseBoolean(p[15]);
+                antiVelocity = Boolean.parseBoolean(p[15]);
                 tbCrits = Boolean.parseBoolean(p[16]);
             }
         } catch (Exception ignored) {}
@@ -232,9 +238,9 @@ public class ExampleMod implements ModInitializer {
             int x = width/2+25;
             f1 = new TextFieldWidget(textRenderer, x, height/2-70, 45, 14, Text.literal(""));
             f2 = new TextFieldWidget(textRenderer, x, height/2-50, 45, 14, Text.literal(""));
+            f1.setMaxLength(5); f2.setMaxLength(5);
             f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange));
             addSelectableChild(f1); addSelectableChild(f2);
-            setInitialFocus(f1); // Даем фокус полю
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
@@ -259,9 +265,9 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
+            f1.setFocused(f1.mouseClicked(mx, my, b));
+            f2.setFocused(f2.mouseClicked(mx, my, b));
             int x = width/2;
-            if (f1.mouseClicked(mx, my, b)) { f1.setFocused(true); f2.setFocused(false); return true; }
-            if (f2.mouseClicked(mx, my, b)) { f2.setFocused(true); f1.setFocused(false); return true; }
             if(mx>=x-100 && mx<=x+100) {
                 if(my>=height/2-25 && my<=height/2-11) autoRun = !autoRun;
                 if(my>=height/2-5 && my<=height/2+9) antiVelocity = !antiVelocity;
@@ -272,11 +278,17 @@ public class ExampleMod implements ModInitializer {
             return super.mouseClicked(mx, my, b);
         }
         @Override
+        public boolean charTyped(char chr, int m) {
+            f1.charTyped(chr, m); f2.charTyped(chr, m);
+            return true;
+        }
+        @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
                 try { kaRange=Double.parseDouble(f1.getText()); kaWallsRange=Double.parseDouble(f2.getText()); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(p); return true;
             }
+            f1.keyPressed(k, s, m); f2.keyPressed(k, s, m);
             return super.keyPressed(k, s, m);
         }
     }
@@ -314,11 +326,17 @@ public class ExampleMod implements ModInitializer {
             return super.mouseClicked(mx, my, b);
         }
         @Override
+        public boolean charTyped(char chr, int m) {
+            f1.charTyped(chr, m); f2.charTyped(chr, m); f3.charTyped(chr, m);
+            return true;
+        }
+        @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
                 try { wpX=Double.parseDouble(f1.getText()); wpY=Double.parseDouble(f2.getText()); wpZ=Double.parseDouble(f3.getText()); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(p); return true;
             }
+            f1.keyPressed(k, s, m); f2.keyPressed(k, s, m); f3.keyPressed(k, s, m);
             return super.keyPressed(k, s, m);
         }
     }
