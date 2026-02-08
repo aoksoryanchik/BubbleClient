@@ -118,10 +118,10 @@ public class ExampleMod implements ModInitializer {
             silentYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             silentPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // ФИКС ПАКЕТА (11628.jpg): Используем Full для совместимости с 1.21
+            // ФИКС ОШИБКИ 11632.jpg: Добавлен 7-й аргумент (false для horizontalCollision)
             client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.Full(
                 client.player.getX(), client.player.getY(), client.player.getZ(),
-                silentYaw, silentPitch, client.player.isOnGround()
+                silentYaw, silentPitch, client.player.isOnGround(), false
             ));
 
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
@@ -339,3 +339,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
