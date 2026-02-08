@@ -2,16 +2,13 @@ package com.example;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
@@ -27,11 +24,10 @@ import org.lwjgl.glfw.GLFW;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
-    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, screenShake = true, tbCrits = true;
+    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
 
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
@@ -42,7 +38,6 @@ public class ExampleMod implements ModInitializer {
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    
     public static PlayerEntity auraTarget = null;
 
     @Override
@@ -52,7 +47,10 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            if (isPressed(h, GLFW.GLFW_KEY_G) && client.currentScreen == null) client.setScreen(new BubbleMenu());
+            // ОТКРЫТИЕ МЕНЮ НА 0 (цифра над буквами)
+            if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
+                client.setScreen(new BubbleMenu());
+            }
 
             if (client.currentScreen == null) {
                 if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
@@ -71,9 +69,23 @@ public class ExampleMod implements ModInitializer {
 
             if (killaura) runAura(client); else auraTarget = null;
             if (triggerbot) runTrigger(client);
+
+            // AntiVelocity (простейшая реализация через обнуление движения при получении урона)
+            if (antiVelocity && client.player.hurtTime > 0) {
+                client.player.setVelocity(0, client.player.getVelocity().y, 0);
+            }
         });
 
-        WorldRenderEvents.LAST.register(this::renderWaypoint);
+        // Рендер Waypoint СВЕРХУ ЭКРАНА (HUD)
+        HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
+            if (!waypointActive) return;
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.player == null) return;
+
+            double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
+            String text = String.format("§bWaypoint: §f%.0f, %.0f, %.0f §7[§a%.1fm§7]", wpX, wpY, wpZ, dist);
+            drawContext.drawCenteredTextWithShadow(client.textRenderer, text, drawContext.getScaledWindowWidth() / 2, 10, -1);
+        });
     }
 
     private void handleAutoTotem(MinecraftClient client) {
@@ -130,41 +142,6 @@ public class ExampleMod implements ModInitializer {
         float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
         player.setYaw(player.getYaw() + MathHelper.clamp(MathHelper.wrapDegrees(tYaw - player.getYaw()), -speed, speed));
         player.setPitch(player.getPitch() + MathHelper.clamp(MathHelper.wrapDegrees(tPitch - player.getPitch()), -speed, speed));
-    }
-
-    private void renderWaypoint(WorldRenderContext context) {
-        if (!waypointActive) return;
-        MinecraftClient client = MinecraftClient.getInstance();
-        Vec3d targetVec = new Vec3d(wpX, wpY, wpZ);
-        double dist = client.player.getPos().distanceTo(targetVec);
-        
-        MatrixStack ms = context.matrixStack();
-        ms.push();
-        ms.translate(wpX - context.camera().getPos().x, (wpY - context.camera().getPos().y) + 1.5, wpZ - context.camera().getPos().z);
-        ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-        ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
-        
-        float s = (float) Math.max(0.02, dist * 0.012);
-        ms.scale(-s, -s, s);
-
-        VertexConsumerProvider vcp = context.consumers();
-        if (vcp != null) {
-            float yawToTarget = (float) Math.toDegrees(Math.atan2(wpZ - client.player.getZ(), wpX - client.player.getX())) - 90f;
-            float angleDiff = MathHelper.wrapDegrees(yawToTarget - client.player.getYaw());
-            
-            String arrow = "↑"; 
-            int color = 0xFFFFFF;
-            if (Math.abs(angleDiff) < 10) { color = 0x00FF00; }
-            else if (angleDiff > 0) { arrow = "→"; } 
-            else { arrow = "←"; }
-
-            String l1 = String.format("X: %.0f Y: %.0f Z: %.0f", wpX, wpY, wpZ);
-            String l2 = arrow + String.format(" [%.1fm]", dist);
-
-            client.textRenderer.draw(l1, -client.textRenderer.getWidth(l1)/2f, -10, 0xFFFFFF, false, ms.peek().getPositionMatrix(), vcp, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
-            client.textRenderer.draw(l2, -client.textRenderer.getWidth(l2)/2f, 0, color, false, ms.peek().getPositionMatrix(), vcp, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
-        }
-        ms.pop();
     }
 
     private void sendNotify(String m, boolean s) {
@@ -247,34 +224,53 @@ public class ExampleMod implements ModInitializer {
 
     public static class KillAuraSettings extends Screen {
         private final Screen p;
-        private TextFieldWidget f1, f2, f3;
+        private TextFieldWidget f1, f2;
         public KillAuraSettings(Screen p) { super(Text.literal("")); this.p = p; }
         protected void init() {
             int x = width/2+25;
-            f1 = new TextFieldWidget(textRenderer, x, height/2-45, 45, 16, Text.literal(""));
-            f2 = new TextFieldWidget(textRenderer, x, height/2-20, 45, 16, Text.literal(""));
-            f3 = new TextFieldWidget(textRenderer, x, height/2+5, 45, 16, Text.literal(""));
-            f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange)); f3.setText(String.valueOf(shakeIntensity));
-            addSelectableChild(f1); addSelectableChild(f2); addSelectableChild(f3);
+            f1 = new TextFieldWidget(textRenderer, x, height/2-70, 45, 14, Text.literal(""));
+            f2 = new TextFieldWidget(textRenderer, x, height/2-50, 45, 14, Text.literal(""));
+            f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange));
+            addSelectableChild(f1); addSelectableChild(f2);
         }
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0x90000000);
             int x = width/2;
-            ctx.fill(x-115, height/2-90, x+115, height/2+90, 0xFF050505);
-            ctx.drawBorder(x-115, height/2-90, 230, 180, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§bKILL AURA", x, height/2-80, -1);
-            ctx.drawTextWithShadow(textRenderer, "Дистанция:", x-105, height/2-41, -1);
-            ctx.drawTextWithShadow(textRenderer, "Стены:", x-105, height/2-16, -1);
-            ctx.drawTextWithShadow(textRenderer, "Тряска:", x-105, height/2+9, -1);
-            f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
+            ctx.fill(x-110, height/2-95, x+110, height/2+95, 0xFF050505);
+            ctx.drawBorder(x-110, height/2-95, 220, 190, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§bKA SETTINGS", x, height/2-88, -1);
+            ctx.drawTextWithShadow(textRenderer, "Range:", x-100, height/2-67, -1);
+            ctx.drawTextWithShadow(textRenderer, "Walls:", x-100, height/2-47, -1);
+            f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d);
+
+            // Кнопки AutoRun и AntiVelocity
+            drawBtn(ctx, x-100, height/2-25, 200, 14, "AutoRun: " + (autoRun ? "§aON" : "§cOFF"), mx, my);
+            drawBtn(ctx, x-100, height/2-5, 200, 14, "AntiVelocity: " + (antiVelocity ? "§aON" : "§cOFF"), mx, my);
+
+            // Конфиги серверов
+            ctx.drawCenteredTextWithShadow(textRenderer, "§7--- CFG SERVERS ---", x, height/2+20, -1);
+            drawBtn(ctx, x-100, height/2+35, 200, 14, "Load MineBlaze (Legit)", mx, my);
+            drawBtn(ctx, x-100, height/2+55, 200, 14, "Load AresMine (Rage)", mx, my);
+        }
+        private void drawBtn(DrawContext ctx, int x, int y, int w, int h, String t, int mx, int my) {
+            boolean hv = mx>=x && mx<=x+w && my>=y && my<=y+h;
+            ctx.fill(x, y, x+w, y+h, hv ? 0xFF222222 : 0xFF111111);
+            ctx.drawCenteredTextWithShadow(textRenderer, t, x+w/2, y+3, -1);
+        }
+        public boolean mouseClicked(double mx, double my, int b) {
+            int x = width/2;
+            if(mx>=x-100 && mx<=x+100) {
+                if(my>=height/2-25 && my<=height/2-11) autoRun = !autoRun;
+                if(my>=height/2-5 && my<=height/2+9) antiVelocity = !antiVelocity;
+                if(my>=height/2+35 && my<=height/2+49) { kaRange=3.4; kaWallsRange=3.0; autoRun=true; antiVelocity=false; f1.setText("3.4"); f2.setText("3.0"); }
+                if(my>=height/2+55 && my<=height/2+69) { kaRange=4.2; kaWallsRange=3.5; autoRun=true; antiVelocity=true; f1.setText("4.2"); f2.setText("3.5"); }
+                saveConfig(); return true;
+            }
+            return super.mouseClicked(mx, my, b);
         }
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
-                try {
-                    kaRange = Double.parseDouble(f1.getText());
-                    kaWallsRange = Double.parseDouble(f2.getText());
-                    shakeIntensity = Float.parseFloat(f3.getText());
-                } catch(Exception ignored) {}
+                try { kaRange=Double.parseDouble(f1.getText()); kaWallsRange=Double.parseDouble(f2.getText()); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(p); return true;
             }
             return super.keyPressed(k, s, m);
@@ -299,15 +295,14 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(x-115, height/2-90, x+115, height/2+90, 0xFF050505);
             ctx.drawBorder(x-115, height/2-90, 230, 180, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bWAYPOINT", x, height/2-80, -1);
+            ctx.drawTextWithShadow(textRenderer, "X:", x-100, height/2-41, -1);
+            ctx.drawTextWithShadow(textRenderer, "Y:", x-100, height/2-16, -1);
+            ctx.drawTextWithShadow(textRenderer, "Z:", x-100, height/2+9, -1);
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
         }
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
-                try {
-                    wpX = Double.parseDouble(f1.getText());
-                    wpY = Double.parseDouble(f2.getText());
-                    wpZ = Double.parseDouble(f3.getText());
-                } catch(Exception ignored) {}
+                try { wpX=Double.parseDouble(f1.getText()); wpY=Double.parseDouble(f2.getText()); wpZ=Double.parseDouble(f3.getText()); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(p); return true;
             }
             return super.keyPressed(k, s, m);
