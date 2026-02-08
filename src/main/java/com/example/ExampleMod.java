@@ -62,7 +62,8 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot) runTrigger(client);
 
             if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(client.player.getVelocity().x * 0.4, client.player.getVelocity().y, client.player.getVelocity().z * 0.4);
+                Vec3d v = client.player.getVelocity();
+                client.player.setVelocity(v.x * 0.5, v.y, v.z * 0.5);
             }
         });
 
@@ -98,30 +99,31 @@ public class ExampleMod implements ModInitializer {
                 .orElse(null);
 
         if (auraTarget != null) {
-            // Расчет векторов для Silent-наводки
+            // Расчет ротаций
             Vec3d targetVec = auraTarget.getBoundingBox().getCenter();
             Vec3d diff = targetVec.subtract(client.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // ОБХОД: Отправляем пакет поворота СТРОГО перед атакой
-            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.Full(
-                    client.player.getX(), client.player.getY(), client.player.getZ(),
-                    yaw, pitch, client.player.isOnGround(), false
-            ));
-
+            // ФИКС ЗАМОРОЗКИ: Не шлем Full пакет каждый раз. 
+            // Шлем только ротацию LookAndOnGround ПЕРЕД атакой.
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                // Прямая атака энтити без проверки клиентского взгляда
+                // Сервер будет думать, что мы повернулись к цели
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(yaw, pitch, client.player.isOnGround(), false));
+                
+                // Сама атака
                 client.interactionManager.attackEntity(client.player, auraTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
                 
                 if (autoRun) client.player.setSprinting(true);
+
+                // После удара шлем пакет возврата взгляда (опционально, для легитности перед античитом)
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(client.player.getYaw(), client.player.getPitch(), client.player.isOnGround(), false));
             }
         }
     }
 
     private void runTrigger(MinecraftClient client) {
-        // Триггербот остается для легитной игры
         net.minecraft.util.hit.EntityHitResult hit = net.minecraft.entity.projectile.ProjectileUtil.raycast(
             client.player, client.player.getEyePos(), 
             client.player.getEyePos().add(client.player.getRotationVec(1.0f).multiply(3.5)), 
@@ -324,7 +326,7 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public boolean keyPressed(int k, int s, int m) {
-            if(k == GLFW.GLFW_KEY_UNKNOWN) k = GLFW.GLFW_KEY_UNKNOWN;
+            if(k == GLFW.GLFW_KEY_ESCAPE) k = GLFW.GLFW_KEY_UNKNOWN;
             if(id==0) keyKA=k; if(id==1) keyTB=k; if(id==2) keyFB=k; if(id==3) keyAT=k; if(id==4) keyWP=k;
             saveConfig(); client.setScreen(p); return true;
         }
