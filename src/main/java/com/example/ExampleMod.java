@@ -43,7 +43,6 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
-    private int attackTicks = 0;
 
     @Override
     public void onInitialize() {
@@ -85,33 +84,36 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // Плавная легитная доводка
-            Vec3d targetVec = target.getPos().add(0, target.getHeight() * 0.5, 0);
-            Vec3d diff = targetVec.subtract(client.player.getEyePos());
-            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            // Улучшенная плавная наводка
+            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.6, 0);
+            Vec3d diff = targetPos.subtract(client.player.getEyePos());
+            float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+            float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Скорость поворота меняется, чтобы имитировать руку человека
-            float speed = 0.4f + random.nextFloat() * 0.3f;
-            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(targetYaw - client.player.getYaw()) * speed);
-            client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(targetPitch - client.player.getPitch()) * speed);
+            // Динамическая скорость доводки (имитация реакции)
+            float turnSpeed = 0.5f + (random.nextFloat() * 0.3f);
+            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()) * turnSpeed);
+            client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()) * turnSpeed);
 
-            // Мягкий Sticky (если включен)
-            if (stickyAura && client.player.getHealth() > (client.player.getMaxHealth() / 2) && target.getHealth() < (target.getMaxHealth() * 0.66f)) {
-                Vec3d pull = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.05);
-                client.player.addVelocity(pull.x, 0, pull.z);
-            }
-
-            // Удар только при наведении (Raycast)
+            // Рандомизация удара (Raycast)
             EntityHitResult hit = raycastEntity(client, kaRange);
             if (hit != null && hit.getEntity() == target) {
-                // Вместо прыжка используем проверку падения или просто бьем по КД
-                float cdLimit = 0.92f + random.nextFloat() * 0.08f;
-                if (client.player.getAttackCooldownProgress(0) >= cdLimit) {
+                // Система легитных критических ударов (без ТП)
+                if (client.player.isOnGround() && client.player.getAttackCooldownProgress(0) > 0.85f && !client.player.isInsideWaterOrBubbleColumn()) {
+                    // Подпрыгиваем только если мы нападаем
+                    client.options.jumpKey.setPressed(true);
+                } else {
+                    client.options.jumpKey.setPressed(false);
+                }
+
+                float cd = 0.91f + (random.nextFloat() * 0.07f);
+                if (client.player.getAttackCooldownProgress(0) >= cd) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
             }
+        } else {
+            if (client.currentScreen == null) client.options.jumpKey.setPressed(InputUtil.isKeyPressed(client.getWindow().getHandle(), GLFW.GLFW_KEY_SPACE));
         }
     }
 
@@ -262,6 +264,7 @@ public class ExampleMod implements ModInitializer {
             ctx.drawBorder(cx, y-95, 120, 185, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bCONFIGS", cx+60, y-85, -1);
             drawBtn(ctx, "MineBlaze", cx+10, y-50, mx, my);
+            drawBtn(ctx, "AresMine", cx+10, y-25, mx, my);
         }
         private void drawNumRow(DrawContext ctx, String s, int x, int y, int bx, int by, double val, int mx, int my) {
             ctx.drawTextWithShadow(textRenderer, s, x, y, -1);
@@ -299,9 +302,15 @@ public class ExampleMod implements ModInitializer {
                 if(my>=y+55 && my<=y+65) antiVelocity = !antiVelocity;
                 if(my>=y+75 && my<=y+85) stickyAura = !stickyAura;
             }
-            if(mx>=cx+10 && mx<=cx+110 && my>=y-50 && my<=y-32) {
-                kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; autoRun=true; antiVelocity=false; stickyAura=false;
-                refresh();
+            if(mx>=cx+10 && mx<=cx+110) {
+                if(my>=y-50 && my<=y-32) { // MINEBLAZE
+                    kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; antiVelocity=false; stickyAura=false;
+                    refresh();
+                }
+                if(my>=y-25 && my<=y-7) { // ARESMINE
+                    kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.5f; antiVelocity=true; stickyAura=true;
+                    refresh();
+                }
             }
             saveConfig(); return super.mouseClicked(mx, my, b);
         }
