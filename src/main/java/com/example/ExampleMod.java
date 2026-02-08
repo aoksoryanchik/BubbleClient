@@ -29,7 +29,7 @@ import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
-    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
+    public static boolean autoTotem = true, autoRun = true, antiVelocity = false, tbCrits = true;
     public static boolean stickyAura = false;
 
     public static double kaRange = 3.1, kaWallsRange = 0.0;
@@ -43,6 +43,7 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
+    private int jumpTimer = 0;
 
     @Override
     public void onInitialize() {
@@ -84,36 +85,40 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // Улучшенная плавная наводка
-            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.6, 0);
+            // Плавная ротация с обходом "Snap" античита
+            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Динамическая скорость доводки (имитация реакции)
-            float turnSpeed = 0.5f + (random.nextFloat() * 0.3f);
-            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()) * turnSpeed);
-            client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()) * turnSpeed);
+            // Shake эффект (легитимизация доводки)
+            if (shakeIntensity > 0) {
+                yaw += (random.nextFloat() - 0.5f) * shakeIntensity * 10;
+                pitch += (random.nextFloat() - 0.5f) * shakeIntensity * 10;
+            }
 
-            // Рандомизация удара (Raycast)
+            float speed = 0.55f + (random.nextFloat() * 0.2f);
+            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()) * speed);
+            client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()) * speed);
+
             EntityHitResult hit = raycastEntity(client, kaRange);
             if (hit != null && hit.getEntity() == target) {
-                // Система легитных критических ударов (без ТП)
-                if (client.player.isOnGround() && client.player.getAttackCooldownProgress(0) > 0.85f && !client.player.isInsideWaterOrBubbleColumn()) {
-                    // Подпрыгиваем только если мы нападаем
-                    client.options.jumpKey.setPressed(true);
-                } else {
-                    client.options.jumpKey.setPressed(false);
+                // Обход откидывания: Прыгаем заранее, а не в момент удара
+                if (client.player.isOnGround() && client.player.getAttackCooldownProgress(0) > 0.7f) {
+                    if (jumpTimer <= 0) {
+                        client.player.jump();
+                        jumpTimer = 10 + random.nextInt(5);
+                    }
                 }
+                if (jumpTimer > 0) jumpTimer--;
 
-                float cd = 0.91f + (random.nextFloat() * 0.07f);
-                if (client.player.getAttackCooldownProgress(0) >= cd) {
+                // Удар с небольшим рандомом кулдауна
+                float cdLimit = 0.92f + (random.nextFloat() * 0.05f);
+                if (client.player.getAttackCooldownProgress(0) >= cdLimit) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
             }
-        } else {
-            if (client.currentScreen == null) client.options.jumpKey.setPressed(InputUtil.isKeyPressed(client.getWindow().getHandle(), GLFW.GLFW_KEY_SPACE));
         }
     }
 
@@ -304,11 +309,11 @@ public class ExampleMod implements ModInitializer {
             }
             if(mx>=cx+10 && mx<=cx+110) {
                 if(my>=y-50 && my<=y-32) { // MINEBLAZE
-                    kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; antiVelocity=false; stickyAura=false;
+                    kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; antiVelocity=false; autoRun=true;
                     refresh();
                 }
                 if(my>=y-25 && my<=y-7) { // ARESMINE
-                    kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.5f; antiVelocity=true; stickyAura=true;
+                    kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.5f; antiVelocity=true; autoRun=true;
                     refresh();
                 }
             }
