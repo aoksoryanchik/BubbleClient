@@ -62,13 +62,10 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client); else auraTarget = null;
             if (triggerbot) runTrigger(client);
 
-            // Улучшенный AntiVelocity (сложнее попасть по тебе)
+            // AntiVelocity + Strafe Assist
             if (antiVelocity && client.player.hurtTime > 0) {
-                Vec3d vel = client.player.getVelocity();
-                client.player.setVelocity(vel.x * 0.45, vel.y, vel.z * 0.45);
-                if (client.player.isOnGround() && random.nextBoolean()) {
-                    client.player.jump(); // Микро-прыжок для сбива наводки врага
-                }
+                Vec3d v = client.player.getVelocity();
+                client.player.setVelocity(v.x * 0.45, v.y, v.z * 0.45);
             }
         });
 
@@ -104,28 +101,31 @@ public class ExampleMod implements ModInitializer {
                 .orElse(null);
 
         if (auraTarget != null) {
-            // Наводка с микро-рандомизацией (обход античита по точности)
-            Vec3d targetCenter = auraTarget.getBoundingBox().getCenter();
-            double rndX = (random.nextDouble() - 0.5) * 0.1;
-            double rndY = (random.nextDouble() - 0.5) * 0.1;
-            double rndZ = (random.nextDouble() - 0.5) * 0.1;
-            
-            Vec3d diff = targetCenter.add(rndX, rndY, rndZ).subtract(client.player.getEyePos());
+            Vec3d targetPos = auraTarget.getBoundingBox().getCenter();
+            Vec3d diff = targetPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
+            // Наводка (жесткая, как ты просил)
             client.player.setYaw(targetYaw);
             client.player.setPitch(targetPitch);
 
-            // Умная задержка удара для обхода и критов
-            boolean isFalling = client.player.fallDistance > 0.0f && !client.player.isOnGround();
-            if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                // Если мы в прыжке, ждем фазы падения для гарантированного крита
-                if (!client.player.isOnGround() && client.player.getVelocity().y > 0) return;
+            // Target Strafe Logic (движение по кругу)
+            if (client.player.isOnGround() && client.options.forwardKey.isPressed()) {
+                float strafeYaw = targetYaw + (random.nextBoolean() ? 90 : -90);
+                float rad = strafeYaw * 0.017453292f;
+                client.player.addVelocity(-Math.sin(rad) * 0.02, 0, Math.cos(rad) * 0.02);
+            }
+
+            // Агрессивная атака
+            float cooldown = client.player.getAttackCooldownProgress(0);
+            if (cooldown >= 1.0f) {
+                // Если мы в воздухе, дожидаемся начала падения для крита, 
+                // НО если задержка слишком большая - бьем все равно.
+                if (!client.player.isOnGround() && client.player.getVelocity().y > 0.08) return;
 
                 client.interactionManager.attackEntity(client.player, auraTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
-                
                 if (autoRun) client.player.setSprinting(true);
             }
         }
@@ -180,7 +180,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI (Полная версия без сокращений) ---
+    // --- GUI ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -339,3 +339,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
