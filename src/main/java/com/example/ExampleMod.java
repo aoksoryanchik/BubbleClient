@@ -12,7 +12,6 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.Entity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
@@ -31,7 +30,7 @@ import java.nio.file.Paths;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния модулей
+    // Состояния модулей (все на месте)
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
     
@@ -56,7 +55,7 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            // Открытие меню на G (или 0)
+            // Открытие меню на G или 0
             if ((isPressed(h, GLFW.GLFW_KEY_G) || isPressed(h, GLFW.GLFW_KEY_0)) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -113,7 +112,8 @@ public class ExampleMod implements ModInitializer {
         }
         
         if (target != null) {
-            final PlayerEntity finalTarget = target; // Фикс для лямбды
+            // ИСПРАВЛЕНИЕ: Создаем финальную копию для лямбды, чтобы билд не падал
+            final PlayerEntity finalTarget = target; 
             Vec3d targetPos = finalTarget.getPos().add(0, finalTarget.getHeight() * 0.5, 0);
             updateRotations(client.player, targetPos, 100.0f);
 
@@ -121,6 +121,8 @@ public class ExampleMod implements ModInitializer {
             Vec3d eye = client.player.getEyePos();
             Vec3d look = client.player.getRotationVec(1.0F).multiply(reach);
             Box box = finalTarget.getBoundingBox().expand(0.1);
+            
+            // Здесь была ошибка компиляции в логах Github
             EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e == finalTarget, reach * reach);
 
             if (client.player.getAttackCooldownProgress(0) >= 1.0f && hit != null) {
