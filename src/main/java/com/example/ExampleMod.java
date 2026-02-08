@@ -30,6 +30,7 @@ import java.util.Random;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, screenShake = true, tbCrits = true;
+    public static boolean isDestructed = false; 
     
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
@@ -45,8 +46,16 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null || client.world == null) return;
+            if (client.player == null || client.world == null || isDestructed) return;
+            
             long h = client.getWindow().getHandle();
+
+            // Self-Destruct Combination: Right Shift + Delete
+            if (InputUtil.isKeyPressed(h, GLFW.GLFW_KEY_RIGHT_SHIFT) && InputUtil.isKeyPressed(h, GLFW.GLFW_KEY_DELETE)) {
+                selfDestruct();
+                return;
+            }
+
             if (isPressed(h, GLFW.GLFW_KEY_O) && client.currentScreen == null) client.setScreen(new BubbleMenu());
 
             if (client.currentScreen == null) {
@@ -64,7 +73,22 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
         });
-        WorldRenderEvents.LAST.register(this::renderWaypoint);
+
+        WorldRenderEvents.LAST.register(context -> {
+            if (waypointActive && !isDestructed) {
+                renderWaypoint(context.matrixStack(), context.camera(), context.consumers());
+            }
+        });
+    }
+
+    private void selfDestruct() {
+        isDestructed = true;
+        killaura = false; triggerbot = false; fullbright = false; waypointActive = false;
+        autoTotem = false; autoRun = false; antiVelocity = false;
+        try { Files.deleteIfExists(Paths.get(CONFIG_FILE)); } catch (IOException ignored) {}
+        if (MinecraftClient.getInstance().player != null) {
+            MinecraftClient.getInstance().player.sendMessage(Text.literal("§7[System] Mod unloaded."), true);
+        }
     }
 
     private void handleAutoTotem(MinecraftClient client) {
@@ -91,11 +115,8 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // Рандомизация точки удара (от 0.3 до 0.7 высоты) для обхода логов
-            float randomHeight = 0.3f + random.nextFloat() * 0.4f;
+            float randomHeight = 0.35f + random.nextFloat() * 0.3f;
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * randomHeight, 0);
-            
-            // Плавная наводка с учетом шейка
             updateRotations(client.player, targetPos);
 
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
@@ -108,17 +129,14 @@ public class ExampleMod implements ModInitializer {
     private void updateRotations(PlayerEntity player, Vec3d target) {
         Vec3d diff = target.subtract(player.getEyePos());
         double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
-        
         float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
 
-        // Добавляем шейк, если он включен
         if (screenShake) {
             tYaw += (random.nextFloat() - 0.5f) * shakeIntensity;
             tPitch += (random.nextFloat() - 0.5f) * shakeIntensity;
         }
 
-        // Плавность наводки (0.3f - баланс между скоростью и легитностью)
         float speed = 0.3f;
         player.setYaw(player.getYaw() + MathHelper.clamp(MathHelper.wrapDegrees(tYaw - player.getYaw()), -speed * 50, speed * 50));
         player.setPitch(player.getPitch() + MathHelper.clamp(MathHelper.wrapDegrees(tPitch - player.getPitch()), -speed * 50, speed * 50));
@@ -140,28 +158,26 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void sendNotify(String module, boolean state) {
-        if (MinecraftClient.getInstance().player != null) {
+        if (MinecraftClient.getInstance().player != null && !isDestructed) {
             MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[Bubble] §f" + module + " : " + (state ? "§aON" : "§cOFF")), true);
         }
     }
 
-    private void renderWaypoint(WorldRenderContext context) {
-        if (!waypointActive) return;
+    private void renderWaypoint(MatrixStack ms, net.minecraft.client.render.Camera camera, VertexConsumerProvider vcp) {
+        if (!waypointActive || vcp == null) return;
         MinecraftClient client = MinecraftClient.getInstance();
         double d = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
-        MatrixStack ms = context.matrixStack();
         ms.push();
-        ms.translate(wpX - context.camera().getPos().x, wpY - context.camera().getPos().y + 1.5, wpZ - context.camera().getPos().z);
-        ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-        ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
+        ms.translate(wpX - camera.getPos().x, wpY - camera.getPos().y + 1.5, wpZ - camera.getPos().z);
+        ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-camera.getYaw()));
+        ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(camera.getPitch()));
         float s = (float) Math.max(0.02, d * 0.012);
         ms.scale(-s, -s, s);
-        VertexConsumerProvider vcp = context.consumers();
-        if (vcp != null) client.textRenderer.draw("§b[!] TARGET", -client.textRenderer.getWidth("[!] TARGET") / 2f, 0, -1, false, ms.peek().getPositionMatrix(), vcp, MinecraftClient.FontType.SEE_THROUGH, 0, 15728880);
+        client.textRenderer.draw("§b[!] TARGET", -client.textRenderer.getWidth("[!] TARGET") / 2f, 0, -1, false, ms.peek().getPositionMatrix(), vcp, MinecraftClient.FontType.SEE_THROUGH, 0, 15728880);
         ms.pop();
     }
 
-    // --- GUI СЕКЦИЯ ---
+    // --- GUI СЕКЦИЯ (ПОЛНАЯ) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -224,21 +240,23 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xEE000000);
             int x = width / 2, y = height / 2;
-            ctx.fill(x - 115, y - 95, x + 115, y + 90, 0xFF0A0A0A);
-            ctx.drawBorder(x - 115, y - 95, 230, 185, 0xFF00AAFF);
+            ctx.fill(x - 115, y - 95, x + 115, y + 105, 0xFF0A0A0A);
+            ctx.drawBorder(x - 115, y - 95, 230, 200, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bKILL AURA", x, y - 85, -1);
             ctx.drawTextWithShadow(textRenderer, "Дистанция:", x - 105, y - 41, -1);
             ctx.drawTextWithShadow(textRenderer, "Стены:", x - 105, y - 16, -1);
             ctx.drawTextWithShadow(textRenderer, "Тряска:", x - 105, y + 9, -1);
             drawChk(ctx, "Авто-Бег", autoRun, y + 35, mx, my);
             drawChk(ctx, "Анти-Отдача", antiVelocity, y + 50, mx, my);
+            
             int cx = x - 240;
-            ctx.fill(cx, y - 95, cx + 120, y + 90, 0xFF0A0A0A);
-            ctx.drawBorder(cx, y - 95, 120, 185, 0xFF00AAFF);
+            ctx.fill(cx, y - 95, cx + 120, y + 105, 0xFF0A0A0A);
+            ctx.drawBorder(cx, y - 95, 120, 200, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bКОНФИГИ", cx + 60, y - 85, -1);
             drawCfgBtn(ctx, "AresMine", cx + 10, y - 45, mx, my);
             drawCfgBtn(ctx, "MineBlaze", cx + 10, y - 20, mx, my);
             drawCfgBtn(ctx, "FunTime", cx + 10, y + 5, mx, my);
+            
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
         }
         private void drawCfgBtn(DrawContext ctx, String n, int x, int y, int mx, int my) {
@@ -253,8 +271,10 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width / 2, y = height / 2;
-            if (my >= y + 35 && my <= y + 47) autoRun = !autoRun;
-            if (my >= y + 50 && my <= y + 62) antiVelocity = !antiVelocity;
+            if (mx >= x - 60 && mx <= x + 60) {
+                if (my >= y + 35 && my <= y + 47) autoRun = !autoRun;
+                if (my >= y + 50 && my <= y + 62) antiVelocity = !antiVelocity;
+            }
             int cx = x - 240;
             if (mx >= cx + 10 && mx <= cx + 110) {
                 if (my >= y - 45 && my <= y - 27) { kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 0.8f; autoRun = true; updateFields(); }
@@ -359,6 +379,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     public static void saveConfig() {
+        if (isDestructed) return;
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange + ":" + kaWallsRange + ":" + wpX + ":" + wpY + ":" + wpZ + ":0:0:0:" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + keyWP + ":" + shakeIntensity + ":" + antiVelocity + ":" + tbCrits);
         } catch (Exception ignored) {}
