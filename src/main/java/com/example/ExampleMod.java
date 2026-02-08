@@ -4,6 +4,7 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -50,7 +51,6 @@ public class ExampleMod implements ModInitializer {
             
             long h = client.getWindow().getHandle();
 
-            // Self-Destruct Combination: Right Shift + Delete
             if (InputUtil.isKeyPressed(h, GLFW.GLFW_KEY_RIGHT_SHIFT) && InputUtil.isKeyPressed(h, GLFW.GLFW_KEY_DELETE)) {
                 selfDestruct();
                 return;
@@ -173,11 +173,13 @@ public class ExampleMod implements ModInitializer {
         ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(camera.getPitch()));
         float s = (float) Math.max(0.02, d * 0.012);
         ms.scale(-s, -s, s);
-        client.textRenderer.draw("§b[!] TARGET", -client.textRenderer.getWidth("[!] TARGET") / 2f, 0, -1, false, ms.peek().getPositionMatrix(), vcp, MinecraftClient.FontType.SEE_THROUGH, 0, 15728880);
+        
+        String text = "§b[!] TARGET";
+        float xText = -client.textRenderer.getWidth(text) / 2f;
+        client.textRenderer.draw(text, xText, 0, -1, false, ms.peek().getPositionMatrix(), vcp, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
         ms.pop();
     }
 
-    // --- GUI СЕКЦИЯ (ПОЛНАЯ) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -248,7 +250,6 @@ public class ExampleMod implements ModInitializer {
             ctx.drawTextWithShadow(textRenderer, "Тряска:", x - 105, y + 9, -1);
             drawChk(ctx, "Авто-Бег", autoRun, y + 35, mx, my);
             drawChk(ctx, "Анти-Отдача", antiVelocity, y + 50, mx, my);
-            
             int cx = x - 240;
             ctx.fill(cx, y - 95, cx + 120, y + 105, 0xFF0A0A0A);
             ctx.drawBorder(cx, y - 95, 120, 200, 0xFF00AAFF);
@@ -256,7 +257,6 @@ public class ExampleMod implements ModInitializer {
             drawCfgBtn(ctx, "AresMine", cx + 10, y - 45, mx, my);
             drawCfgBtn(ctx, "MineBlaze", cx + 10, y - 20, mx, my);
             drawCfgBtn(ctx, "FunTime", cx + 10, y + 5, mx, my);
-            
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
         }
         private void drawCfgBtn(DrawContext ctx, String n, int x, int y, int mx, int my) {
