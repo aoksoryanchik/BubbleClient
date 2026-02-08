@@ -1,9 +1,15 @@
 package com.example.mixin;
 
-import net.minecraft.client.render.item.HeldItemRenderer;
+import net.minecraft.client.gui.screen.TitleScreen;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(HeldItemRenderer.class)
+@Mixin(TitleScreen.class)
 public class ExampleMixin {
-    // Код удален по просьбе пользователя, чтобы не вызывать ошибок компиляции
+    @Inject(at = @At("HEAD"), method = "init()V")
+    private void init(CallbackInfo info) {
+        // Здесь можно оставить пустоту или просто лог в консоль
+    }
 }
