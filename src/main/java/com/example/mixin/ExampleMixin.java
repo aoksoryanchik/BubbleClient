@@ -1,15 +1,9 @@
 package com.example.mixin;
 
-import net.minecraft.client.gui.screen.TitleScreen;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import net.minecraft.client.gui.screen.TitleScreen;
 
 @Mixin(TitleScreen.class)
 public class ExampleMixin {
-    @Inject(at = @At("HEAD"), method = "init()V")
-    private void init(CallbackInfo info) {
-        // Здесь можно оставить пустоту или просто лог в консоль
-    }
+    // Чистый класс без инъекций, чтобы не ломать билд
 }
