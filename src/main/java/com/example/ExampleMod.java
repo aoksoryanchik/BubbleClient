@@ -30,10 +30,10 @@ import java.util.Random;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
-    public static boolean stickyAura = true;
+    public static boolean stickyAura = false;
 
-    public static double kaRange = 3.8, kaWallsRange = 3.0;
-    public static float shakeIntensity = 0.3f;
+    public static double kaRange = 3.1, kaWallsRange = 0.0;
+    public static float shakeIntensity = 0.2f;
     public static double wpX = 0, wpY = 64, wpZ = 0;
     public static double wpMaxDist = 450.0;
     
@@ -43,6 +43,7 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
+    private int attackTicks = 0;
 
     @Override
     public void onInitialize() {
@@ -78,38 +79,35 @@ public class ExampleMod implements ModInitializer {
             if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
             if (d <= kaRange && d < bestDist) {
-                if (!client.player.canSee(p) && d > kaWallsRange) continue;
+                if (kaWallsRange <= 0.1 && !client.player.canSee(p)) continue;
                 bestDist = d; target = p;
             }
         }
-        if (target != null) {
-            // Агрессивная наводка
-            Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.7, 0); // Целимся в верхнюю часть (ближе к голове)
-            Vec3d diff = tPos.subtract(client.player.getEyePos());
-            
-            float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-            float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            
-            // Более быстрая доводка (0.95f вместо 0.85f)
-            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(yaw - client.player.getYaw()) * 0.95f);
-            client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(pitch - client.player.getPitch()) * 0.95f);
 
-            // Продвинутая присоска
-            if (stickyAura && client.player.getHealth() > (client.player.getMaxHealth() * 0.5f) 
-                && target.getHealth() < (target.getMaxHealth() * 0.66f)) {
-                Vec3d pull = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.12);
-                client.player.setVelocity(client.player.getVelocity().x + pull.x, client.player.getVelocity().y, client.player.getVelocity().z + pull.z);
+        if (target != null) {
+            // Плавная легитная доводка
+            Vec3d targetVec = target.getPos().add(0, target.getHeight() * 0.5, 0);
+            Vec3d diff = targetVec.subtract(client.player.getEyePos());
+            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+
+            // Скорость поворота меняется, чтобы имитировать руку человека
+            float speed = 0.4f + random.nextFloat() * 0.3f;
+            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(targetYaw - client.player.getYaw()) * speed);
+            client.player.setPitch(client.player.getPitch() + MathHelper.wrapDegrees(targetPitch - client.player.getPitch()) * speed);
+
+            // Мягкий Sticky (если включен)
+            if (stickyAura && client.player.getHealth() > (client.player.getMaxHealth() / 2) && target.getHealth() < (target.getMaxHealth() * 0.66f)) {
+                Vec3d pull = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.05);
+                client.player.addVelocity(pull.x, 0, pull.z);
             }
 
+            // Удар только при наведении (Raycast)
             EntityHitResult hit = raycastEntity(client, kaRange);
             if (hit != null && hit.getEntity() == target) {
-                // Прыжок для критов, если мы на земле и готовы бить
-                if (client.player.isOnGround() && client.player.getAttackCooldownProgress(0) > 0.8f) {
-                    client.player.jump();
-                }
-
-                // Кулдаун для максимального урона
-                if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
+                // Вместо прыжка используем проверку падения или просто бьем по КД
+                float cdLimit = 0.92f + random.nextFloat() * 0.08f;
+                if (client.player.getAttackCooldownProgress(0) >= cdLimit) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -165,7 +163,7 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient client) {
         EntityHitResult hit = raycastEntity(client, kaRange);
         if (hit != null && hit.getEntity() instanceof PlayerEntity target) {
-            if (client.player.getAttackCooldownProgress(0) >= 0.95f && (!tbCrits || (client.player.fallDistance > 0 && !client.player.isOnGround()))) {
+            if (client.player.getAttackCooldownProgress(0) >= 0.95f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -239,7 +237,7 @@ public class ExampleMod implements ModInitializer {
             rF = new TextFieldWidget(textRenderer, x, height/2-41, 40, 12, Text.literal(""));
             wF = new TextFieldWidget(textRenderer, x, height/2-18, 40, 12, Text.literal(""));
             sF = new TextFieldWidget(textRenderer, x, height/2 + 5, 40, 12, Text.literal(""));
-            rF.setText(String.valueOf(kaRange)); wF.setText(String.valueOf(kaWallsRange)); sF.setText(String.valueOf(shakeIntensity));
+            rF.setText(String.format("%.1f", kaRange)); wF.setText(String.format("%.1f", kaWallsRange)); sF.setText(String.format("%.1f", shakeIntensity));
             rF.setDrawsBackground(false); wF.setDrawsBackground(false); sF.setDrawsBackground(false);
             addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(sF);
         }
@@ -264,7 +262,6 @@ public class ExampleMod implements ModInitializer {
             ctx.drawBorder(cx, y-95, 120, 185, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bCONFIGS", cx+60, y-85, -1);
             drawBtn(ctx, "MineBlaze", cx+10, y-50, mx, my);
-            drawBtn(ctx, "AresMine", cx+10, y-25, mx, my);
         }
         private void drawNumRow(DrawContext ctx, String s, int x, int y, int bx, int by, double val, int mx, int my) {
             ctx.drawTextWithShadow(textRenderer, s, x, y, -1);
@@ -302,17 +299,13 @@ public class ExampleMod implements ModInitializer {
                 if(my>=y+55 && my<=y+65) antiVelocity = !antiVelocity;
                 if(my>=y+75 && my<=y+85) stickyAura = !stickyAura;
             }
-            if(mx>=cx+10 && mx<=cx+110) {
-                if(my>=y-50 && my<=y-32) { // MINEBLAZE OPTIMIZED
-                    kaRange=3.2; kaWallsRange=0.0; shakeIntensity=0.1f; antiVelocity=false; refresh();
-                }
-                if(my>=y-25 && my<=y-7) { // ARESMINE
-                    kaRange=3.8; kaWallsRange=3.0; shakeIntensity=0.5f; antiVelocity=true; refresh();
-                }
+            if(mx>=cx+10 && mx<=cx+110 && my>=y-50 && my<=y-32) {
+                kaRange=3.1; kaWallsRange=0.0; shakeIntensity=0.2f; autoRun=true; antiVelocity=false; stickyAura=false;
+                refresh();
             }
             saveConfig(); return super.mouseClicked(mx, my, b);
         }
-        private void refresh() { rF.setText(String.valueOf(kaRange)); wF.setText(String.valueOf(kaWallsRange)); sF.setText(String.valueOf(shakeIntensity)); }
+        private void refresh() { rF.setText(String.format("%.1f", kaRange)); wF.setText(String.format("%.1f", kaWallsRange)); sF.setText(String.format("%.1f", shakeIntensity)); }
         @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
