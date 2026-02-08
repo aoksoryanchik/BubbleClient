@@ -8,7 +8,6 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
@@ -42,9 +41,10 @@ public class ExampleMod implements ModInitializer {
     public static double wpX = 0, wpY = 64, wpZ = 0;
     public static float shakeIntensity = 0.5f;
     
-    // Переменные для HandView (ViewModel)
+    // Переменные для HandView (ViewModel) - нужны для Mixin
     public static float vmX = 0, vmY = 0, vmZ = 0;
     public static float vmLX = 0, vmLY = 0, vmLZ = 0;
+    public static boolean viewModel = true;
 
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN, keyAT = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
 
@@ -161,6 +161,7 @@ public class ExampleMod implements ModInitializer {
 
     private void renderESP(WorldRenderEvents.Context context) {
         MinecraftClient client = MinecraftClient.getInstance();
+        if (client.world == null) return;
         for (Entity e : client.world.getEntities()) {
             if (e instanceof PlayerEntity && e != client.player && e.isAlive()) {
                 renderBox(context.matrixStack(), e, context.camera().getPos());
@@ -169,20 +170,23 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void renderBox(MatrixStack ms, Entity e, Vec3d cam) {
+        MinecraftClient client = MinecraftClient.getInstance();
         ms.push();
-        double x = e.prevX + (e.getX() - e.prevX) * MinecraftClient.getInstance().getTickDelta() - cam.x;
-        double y = e.prevY + (e.getY() - e.prevY) * MinecraftClient.getInstance().getTickDelta() - cam.y;
-        double z = e.prevZ + (e.getZ() - e.prevZ) * MinecraftClient.getInstance().getTickDelta() - cam.z;
+        double x = e.prevX + (e.getX() - e.prevX) * client.getTickDelta() - cam.x;
+        double y = e.prevY + (e.getY() - e.prevY) * client.getTickDelta() - cam.y;
+        double z = e.prevZ + (e.getZ() - e.prevZ) * client.getTickDelta() - cam.z;
         ms.translate(x, y + e.getHeight() + 0.5, z);
-        ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-MinecraftClient.getInstance().cameraEntity.getYaw()));
-        ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(MinecraftClient.getInstance().cameraEntity.getPitch()));
+        ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-client.gameRenderer.getCamera().getYaw()));
+        ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(client.gameRenderer.getCamera().getPitch()));
         ms.scale(-0.025f, -0.025f, 0.025f);
         String text = "§d" + e.getName().getString() + " §f" + (int)((LivingEntity)e).getHealth() + "hp";
-        MinecraftClient.getInstance().textRenderer.draw(text, -MinecraftClient.getInstance().textRenderer.getWidth(text)/2f, 0, -1, false, ms.peek().getPositionMatrix(), MinecraftClient.getInstance().getBufferBuilders().getEntityVertexConsumers(), TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
+        client.textRenderer.draw(text, -client.textRenderer.getWidth(text)/2f, 0, -1, false, ms.peek().getPositionMatrix(), client.getBufferBuilders().getEntityVertexConsumers(), TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
         ms.pop();
     }
 
     private void renderWaypoint(WorldRenderEvents.Context context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return;
         MatrixStack ms = context.matrixStack();
         Vec3d cam = context.camera().getPos();
         ms.push();
@@ -192,7 +196,7 @@ public class ExampleMod implements ModInitializer {
         float s = (float) Math.max(0.02, client.player.distanceTo(new Vec3d(wpX, wpY, wpZ)) * 0.012);
         ms.scale(-s, -s, s);
         String text = "§b[!] TARGET";
-        MinecraftClient.getInstance().textRenderer.draw(text, -MinecraftClient.getInstance().textRenderer.getWidth(text)/2f, 0, -1, false, ms.peek().getPositionMatrix(), context.consumers(), TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
+        client.textRenderer.draw(text, -client.textRenderer.getWidth(text)/2f, 0, -1, false, ms.peek().getPositionMatrix(), context.consumers(), TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
         ms.pop();
     }
 
@@ -202,7 +206,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- GUI СЕКЦИЯ ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -271,12 +274,9 @@ public class ExampleMod implements ModInitializer {
             ctx.drawTextWithShadow(textRenderer, "Дистанция:", cx - 105, height/2 - 41, -1);
             ctx.drawTextWithShadow(textRenderer, "Стены:", cx - 105, height/2 - 16, -1);
             ctx.drawTextWithShadow(textRenderer, "Тряска:", cx - 105, height/2 + 9, -1);
-            
-            // Кнопки конфигов
             drawCfgBtn(ctx, "AresMine", cx + 10, height/2 + 45, mx, my);
             drawCfgBtn(ctx, "MineBlaze", cx + 10, height/2 + 20, mx, my);
-            drawCfgBtn(ctx, "FunTime", cx + 10, height/2 + 70, mx, my); // ДОБАВИЛИ FUNTIME
-
+            drawCfgBtn(ctx, "FunTime", cx + 10, height/2 + 70, mx, my);
             super.render(ctx, mx, my, d);
         }
         private void drawCfgBtn(DrawContext ctx, String n, int x, int y, int mx, int my) {
@@ -290,7 +290,7 @@ public class ExampleMod implements ModInitializer {
             if (mx >= cx + 10 && mx <= cx + 90) {
                 if (my >= height/2 + 45 && my < height/2 + 61) { kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 0.8f; autoRun = true; updateFields(); }
                 if (my >= height/2 + 20 && my < height/2 + 36) { kaRange = 3.1; kaWallsRange = 0.0; shakeIntensity = 0.2f; autoRun = true; updateFields(); }
-                if (my >= height/2 + 70 && my < height/2 + 86) { kaRange = 3.6; kaWallsRange = 3.0; shakeIntensity = 0.5f; autoRun = true; updateFields(); } // ЛОГИКА FUNTIME
+                if (my >= height/2 + 70 && my < height/2 + 86) { kaRange = 3.6; kaWallsRange = 3.0; shakeIntensity = 0.5f; autoRun = true; updateFields(); }
             }
             return super.mouseClicked(mx, my, b);
         }
@@ -410,3 +410,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
