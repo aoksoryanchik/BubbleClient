@@ -47,7 +47,7 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            // ОТКРЫТИЕ МЕНЮ НА 0 (цифра над буквами)
+            // ОТКРЫТИЕ МЕНЮ НА 0
             if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -70,20 +70,24 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client); else auraTarget = null;
             if (triggerbot) runTrigger(client);
 
-            // AntiVelocity (простейшая реализация через обнуление движения при получении урона)
             if (antiVelocity && client.player.hurtTime > 0) {
                 client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
         });
 
-        // Рендер Waypoint СВЕРХУ ЭКРАНА (HUD)
+        // HUD WAYPOINT: Координаты, Стрелка, Метры
         HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
             if (!waypointActive) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
             double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
-            String text = String.format("§bWaypoint: §f%.0f, %.0f, %.0f §7[§a%.1fm§7]", wpX, wpY, wpZ, dist);
+            float yawToTarget = (float) Math.toDegrees(Math.atan2(wpZ - client.player.getZ(), wpX - client.player.getX())) - 90f;
+            float angleDiff = MathHelper.wrapDegrees(yawToTarget - client.player.getYaw());
+            
+            String arrow = Math.abs(angleDiff) < 10 ? "§a↑" : (angleDiff > 0 ? "§f→" : "§f←");
+            String text = String.format("§f%.0f, %.0f, %.0f  %s  §b%.1fm", wpX, wpY, wpZ, arrow, dist);
+            
             drawContext.drawCenteredTextWithShadow(client.textRenderer, text, drawContext.getScaledWindowWidth() / 2, 10, -1);
         });
     }
@@ -111,7 +115,6 @@ public class ExampleMod implements ModInitializer {
                 auraTarget = p;
             }
         }
-
         if (auraTarget != null) {
             Vec3d tPos = auraTarget.getPos().add(0, auraTarget.getHeight() * 0.5, 0);
             updateRotations(client.player, tPos, 100.0f);
@@ -198,7 +201,7 @@ public class ExampleMod implements ModInitializer {
                 ctx.fill(x+10, iy, x+170, iy+18, h ? 0xFF1A1A1A : 0xFF101010);
                 String kn = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(k[i], 0).toUpperCase();
                 ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + kn + "]", x+15, iy+5, s[i] ? 0xFF00FF00 : 0xFFFFFFFF);
-                if(i==0 || i==4) ctx.drawTextWithShadow(textRenderer, "§b#", x+155, iy+5, -1);
+                if(i==0 || i==4) ctx.drawTextWithShadow(textRenderer, "⚙", x+155, iy+5, -1);
             }
         }
         @Override
@@ -242,15 +245,11 @@ public class ExampleMod implements ModInitializer {
             ctx.drawTextWithShadow(textRenderer, "Range:", x-100, height/2-67, -1);
             ctx.drawTextWithShadow(textRenderer, "Walls:", x-100, height/2-47, -1);
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d);
-
-            // Кнопки AutoRun и AntiVelocity
             drawBtn(ctx, x-100, height/2-25, 200, 14, "AutoRun: " + (autoRun ? "§aON" : "§cOFF"), mx, my);
             drawBtn(ctx, x-100, height/2-5, 200, 14, "AntiVelocity: " + (antiVelocity ? "§aON" : "§cOFF"), mx, my);
-
-            // Конфиги серверов
             ctx.drawCenteredTextWithShadow(textRenderer, "§7--- CFG SERVERS ---", x, height/2+20, -1);
-            drawBtn(ctx, x-100, height/2+35, 200, 14, "Load MineBlaze (Legit)", mx, my);
-            drawBtn(ctx, x-100, height/2+55, 200, 14, "Load AresMine (Rage)", mx, my);
+            drawBtn(ctx, x-100, height/2+35, 200, 14, "MineBlaze", mx, my);
+            drawBtn(ctx, x-100, height/2+55, 200, 14, "AresMine", mx, my);
         }
         private void drawBtn(DrawContext ctx, int x, int y, int w, int h, String t, int mx, int my) {
             boolean hv = mx>=x && mx<=x+w && my>=y && my<=y+h;
@@ -262,8 +261,8 @@ public class ExampleMod implements ModInitializer {
             if(mx>=x-100 && mx<=x+100) {
                 if(my>=height/2-25 && my<=height/2-11) autoRun = !autoRun;
                 if(my>=height/2-5 && my<=height/2+9) antiVelocity = !antiVelocity;
-                if(my>=height/2+35 && my<=height/2+49) { kaRange=3.4; kaWallsRange=3.0; autoRun=true; antiVelocity=false; f1.setText("3.4"); f2.setText("3.0"); }
-                if(my>=height/2+55 && my<=height/2+69) { kaRange=4.2; kaWallsRange=3.5; autoRun=true; antiVelocity=true; f1.setText("4.2"); f2.setText("3.5"); }
+                if(my>=height/2+35 && my<=height/2+49) { kaRange=3.1; kaWallsRange=0.0; autoRun=true; antiVelocity=false; f1.setText("3.1"); f2.setText("0.0"); }
+                if(my>=height/2+55 && my<=height/2+69) { kaRange=3.8; kaWallsRange=3.0; autoRun=true; antiVelocity=true; f1.setText("3.8"); f2.setText("3.0"); }
                 saveConfig(); return true;
             }
             return super.mouseClicked(mx, my, b);
