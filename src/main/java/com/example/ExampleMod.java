@@ -10,7 +10,6 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -98,31 +97,26 @@ public class ExampleMod implements ModInitializer {
                 .orElse(null);
 
         if (auraTarget != null) {
-            // Вычисляем углы для наводки в центр хитбокса
+            // ВЕРНУТО: Прямой расчет углов и наводка камерой клиента
             Vec3d targetCenter = auraTarget.getBoundingBox().getCenter();
             Vec3d diff = targetCenter.subtract(client.player.getEyePos());
-            float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-            float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+
+            // Жестко ставим углы игроку (экран будет дрожать/липнуть)
+            client.player.setYaw(targetYaw);
+            client.player.setPitch(targetPitch);
 
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                // ПРЯМАЯ ПОДМЕНА: Шлем пакет ротации СРАЗУ с атакой
-                // Это гарантирует серверу, что мы смотрим на цель в момент удара
-                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(yaw, pitch, client.player.isOnGround(), false));
-                
-                // Сама атака (теперь без проверок raycast, бьем напрямую по энтити)
+                // Атака по тому, на кого наведена камера
                 client.interactionManager.attackEntity(client.player, auraTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
-                
                 if (autoRun) client.player.setSprinting(true);
-
-                // Возвращаем "пакетный" взгляд на клиентский, чтобы античит не видел странных рывков
-                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(client.player.getYaw(), client.player.getPitch(), client.player.isOnGround(), false));
             }
         }
     }
 
     private void runTrigger(MinecraftClient client) {
-        // Оставляем триггербот как есть для легита
         net.minecraft.util.hit.EntityHitResult hit = net.minecraft.entity.projectile.ProjectileUtil.raycast(
             client.player, client.player.getEyePos(), 
             client.player.getEyePos().add(client.player.getRotationVec(1.0f).multiply(3.5)), 
@@ -171,7 +165,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI СЕКЦИЯ --- (Без изменений)
+    // --- GUI ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -324,7 +318,7 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public boolean keyPressed(int k, int s, int m) {
-            if(k == GLFW.GLFW_KEY_UNKNOWN) k = GLFW.GLFW_KEY_UNKNOWN;
+            if(k == GLFW.GLFW_KEY_ESCAPE) k = GLFW.GLFW_KEY_UNKNOWN;
             if(id==0) keyKA=k; if(id==1) keyTB=k; if(id==2) keyFB=k; if(id==3) keyAT=k; if(id==4) keyWP=k;
             saveConfig(); client.setScreen(p); return true;
         }
