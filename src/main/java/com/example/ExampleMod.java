@@ -30,12 +30,15 @@ import java.nio.file.Paths;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
+    // Состояния всех модулей
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
     
+    // Числовые параметры
     public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
 
+    // Клавиши управления (Бинды)
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
     public static int keyAT = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
 
@@ -50,10 +53,12 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
+            // Открытие меню на 0 или G
             if ((isPressed(h, GLFW.GLFW_KEY_0) || isPressed(h, GLFW.GLFW_KEY_G)) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
+            // Обработка биндов
             if (client.currentScreen == null) {
                 if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
                 if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
@@ -62,19 +67,25 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
             }
 
+            // Модуль FullBright
             if (fullbright) {
                 client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             } else {
                 client.player.removeStatusEffect(StatusEffects.NIGHT_VISION);
             }
             
+            // Модуль AutoTotem
             if (autoTotem) handleAutoTotem(client);
+            
+            // Модуль AutoRun
             if (autoRun && (client.player.forwardSpeed > 0 || killaura)) client.player.setSprinting(true);
 
+            // Модуль Anti-Velocity
             if (antiVelocity && client.player.hurtTime > 0) {
                 client.player.setVelocity(client.player.getVelocity().x * 0.6, client.player.getVelocity().y, client.player.getVelocity().z * 0.6);
             }
 
+            // Боевая логика
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
         });
@@ -169,7 +180,7 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI СЕКЦИЯ ---
+    // --- ГЛАВНОЕ МЕНЮ (0) ---
 
     public static class BubbleMenu extends Screen {
         private int bindingIndex = -1;
@@ -177,7 +188,7 @@ public class ExampleMod implements ModInitializer {
         
         @Override
         public void render(DrawContext ctx, int nx, int ny, float d) {
-            ctx.fill(0, 0, width, height, 0x70000000); 
+            ctx.fill(0, 0, width, height, 0x70000000); // Обычный темный фон
             int x = width/2 - 90, y = height/2 - 80;
             ctx.fill(x, y, x + 180, y + 150, 0xFF050505);
             ctx.drawBorder(x, y, 180, 150, 0xFF00AAFF);
@@ -211,16 +222,15 @@ public class ExampleMod implements ModInitializer {
             for(int i = 0; i < 5; i++) {
                 int iy = y + 35 + i * 22;
                 if(nx >= x + 10 && nx <= x + 170 && ny >= iy && ny <= iy + 18) {
-                    if (b == 1) { // ПРАВАЯ КНОПКА МЫШИ (Binding)
+                    if (b == 1) { // ПКМ - Бинды
                         bindingIndex = i;
                         return true;
                     }
-                    // ЛЕВАЯ КНОПКА МЫШИ
-                    if(nx >= x + 150) {
+                    if(nx >= x + 150) { // Настройки
                         if(i == 0) client.setScreen(new KillAuraSettings(this));
                         if(i == 1) client.setScreen(new TriggerSettings(this));
                         if(i == 4) client.setScreen(new WaypointSettings(this));
-                    } else {
+                    } else { // Переключение
                         if(i == 0) killaura = !killaura; if(i == 1) triggerbot = !triggerbot;
                         if(i == 2) fullbright = !fullbright; if(i == 3) autoTotem = !autoTotem;
                         if(i == 4) waypointActive = !waypointActive;
@@ -235,7 +245,7 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean keyPressed(int k, int s, int m) {
             if (bindingIndex != -1) {
-                if (k == GLFW.GLFW_KEY_ESCAPE || k == GLFW.GLFW_KEY_BACKSPACE) k = GLFW.GLFW_KEY_UNKNOWN;
+                if (k == GLFW.GLFW_KEY_ESCAPE) k = GLFW.GLFW_KEY_UNKNOWN;
                 if (bindingIndex == 0) keyKA = k; if (bindingIndex == 1) keyTB = k;
                 if (bindingIndex == 2) keyFB = k; if (bindingIndex == 3) keyAT = k;
                 if (bindingIndex == 4) keyWP = k;
@@ -248,6 +258,8 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean shouldPause() { return false; }
     }
+
+    // --- НАСТРОЙКИ КИЛЛАУРЫ (БЕЗ РАЗМЫТИЯ) ---
 
     public static class KillAuraSettings extends Screen {
         private final Screen p; private TextFieldWidget f1, f2;
@@ -262,7 +274,8 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public void render(DrawContext ctx, int nx, int ny, float d) {
-            ctx.fill(0, 0, width, height, 0x90000000); // Обычный фон без размытия
+            // Убрано размытие, просто легкое затемнение
+            ctx.fill(0, 0, width, height, 0x70000000); 
             int x = width/2, y = height/2;
             ctx.fill(x - 110, y - 90, x + 110, y + 90, 0xFF0A0A0A);
             ctx.drawBorder(x - 110, y - 90, 220, 180, 0xFF00AAFF);
@@ -270,10 +283,11 @@ public class ExampleMod implements ModInitializer {
             ctx.drawTextWithShadow(textRenderer, "Reach:", x - 100, y - 57, -1);
             ctx.drawTextWithShadow(textRenderer, "Walls:", x - 100, y - 37, -1);
 
-            // Кнопки AntiVelocity и AutoRun
+            // Anti-Velocity и AutoRun перенесены сюда
             drawToggle(ctx, "AntiVelocity", antiVelocity, x - 100, y - 10, nx, ny);
             drawToggle(ctx, "AutoRun", autoRun, x - 100, y + 15, nx, ny);
 
+            // Конфиги серверов
             int cx = x - 235;
             ctx.fill(cx, y - 90, cx + 115, y + 90, 0xFF0A0A0A);
             ctx.drawBorder(cx, y - 90, 115, 180, 0xFF00AAFF);
@@ -323,7 +337,7 @@ public class ExampleMod implements ModInitializer {
         public TriggerSettings(Screen p) { super(Text.literal("")); this.p = p; }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x90000000);
+            ctx.fill(0, 0, width, height, 0x70000000);
             int x = width/2, y = height/2;
             ctx.fill(x - 80, y - 40, x + 80, y + 40, 0xFF0A0A0A);
             ctx.drawBorder(x - 80, y - 40, 160, 80, 0xFF00AAFF);
@@ -354,7 +368,7 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x90000000);
+            ctx.fill(0, 0, width, height, 0x70000000);
             int x = width/2, y = height/2;
             ctx.fill(x - 110, y - 90, x + 110, y + 90, 0xFF0A0A0A);
             ctx.drawBorder(x - 110, y - 90, 220, 180, 0xFF00AAFF);
