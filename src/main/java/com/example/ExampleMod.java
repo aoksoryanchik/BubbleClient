@@ -41,7 +41,7 @@ public class ExampleMod implements ModInitializer {
     public static double wpX = 0, wpY = 64, wpZ = 0;
     public static float shakeIntensity = 0.5f;
     
-    // Переменные для HandView (ViewModel) - нужны для Mixin
+    // Переменные для HandView (ViewModel) - ПОЛНЫЙ НАБОР ДЛЯ MIXIN
     public static float vmX = 0, vmY = 0, vmZ = 0;
     public static float vmLX = 0, vmLY = 0, vmLZ = 0;
     public static boolean viewModel = true;
@@ -206,6 +206,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // --- GUI СЕКЦИЯ ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
