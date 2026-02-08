@@ -36,7 +36,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean isDestructed = false; 
     
     // Настройки
-    public static double kaRange = 3.2, kaWallsRange = 2.4; // Понизил дефолты под Фантайм
+    public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
     public static float shakeIntensity = 0.5f;
     
@@ -50,9 +50,6 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
-
-    // Переменные для сглаживания ротаций
-    private float lastYaw, lastPitch;
 
     @Override
     public void onInitialize() {
@@ -100,8 +97,7 @@ public class ExampleMod implements ModInitializer {
             }
 
             if (antiVelocity && client.player.hurtTime > 0) {
-                // Изменен множитель на 0.65 для более мягкого обхода
-                client.player.setVelocity(client.player.getVelocity().x * 0.65, client.player.getVelocity().y, client.player.getVelocity().z * 0.65);
+                client.player.setVelocity(client.player.getVelocity().x * 0.62, client.player.getVelocity().y, client.player.getVelocity().z * 0.62);
             }
 
             if (killaura) runAura(client);
@@ -137,7 +133,6 @@ public class ExampleMod implements ModInitializer {
     private void runAura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
-        
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
@@ -148,24 +143,24 @@ public class ExampleMod implements ModInitializer {
         }
         
         if (target != null) {
-            // Рандомизация точки удара (от груди до головы)
-            float randomHeight = 0.2f + random.nextFloat() * 0.6f;
-            Vec3d targetPos = target.getPos().add(0, target.getHeight() * randomHeight, 0);
+            // Исправление ошибки компиляции: создаем final копию для лямбды
+            final PlayerEntity finalTarget = target;
             
+            float randomHeight = 0.3f + random.nextFloat() * 0.5f;
+            Vec3d targetPos = finalTarget.getPos().add(0, finalTarget.getHeight() * randomHeight, 0);
             updateRotations(client.player, targetPos);
 
-            // Проверка через Raytrace, чтобы не бить "спиной" или сквозь углы
             double reach = kaRange;
             Vec3d eye = client.player.getEyePos();
             Vec3d look = client.player.getRotationVec(1.0F).multiply(reach);
             Box box = client.player.getBoundingBox().expand(look.x, look.y, look.z).expand(1.0);
-            EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e == target, reach * reach);
-
-            // Рандомная задержка после отката (обход клик-детекторов)
-            float readyProgress = 0.92f + random.nextFloat() * 0.08f;
             
-            if (client.player.getAttackCooldownProgress(0) >= readyProgress && hit != null) {
-                client.interactionManager.attackEntity(client.player, target);
+            // Теперь используем finalTarget внутри лямбды
+            EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e == finalTarget, reach * reach);
+
+            float cooldownTrigger = 0.93f + random.nextFloat() * 0.07f;
+            if (client.player.getAttackCooldownProgress(0) >= cooldownTrigger && hit != null) {
+                client.interactionManager.attackEntity(client.player, finalTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
         }
@@ -175,18 +170,11 @@ public class ExampleMod implements ModInitializer {
         Vec3d diff = target.subtract(player.getEyePos());
         double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         
-        // Добавление "шума" в наводку (0.1 - 0.3 градуса)
-        float noiseYaw = (random.nextFloat() - 0.5f) * 0.4f;
-        float noisePitch = (random.nextFloat() - 0.5f) * 0.4f;
-
-        float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F + noiseYaw;
-        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ)) + noisePitch;
+        float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F + (random.nextFloat() - 0.5f) * 0.3f;
+        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ)) + (random.nextFloat() - 0.5f) * 0.3f;
         
-        // Динамическое сглаживание: чем ближе прицел, тем медленнее доводка
-        float diffYaw = MathHelper.wrapDegrees(tYaw - player.getYaw());
-        float smooth = Math.max(0.15f, Math.min(0.28f, 1.0f / (Math.abs(diffYaw) + 1.0f)));
-        
-        player.setYaw(player.getYaw() + diffYaw * smooth);
+        float smooth = 0.21f;
+        player.setYaw(player.getYaw() + MathHelper.wrapDegrees(tYaw - player.getYaw()) * smooth);
         player.setPitch(player.getPitch() + (tPitch - player.getPitch()) * smooth);
     }
 
@@ -317,7 +305,7 @@ public class ExampleMod implements ModInitializer {
 
         @Override
         protected void init() {
-            rangeField = new TextFieldWidget(textRenderer, width/2 + 20, height/2 - 50, 40, 14, Text.literal(""));
+            rangeField = new TextFieldWidget(textRenderer, width/2 + 20, height/2 - 65, 40, 14, Text.literal(""));
             rangeField.setText(String.valueOf(kaRange));
             addDrawableChild(rangeField);
         }
@@ -326,14 +314,20 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xFF000000); 
             int x = width / 2, y = height / 2;
-            ctx.drawCenteredTextWithShadow(textRenderer, "§bKILL AURA SETTINGS", x, y - 80, -1);
-            ctx.drawTextWithShadow(textRenderer, "Range:", x - 50, y - 47, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§bKILL AURA SETTINGS", x, y - 90, -1);
+            ctx.drawTextWithShadow(textRenderer, "Range:", x - 50, y - 62, -1);
             
-            ctx.fill(x - 70, y - 20, x + 70, y, antiVelocity ? 0xFF00AAFF : 0xFF222222);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Anti-Velocity: " + (antiVelocity ? "ON" : "OFF"), x, y - 14, -1);
+            ctx.fill(x - 70, y - 40, x + 70, y - 20, antiVelocity ? 0xFF00AAFF : 0xFF222222);
+            ctx.drawCenteredTextWithShadow(textRenderer, "Anti-Velocity: " + (antiVelocity ? "ON" : "OFF"), x, y - 34, -1);
             
-            ctx.fill(x - 70, y + 10, x + 70, y + 30, 0xFF151515);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§6Preset: FunTime", x, y + 16, -1);
+            // Слева (вертикально) кнопки конфигов
+            String[] servers = {"MineBlaze", "AresMine", "FunTime"};
+            for (int i = 0; i < servers.length; i++) {
+                int sy = y - 5 + (i * 25);
+                boolean h = mx >= x - 70 && mx <= x + 70 && my >= sy && my <= sy + 20;
+                ctx.fill(x - 70, sy, x + 70, sy + 20, h ? 0xFF333333 : 0xFF151515);
+                ctx.drawCenteredTextWithShadow(textRenderer, "Config: " + servers[i], x, sy + 6, -1);
+            }
             
             super.render(ctx, mx, my, d);
         }
@@ -341,16 +335,20 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
-            if (mx >= x - 70 && mx <= x + 70 && my >= y - 20 && my <= y) {
+            if (mx >= x - 70 && mx <= x + 70 && my >= y - 40 && my <= y - 20) {
                 antiVelocity = !antiVelocity;
                 saveConfig();
                 return true;
             }
-            if (mx >= x - 70 && mx <= x + 70 && my >= y + 10 && my <= y + 30) {
-                kaRange = 3.1; kaWallsRange = 2.4; antiVelocity = true;
-                rangeField.setText("3.1");
-                saveConfig();
-                return true;
+            for (int i = 0; i < 3; i++) {
+                int sy = y - 5 + (i * 25);
+                if (mx >= x - 70 && mx <= x + 70 && my >= sy && my <= sy + 20) {
+                    if (i == 0) { kaRange = 3.8; kaWallsRange = 3.0; antiVelocity = true; rangeField.setText("3.8"); }
+                    if (i == 1) { kaRange = 3.6; kaWallsRange = 2.8; antiVelocity = true; rangeField.setText("3.6"); }
+                    if (i == 2) { kaRange = 3.1; kaWallsRange = 2.4; antiVelocity = true; rangeField.setText("3.1"); }
+                    saveConfig();
+                    return true;
+                }
             }
             return super.mouseClicked(mx, my, b);
         }
