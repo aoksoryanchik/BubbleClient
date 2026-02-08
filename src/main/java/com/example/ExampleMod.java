@@ -36,7 +36,6 @@ public class ExampleMod implements ModInitializer {
     private static final String CONFIG_FILE = "bubble_config.txt";
     private static final Random random = new Random();
     public static PlayerEntity auraTarget = null;
-    private static float strafeDir = 1;
 
     @Override
     public void onInitialize() {
@@ -59,14 +58,19 @@ public class ExampleMod implements ModInitializer {
 
             if (fullbright) client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(net.minecraft.entity.effect.StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) handleAutoTotem(client);
-            if (autoRun && (client.player.forwardSpeed != 0 || client.player.sidewaysSpeed != 0)) client.player.setSprinting(true);
+            
+            // Безопасный AutoRun
+            if (autoRun && (client.player.forwardSpeed > 0)) {
+                client.player.setSprinting(true);
+            }
             
             if (killaura) runAura(client); else auraTarget = null;
             if (triggerbot) runTrigger(client);
 
+            // AntiVelocity (Настроено под AresMine)
             if (antiVelocity && client.player.hurtTime > 0) {
                 Vec3d v = client.player.getVelocity();
-                client.player.setVelocity(v.x * 0.4, v.y, v.z * 0.4);
+                client.player.setVelocity(v.x * 0.6, v.y, v.z * 0.6);
             }
         });
 
@@ -107,19 +111,13 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
+            // Плавная наводка (Rotation)
             client.player.setYaw(targetYaw);
             client.player.setPitch(targetPitch);
 
-            // Агрессивные стрейфы
-            if (client.player.forwardSpeed != 0 || client.player.sidewaysSpeed != 0) {
-                if (client.player.horizontalCollision || random.nextInt(30) == 0) strafeDir *= -1;
-                float moveYaw = targetYaw + (90 * strafeDir);
-                float rad = moveYaw * 0.017453292f;
-                double s = client.player.isOnGround() ? 0.026 : 0.038;
-                client.player.addVelocity(-Math.sin(rad) * s, 0, Math.cos(rad) * s);
-            }
-
+            // Логика ударов (Cooldown 1.0f)
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
+                // Бьем только при падении для критов, либо если на земле
                 if (client.player.isOnGround() || client.player.getVelocity().y < 0) {
                     client.interactionManager.attackEntity(client.player, auraTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
