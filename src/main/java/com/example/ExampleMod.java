@@ -4,12 +4,12 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.effect.StatusEffectInstance;
@@ -72,14 +72,35 @@ public class ExampleMod implements ModInitializer {
             if (autoTotem) handleAutoTotem(client);
             
             if (antiVelocity && client.player.hurtTime > 0 && !client.options.jumpKey.isPressed()) {
-                client.player.setVelocity(client.player.getVelocity().x * 0.5, client.player.getVelocity().y, client.player.getVelocity().z * 0.5);
+                client.player.setVelocity(client.player.getVelocity().x * 0.4, client.player.getVelocity().y, client.player.getVelocity().z * 0.4);
             }
 
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
         });
 
-        WorldRenderEvents.LAST.register(this::renderWaypoint);
+        // Рендер стрелочки и метров Waypoint СВЕРХУ
+        HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
+            if (!waypointActive) return;
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.player == null) return;
+
+            Vec3d target = new Vec3d(wpX, wpY, wpZ);
+            double dist = client.player.getPos().distanceTo(target);
+            
+            // Расчет угла для стрелочки
+            double angle = Math.toDegrees(Math.atan2(target.z - client.player.getZ(), target.x - client.player.getX())) - 90;
+            double relativeAngle = MathHelper.wrapDegrees(angle - client.player.getYaw());
+            
+            String arrow = "↑";
+            if (relativeAngle > 20) arrow = "→";
+            if (relativeAngle < -20) arrow = "←";
+            if (relativeAngle > 160 || relativeAngle < -160) arrow = "↓";
+
+            String text = String.format("§b%s §f[%.1fm]", arrow, dist);
+            int centerX = client.getWindow().getScaledWidth() / 2;
+            drawContext.drawCenteredTextWithShadow(client.textRenderer, text, centerX, 10, -1);
+        });
     }
 
     private void handleAutoTotem(MinecraftClient client) {
@@ -117,13 +138,7 @@ public class ExampleMod implements ModInitializer {
             Vec3d targetPos = finalTarget.getPos().add(0, finalTarget.getHeight() * 0.5, 0);
             updateRotations(client.player, targetPos, 100.0f);
             
-            double reach = kaRange + 0.1;
-            Vec3d eye = client.player.getEyePos();
-            Vec3d look = client.player.getRotationVec(1.0F).multiply(reach);
-            Box box = finalTarget.getBoundingBox().expand(0.2);
-            EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e == finalTarget, reach * reach);
-            
-            if (client.player.getAttackCooldownProgress(0) >= 1.0f && (hit != null || client.player.distanceTo(finalTarget) < kaRange)) {
+            if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
                 client.interactionManager.attackEntity(client.player, finalTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
                 if (shakeIntensity > 0) {
@@ -163,35 +178,16 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void renderWaypoint(WorldRenderContext context) {
-        if (!waypointActive) return;
-        MinecraftClient client = MinecraftClient.getInstance();
-        double d = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
-        MatrixStack ms = context.matrixStack();
-        ms.push();
-        ms.translate(wpX - context.camera().getPos().x, wpY - context.camera().getPos().y + 1.5, wpZ - context.camera().getPos().z);
-        ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-        ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
-        float s = (float) Math.max(0.02, d * 0.012);
-        ms.scale(-s, -s, s);
-        VertexConsumerProvider vcp = context.consumers();
-        if (vcp != null) {
-            String text = "§b[!] TARGET";
-            client.textRenderer.draw(text, -client.textRenderer.getWidth(text) / 2f, 0, -1, false, ms.peek().getPositionMatrix(), vcp, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
-        }
-        ms.pop();
-    }
-
-    // --- GUI СЕКЦИЯ (ФИКС РАЗМЫТИЯ ЧЕРЕЗ FILL) ---
+    // --- GUI БЕЗ ЗАЛИВКИ И БЛЮРА ---
 
     public static class BubbleMenu extends Screen {
         private int bindingIndex = -1;
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int nx, int ny, float d) {
-            ctx.fill(0, 0, width, height, 0x99000000); // Ручной фон без блюра
+            // ВАЖНО: Мы НЕ вызываем super.render и НЕ используем fill(0,0,width,height)
             int x = width/2 - 90, y = height/2 - 80;
-            ctx.fill(x, y, x + 180, y + 150, 0xFF101010);
+            ctx.fill(x, y, x + 180, y + 150, 0xCC101010); // Полупрозрачный фон самого окна
             ctx.drawBorder(x, y, 180, 150, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width/2, y + 10, -1);
             
@@ -203,7 +199,7 @@ public class ExampleMod implements ModInitializer {
                 int iy = y + 35 + i * 22;
                 boolean h = nx >= x + 10 && nx <= x + 170 && ny >= iy && ny <= iy + 18;
                 ctx.fill(x + 10, iy, x + 170, iy + 18, h ? 0xFF222222 : 0xFF151515);
-                String k = bindingIndex == i ? "§b[PRESS]" : (keys[i] != GLFW.GLFW_KEY_UNKNOWN ? " §7[" + GLFW.glfwGetKeyName(keys[i], 0).toUpperCase() + "]" : "");
+                String k = bindingIndex == i ? "§b[???]" : (keys[i] != GLFW.GLFW_KEY_UNKNOWN ? " §7[" + GLFW.glfwGetKeyName(keys[i], 0).toUpperCase() + "]" : "");
                 ctx.drawTextWithShadow(textRenderer, names[i] + k, x + 15, iy + 5, states[i] ? 0xFF00FF00 : 0xFFFF3333);
                 if(i == 0 || i == 1 || i == 4) ctx.drawTextWithShadow(textRenderer, "⚙", x + 155, iy + 5, -1);
             }
@@ -254,9 +250,8 @@ public class ExampleMod implements ModInitializer {
             addDrawableChild(f1); addDrawableChild(f2); addDrawableChild(f3);
         }
         @Override public void render(DrawContext ctx, int nx, int ny, float d) {
-            ctx.fill(0, 0, width, height, 0x99000000);
             int x = width/2, y = height/2;
-            ctx.fill(x - 110, y - 90, x + 110, y + 100, 0xFF101010);
+            ctx.fill(x - 110, y - 90, x + 110, y + 100, 0xCC101010);
             ctx.drawBorder(x - 110, y - 90, 220, 190, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bKILL AURA SETTINGS", x, y - 80, -1);
             ctx.drawTextWithShadow(textRenderer, "Reach:", x - 100, y - 57, -1);
@@ -268,7 +263,7 @@ public class ExampleMod implements ModInitializer {
             drawToggle(ctx, "AutoRun", autoRun, x - 100, y + 45, nx, ny);
 
             int cx = x - 235;
-            ctx.fill(cx, y - 90, cx + 115, y + 90, 0xFF101010);
+            ctx.fill(cx, y - 90, cx + 115, y + 90, 0xCC101010);
             ctx.drawBorder(cx, y - 90, 115, 180, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bCONFIGS", cx + 57, y - 80, -1);
             drawCfgBtn(ctx, "AresMine", cx + 7, y - 45, nx, ny);
@@ -314,9 +309,8 @@ public class ExampleMod implements ModInitializer {
         private final Screen p;
         public TriggerSettings(Screen p) { super(Text.literal("")); this.p = p; }
         @Override public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x99000000);
             int x = width/2, y = height/2;
-            ctx.fill(x - 80, y - 40, x + 80, y + 40, 0xFF101010);
+            ctx.fill(x - 80, y - 40, x + 80, y + 40, 0xCC101010);
             ctx.drawBorder(x - 80, y - 40, 160, 80, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bTRIGGER BOT", x, y - 30, -1);
             boolean h = mx >= x - 70 && mx <= x + 70 && my >= y && my <= y + 12;
@@ -341,11 +335,13 @@ public class ExampleMod implements ModInitializer {
             addDrawableChild(f1); addDrawableChild(f2); addDrawableChild(f3);
         }
         @Override public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x99000000);
             int x = width/2, y = height/2;
-            ctx.fill(x - 110, y - 90, x + 110, y + 90, 0xFF101010);
+            ctx.fill(x - 110, y - 90, x + 110, y + 90, 0xCC101010);
             ctx.drawBorder(x - 110, y - 90, 220, 180, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(textRenderer, "§bWAYPOINT", x, y - 80, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§bWAYPOINT COORDS", x, y - 80, -1);
+            ctx.drawTextWithShadow(textRenderer, "X:", x - 90, y - 42, -1);
+            ctx.drawTextWithShadow(textRenderer, "Y:", x - 90, y - 17, -1);
+            ctx.drawTextWithShadow(textRenderer, "Z:", x - 90, y + 8, -1);
             super.render(ctx, mx, my, d);
         }
         @Override public boolean keyPressed(int k, int s, int n) {
