@@ -71,7 +71,6 @@ public class ExampleMod implements ModInitializer {
             
             if (autoTotem) handleAutoTotem(client);
             
-            // Anti-Velocity фикс: не мешаем прыжку, если кнопка прыжка зажата
             if (antiVelocity && client.player.hurtTime > 0 && !client.options.jumpKey.isPressed()) {
                 client.player.setVelocity(client.player.getVelocity().x * 0.5, client.player.getVelocity().y, client.player.getVelocity().z * 0.5);
             }
@@ -107,12 +106,10 @@ public class ExampleMod implements ModInitializer {
         }
         
         if (target != null) {
-            // AutoRun срабатывает ТОЛЬКО при активной цели
             if (autoRun) client.player.setSprinting(true);
 
-            // Sticky функция (Присасывание)
             if (sticky && client.player.getHealth() > 12f && target.getHealth() < 6f) {
-                Vec3d diff = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.15);
+                Vec3d diff = target.getPos().subtract(client.player.getPos()).normalize().multiply(0.12);
                 client.player.addVelocity(diff.x, 0, diff.z);
             }
 
@@ -129,7 +126,6 @@ public class ExampleMod implements ModInitializer {
             if (client.player.getAttackCooldownProgress(0) >= 1.0f && (hit != null || client.player.distanceTo(finalTarget) < kaRange)) {
                 client.interactionManager.attackEntity(client.player, finalTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
-                // Shake (Тряска экрана)
                 if (shakeIntensity > 0) {
                     client.player.setYaw(client.player.getYaw() + (float)(Math.random() - 0.5) * shakeIntensity);
                     client.player.setPitch(client.player.getPitch() + (float)(Math.random() - 0.5) * shakeIntensity);
@@ -186,15 +182,14 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI БЕЗ РАЗМЫТИЯ ---
+    // --- GUI СЕКЦИЯ (ФИКС РАЗМЫТИЯ ЧЕРЕЗ FILL) ---
 
     public static class BubbleMenu extends Screen {
         private int bindingIndex = -1;
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int nx, int ny, float d) {
-            // Ручная отрисовка фона без блюра
-            ctx.fill(0, 0, width, height, 0xAA000000); 
+            ctx.fill(0, 0, width, height, 0x99000000); // Ручной фон без блюра
             int x = width/2 - 90, y = height/2 - 80;
             ctx.fill(x, y, x + 180, y + 150, 0xFF101010);
             ctx.drawBorder(x, y, 180, 150, 0xFF00AAFF);
@@ -235,8 +230,7 @@ public class ExampleMod implements ModInitializer {
             }
             return false;
         }
-        @Override
-        public boolean keyPressed(int k, int s, int m) {
+        @Override public boolean keyPressed(int k, int s, int m) {
             if (bindingIndex != -1) {
                 if (k == GLFW.GLFW_KEY_ESCAPE) k = GLFW.GLFW_KEY_UNKNOWN;
                 if (bindingIndex == 0) keyKA = k; if (bindingIndex == 1) keyTB = k;
@@ -251,8 +245,7 @@ public class ExampleMod implements ModInitializer {
     public static class KillAuraSettings extends Screen {
         private final Screen p; private TextFieldWidget f1, f2, f3;
         public KillAuraSettings(Screen p) { super(Text.literal("")); this.p = p; }
-        @Override
-        protected void init() {
+        @Override protected void init() {
             int x = width/2 + 30;
             f1 = new TextFieldWidget(textRenderer, x, height/2 - 60, 40, 14, Text.literal(""));
             f2 = new TextFieldWidget(textRenderer, x, height/2 - 40, 40, 14, Text.literal(""));
@@ -260,9 +253,8 @@ public class ExampleMod implements ModInitializer {
             f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange)); f3.setText(String.valueOf(shakeIntensity));
             addDrawableChild(f1); addDrawableChild(f2); addDrawableChild(f3);
         }
-        @Override
-        public void render(DrawContext ctx, int nx, int ny, float d) {
-            ctx.fill(0, 0, width, height, 0xAA000000);
+        @Override public void render(DrawContext ctx, int nx, int ny, float d) {
+            ctx.fill(0, 0, width, height, 0x99000000);
             int x = width/2, y = height/2;
             ctx.fill(x - 110, y - 90, x + 110, y + 100, 0xFF101010);
             ctx.drawBorder(x - 110, y - 90, 220, 190, 0xFF00AAFF);
@@ -271,15 +263,17 @@ public class ExampleMod implements ModInitializer {
             ctx.drawTextWithShadow(textRenderer, "Walls:", x - 100, y - 37, -1);
             ctx.drawTextWithShadow(textRenderer, "Shake:", x - 100, y - 17, -1);
             
-            drawToggle(ctx, "Sticky (Прилипала)", sticky, x - 100, y + 5, nx, ny);
+            drawToggle(ctx, "Sticky", sticky, x - 100, y + 5, nx, ny);
             drawToggle(ctx, "AntiVelocity", antiVelocity, x - 100, y + 25, nx, ny);
-            drawToggle(ctx, "AutoRun (В бою)", autoRun, x - 100, y + 45, nx, ny);
+            drawToggle(ctx, "AutoRun", autoRun, x - 100, y + 45, nx, ny);
 
             int cx = x - 235;
             ctx.fill(cx, y - 90, cx + 115, y + 90, 0xFF101010);
             ctx.drawBorder(cx, y - 90, 115, 180, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bCONFIGS", cx + 57, y - 80, -1);
-            drawCfgBtn(ctx, "FunTime", cx + 7, y - 45, nx, ny);
+            drawCfgBtn(ctx, "AresMine", cx + 7, y - 45, nx, ny);
+            drawCfgBtn(ctx, "MineBlaze", cx + 7, y - 20, nx, ny);
+            drawCfgBtn(ctx, "FunTime", cx + 7, y + 5, nx, ny);
             super.render(ctx, nx, ny, d);
         }
         private void drawToggle(DrawContext ctx, String n, boolean s, int x, int y, int mx, int my) {
@@ -292,22 +286,22 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(x, y, x + 100, y + 18, h ? 0xFF252525 : 0xFF151515);
             ctx.drawCenteredTextWithShadow(textRenderer, n, x + 50, y + 5, h ? 0xFF00AAFF : -1);
         }
-        @Override
-        public boolean mouseClicked(double nx, double ny, int b) {
+        @Override public boolean mouseClicked(double nx, double ny, int b) {
             int x = width/2, y = height/2, cx = x - 235;
             if (nx >= x - 100 && nx <= x + 80) {
                 if (ny >= y + 5 && ny <= y + 23) { sticky = !sticky; saveConfig(); return true; }
                 if (ny >= y + 25 && ny <= y + 43) { antiVelocity = !antiVelocity; saveConfig(); return true; }
                 if (ny >= y + 45 && ny <= y + 63) { autoRun = !autoRun; saveConfig(); return true; }
             }
-            if (nx >= cx + 7 && nx <= cx + 107 && ny >= y - 45 && ny <= y - 27) {
-                kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 0.5f; updateFields(); return true;
+            if (nx >= cx + 7 && nx <= cx + 107) {
+                if (ny >= y - 45 && ny <= y - 27) { kaRange = 3.8; kaWallsRange = 3.0; updateFields(); return true; }
+                if (ny >= y - 20 && ny <= y - 2) { kaRange = 3.9; kaWallsRange = 3.1; updateFields(); return true; }
+                if (ny >= y + 5 && ny <= y + 23) { kaRange = 3.1; kaWallsRange = 0.0; antiVelocity = false; sticky = false; updateFields(); return true; }
             }
             return super.mouseClicked(nx, ny, b);
         }
         private void updateFields() { f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange)); f3.setText(String.valueOf(shakeIntensity)); saveConfig(); }
-        @Override
-        public boolean keyPressed(int k, int s, int m) {
+        @Override public boolean keyPressed(int k, int s, int m) {
             if (k == GLFW.GLFW_KEY_ESCAPE) {
                 try { kaRange = Double.parseDouble(f1.getText()); kaWallsRange = Double.parseDouble(f2.getText()); shakeIntensity = Float.parseFloat(f3.getText()); } catch (Exception ignored) {}
                 saveConfig(); client.setScreen(p); return true;
@@ -319,9 +313,8 @@ public class ExampleMod implements ModInitializer {
     public static class TriggerSettings extends Screen {
         private final Screen p;
         public TriggerSettings(Screen p) { super(Text.literal("")); this.p = p; }
-        @Override
-        public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xAA000000);
+        @Override public void render(DrawContext ctx, int mx, int my, float d) {
+            ctx.fill(0, 0, width, height, 0x99000000);
             int x = width/2, y = height/2;
             ctx.fill(x - 80, y - 40, x + 80, y + 40, 0xFF101010);
             ctx.drawBorder(x - 80, y - 40, 160, 80, 0xFF00AAFF);
@@ -329,20 +322,17 @@ public class ExampleMod implements ModInitializer {
             boolean h = mx >= x - 70 && mx <= x + 70 && my >= y && my <= y + 12;
             ctx.drawCenteredTextWithShadow(textRenderer, "Only Crits: " + (tbCrits ? "§aON" : "§cOFF"), x, y + 5, h ? 0xFF00AAFF : -1);
         }
-        @Override
-        public boolean mouseClicked(double mx, double my, int b) {
+        @Override public boolean mouseClicked(double mx, double my, int b) {
             if (mx >= width/2 - 70 && mx <= width/2 + 70 && my >= height/2 && my <= height/2 + 12) { tbCrits = !tbCrits; saveConfig(); return true; }
             return false;
         }
-        @Override
-        public boolean keyPressed(int k, int s, int m) { if (k == GLFW.GLFW_KEY_ESCAPE) { client.setScreen(p); return true; } return false; }
+        @Override public boolean keyPressed(int k, int s, int m) { if (k == GLFW.GLFW_KEY_ESCAPE) { client.setScreen(p); return true; } return false; }
     }
 
     public static class WaypointSettings extends Screen {
         private final Screen p; private TextFieldWidget f1, f2, f3;
         public WaypointSettings(Screen p) { super(Text.literal("")); this.p = p; }
-        @Override
-        protected void init() {
+        @Override protected void init() {
             int x = width/2 + 20;
             f1 = new TextFieldWidget(textRenderer, x, height/2 - 45, 50, 16, Text.literal(""));
             f2 = new TextFieldWidget(textRenderer, x, height/2 - 20, 50, 16, Text.literal(""));
@@ -350,17 +340,15 @@ public class ExampleMod implements ModInitializer {
             f1.setText(String.valueOf((int)wpX)); f2.setText(String.valueOf((int)wpY)); f3.setText(String.valueOf((int)wpZ));
             addDrawableChild(f1); addDrawableChild(f2); addDrawableChild(f3);
         }
-        @Override
-        public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xAA000000);
+        @Override public void render(DrawContext ctx, int mx, int my, float d) {
+            ctx.fill(0, 0, width, height, 0x99000000);
             int x = width/2, y = height/2;
             ctx.fill(x - 110, y - 90, x + 110, y + 90, 0xFF101010);
             ctx.drawBorder(x - 110, y - 90, 220, 180, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§bWAYPOINT", x, y - 80, -1);
             super.render(ctx, mx, my, d);
         }
-        @Override
-        public boolean keyPressed(int k, int s, int n) {
+        @Override public boolean keyPressed(int k, int s, int n) {
             if (k == GLFW.GLFW_KEY_ESCAPE) {
                 try { wpX = Double.parseDouble(f1.getText()); wpY = Double.parseDouble(f2.getText()); wpZ = Double.parseDouble(f3.getText()); } catch (Exception ignored) {}
                 saveConfig(); client.setScreen(p); return true;
