@@ -26,7 +26,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
 
-    public static double kaRange = 3.2, kaWallsRange = 0.0;
+    public static double kaRange = 3.3, kaWallsRange = 0.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
     
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
@@ -68,7 +68,7 @@ public class ExampleMod implements ModInitializer {
 
             if (antiVelocity && client.player.hurtTime > 0) {
                 Vec3d v = client.player.getVelocity();
-                client.player.setVelocity(v.x * 0.75, v.y, v.z * 0.75); // Безопасно для ФТ
+                client.player.setVelocity(v.x * 0.75, v.y, v.z * 0.75);
             }
         });
 
@@ -97,7 +97,6 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
-        // Бьет всех, включая невидимок
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
                 .filter(p -> client.player.distanceTo(p) <= kaRange)
@@ -105,20 +104,18 @@ public class ExampleMod implements ModInitializer {
                 .orElse(null);
 
         if (auraTarget != null) {
-            // BACKTRACK LOGIC: Бьем чуть выше центра и с учетом микро-движения
-            Vec3d targetPos = auraTarget.getPos().add(0, auraTarget.getStandingEyeHeight() * 0.7, 0);
+            Vec3d targetPos = auraTarget.getBoundingBox().getCenter();
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
             
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавная наводка (имитация руки)
-            float speed = 0.15f; // Чем меньше, тем медленнее наводка
+            // Легитная плавная наводка
+            float speed = 0.2f;
             client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(targetYaw - client.player.getYaw()) * speed);
             client.player.setPitch(client.player.getPitch() + (targetPitch - client.player.getPitch()) * speed);
 
-            // Рандомный кулдаун для обхода анти-кликера
-            if (client.player.getAttackCooldownProgress(0) >= 1.0f + (random.nextFloat() * 0.1)) {
+            if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
                 if (client.player.canSee(auraTarget)) {
                     client.interactionManager.attackEntity(client.player, auraTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
@@ -177,7 +174,6 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI (Без изменений, чтобы всё работало) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -196,7 +192,7 @@ public class ExampleMod implements ModInitializer {
                 ctx.fill(x+10, iy, x+170, iy+18, hv ? 0xFF1A1A1A : 0xFF101010);
                 String kn = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : GLFW.glfwGetKeyName(k[i], 0).toUpperCase();
                 ctx.drawTextWithShadow(client.textRenderer, n[i] + " §7[" + kn + "]", x+15, iy+5, s[i] ? 0xFF00FF00 : 0xFFFFFFFF);
-                if(i==0 || i[4]==4) ctx.drawTextWithShadow(client.textRenderer, "⚙", x+155, iy+5, -1);
+                if(i==0 || i==4) ctx.drawTextWithShadow(client.textRenderer, "⚙", x+155, iy+5, -1);
             }
         }
         @Override
@@ -268,7 +264,11 @@ public class ExampleMod implements ModInitializer {
             return super.mouseClicked(mx, my, b);
         }
         @Override
-        public boolean charTyped(char chr, int m) { f1.charTyped(chr, m); f2.charTyped(chr, m); return true; }
+        public boolean charTyped(char chr, int m) { 
+            f1.charTyped(chr, m); 
+            f2.charTyped(chr, m); 
+            return true; 
+        }
         @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
