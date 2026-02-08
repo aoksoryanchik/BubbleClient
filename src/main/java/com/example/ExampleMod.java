@@ -47,7 +47,6 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            // ОТКРЫТИЕ МЕНЮ НА 0
             if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -75,7 +74,6 @@ public class ExampleMod implements ModInitializer {
             }
         });
 
-        // HUD WAYPOINT: Координаты, Стрелка, Метры
         HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
             if (!waypointActive) return;
             MinecraftClient client = MinecraftClient.getInstance();
@@ -236,6 +234,7 @@ public class ExampleMod implements ModInitializer {
             f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange));
             addSelectableChild(f1); addSelectableChild(f2);
         }
+        @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0x90000000);
             int x = width/2;
@@ -256,8 +255,10 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(x, y, x+w, y+h, hv ? 0xFF222222 : 0xFF111111);
             ctx.drawCenteredTextWithShadow(textRenderer, t, x+w/2, y+3, -1);
         }
+        @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2;
+            if(f1.mouseClicked(mx, my, b) || f2.mouseClicked(mx, my, b)) return true;
             if(mx>=x-100 && mx<=x+100) {
                 if(my>=height/2-25 && my<=height/2-11) autoRun = !autoRun;
                 if(my>=height/2-5 && my<=height/2+9) antiVelocity = !antiVelocity;
@@ -267,11 +268,18 @@ public class ExampleMod implements ModInitializer {
             }
             return super.mouseClicked(mx, my, b);
         }
+        @Override
+        public boolean charTyped(char chr, int m) {
+            if (f1.charTyped(chr, m) || f2.charTyped(chr, m)) return true;
+            return super.charTyped(chr, m);
+        }
+        @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
                 try { kaRange=Double.parseDouble(f1.getText()); kaWallsRange=Double.parseDouble(f2.getText()); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(p); return true;
             }
+            if (f1.keyPressed(k, s, m) || f2.keyPressed(k, s, m)) return true;
             return super.keyPressed(k, s, m);
         }
     }
@@ -288,6 +296,7 @@ public class ExampleMod implements ModInitializer {
             f1.setText(String.valueOf((int)wpX)); f2.setText(String.valueOf((int)wpY)); f3.setText(String.valueOf((int)wpZ));
             addSelectableChild(f1); addSelectableChild(f2); addSelectableChild(f3);
         }
+        @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0x90000000);
             int x = width/2;
@@ -299,11 +308,23 @@ public class ExampleMod implements ModInitializer {
             ctx.drawTextWithShadow(textRenderer, "Z:", x-100, height/2+9, -1);
             f1.render(ctx, mx, my, d); f2.render(ctx, mx, my, d); f3.render(ctx, mx, my, d);
         }
+        @Override
+        public boolean mouseClicked(double mx, double my, int b) {
+            if(f1.mouseClicked(mx, my, b) || f2.mouseClicked(mx, my, b) || f3.mouseClicked(mx, my, b)) return true;
+            return super.mouseClicked(mx, my, b);
+        }
+        @Override
+        public boolean charTyped(char chr, int m) {
+            if (f1.charTyped(chr, m) || f2.charTyped(chr, m) || f3.charTyped(chr, m)) return true;
+            return super.charTyped(chr, m);
+        }
+        @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
                 try { wpX=Double.parseDouble(f1.getText()); wpY=Double.parseDouble(f2.getText()); wpZ=Double.parseDouble(f3.getText()); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(p); return true;
             }
+            if (f1.keyPressed(k, s, m) || f2.keyPressed(k, s, m) || f3.keyPressed(k, s, m)) return true;
             return super.keyPressed(k, s, m);
         }
     }
