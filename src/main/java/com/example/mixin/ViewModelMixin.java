@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class ViewModelMixin {
     @Inject(method = "renderFirstPersonItem", at = @At("HEAD"))
     private void onRenderItem(
-        AbstractClientPlayerEntity player, // Обязательный аргумент для новых версий
+        AbstractClientPlayerEntity player, 
         float tickDelta, 
         float pitch, 
         Hand hand, 
@@ -28,19 +28,12 @@ public class ViewModelMixin {
         int light, 
         CallbackInfo ci
     ) {
-        // Проверка: если мод не удален
         if (!ExampleMod.isDestructed) {
-            
-            // Если рука правая — берем vmX, vmY, vmZ
             if (hand == Hand.MAIN_HAND) {
                 matrices.translate(ExampleMod.vmX, ExampleMod.vmY, ExampleMod.vmZ);
-            } 
-            // Если рука левая — берем vmLX, vmLY, vmLZ
-            else {
+            } else {
                 matrices.translate(ExampleMod.vmLX, ExampleMod.vmLY, ExampleMod.vmLZ);
             }
-            
-            // Здесь можно добавить вращение или масштаб, если захочешь в будущем
         }
     }
 }
