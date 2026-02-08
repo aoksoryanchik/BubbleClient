@@ -1,7 +1,7 @@
 package com.example.mixin;
 
 import com.example.ExampleMod;
-import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.item.HeldItemRenderer;
 import net.minecraft.client.util.math.MatrixStack;
@@ -14,26 +14,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(HeldItemRenderer.class)
 public class ViewModelMixin {
-
     @Inject(method = "renderFirstPersonItem", at = @At("HEAD"))
-    private void onRenderItem(
-            ClientPlayerEntity player, 
-            float tickDelta, 
-            float pitch, 
-            Hand hand, 
-            float swingProgress, 
-            ItemStack item, 
-            float equipProgress, 
-            MatrixStack matrices, 
-            VertexConsumerProvider vertexConsumers, 
-            int light, 
-            CallbackInfo ci
-    ) {
-        // Если мод не удален и функция включена — двигаем руку
+    private void onRenderItem(AbstractClientPlayerEntity player, float tickDelta, float pitch, Hand hand, float swingProgress, ItemStack item, float equipProgress, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
+        // Проверяем, включен ли модуль и не нажат ли дестракт
         if (!ExampleMod.isDestructed && ExampleMod.viewModel) {
-            // Применяем смещение из настроек
             matrices.translate(ExampleMod.vmX, ExampleMod.vmY, ExampleMod.vmZ);
         }
     }
 }
-
