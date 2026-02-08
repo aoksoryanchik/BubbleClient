@@ -16,9 +16,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class ViewModelMixin {
     @Inject(method = "renderFirstPersonItem", at = @At("HEAD"))
     private void onRenderItem(AbstractClientPlayerEntity player, float tickDelta, float pitch, Hand hand, float swingProgress, ItemStack item, float equipProgress, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
-        // Проверяем, включен ли модуль и не нажат ли дестракт
         if (!ExampleMod.isDestructed && ExampleMod.viewModel) {
-            matrices.translate(ExampleMod.vmX, ExampleMod.vmY, ExampleMod.vmZ);
+            if (hand == Hand.MAIN_HAND) {
+                // Правая рука (Main Hand)
+                matrices.translate(ExampleMod.vmX, ExampleMod.vmY, ExampleMod.vmZ);
+            } else {
+                // Левая рука (Off Hand)
+                matrices.translate(ExampleMod.vmLX, ExampleMod.vmLY, ExampleMod.vmLZ);
+            }
         }
     }
 }
