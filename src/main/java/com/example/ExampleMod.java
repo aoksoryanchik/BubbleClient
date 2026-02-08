@@ -24,6 +24,7 @@ import org.lwjgl.glfw.GLFW;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
@@ -38,6 +39,7 @@ public class ExampleMod implements ModInitializer {
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
+    private static final Random rnd = new Random();
     public static PlayerEntity auraTarget = null;
 
     @Override
@@ -78,14 +80,11 @@ public class ExampleMod implements ModInitializer {
             if (!waypointActive) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
-
             double dist = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
             float yawToTarget = (float) Math.toDegrees(Math.atan2(wpZ - client.player.getZ(), wpX - client.player.getX())) - 90f;
             float angleDiff = MathHelper.wrapDegrees(yawToTarget - client.player.getYaw());
-            
             String arrow = Math.abs(angleDiff) < 10 ? "§a↑" : (angleDiff > 0 ? "§f→" : "§f←");
             String text = String.format("§f%.0f, %.0f, %.0f  %s  §b%.1fm", wpX, wpY, wpZ, arrow, dist);
-            
             drawContext.drawCenteredTextWithShadow(client.textRenderer, text, drawContext.getScaledWindowWidth() / 2, 10, -1);
         });
     }
@@ -109,12 +108,13 @@ public class ExampleMod implements ModInitializer {
             double d = client.player.distanceTo(p);
             if (d <= kaRange && d < bestDist) {
                 if (!client.player.canSee(p) && d > kaWallsRange) continue;
-                bestDist = d;
-                auraTarget = p;
+                bestDist = d; auraTarget = p;
             }
         }
         if (auraTarget != null) {
-            Vec3d tPos = auraTarget.getPos().add(0, auraTarget.getHeight() * 0.5, 0);
+            // Рандомизация наводки (обход MineBlaze)
+            double offset = (rnd.nextDouble() - 0.5) * 0.1;
+            Vec3d tPos = auraTarget.getPos().add(offset, auraTarget.getHeight() * (0.4 + rnd.nextDouble() * 0.3), offset);
             updateRotations(client.player, tPos, 100.0f);
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
                 client.interactionManager.attackEntity(client.player, auraTarget);
@@ -227,12 +227,14 @@ public class ExampleMod implements ModInitializer {
         private final Screen p;
         private TextFieldWidget f1, f2;
         public KillAuraSettings(Screen p) { super(Text.literal("")); this.p = p; }
+        @Override
         protected void init() {
             int x = width/2+25;
             f1 = new TextFieldWidget(textRenderer, x, height/2-70, 45, 14, Text.literal(""));
             f2 = new TextFieldWidget(textRenderer, x, height/2-50, 45, 14, Text.literal(""));
             f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange));
             addSelectableChild(f1); addSelectableChild(f2);
+            setInitialFocus(f1); // Даем фокус полю
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
@@ -258,7 +260,8 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2;
-            if(f1.mouseClicked(mx, my, b) || f2.mouseClicked(mx, my, b)) return true;
+            if (f1.mouseClicked(mx, my, b)) { f1.setFocused(true); f2.setFocused(false); return true; }
+            if (f2.mouseClicked(mx, my, b)) { f2.setFocused(true); f1.setFocused(false); return true; }
             if(mx>=x-100 && mx<=x+100) {
                 if(my>=height/2-25 && my<=height/2-11) autoRun = !autoRun;
                 if(my>=height/2-5 && my<=height/2+9) antiVelocity = !antiVelocity;
@@ -269,17 +272,11 @@ public class ExampleMod implements ModInitializer {
             return super.mouseClicked(mx, my, b);
         }
         @Override
-        public boolean charTyped(char chr, int m) {
-            if (f1.charTyped(chr, m) || f2.charTyped(chr, m)) return true;
-            return super.charTyped(chr, m);
-        }
-        @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
                 try { kaRange=Double.parseDouble(f1.getText()); kaWallsRange=Double.parseDouble(f2.getText()); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(p); return true;
             }
-            if (f1.keyPressed(k, s, m) || f2.keyPressed(k, s, m)) return true;
             return super.keyPressed(k, s, m);
         }
     }
@@ -288,6 +285,7 @@ public class ExampleMod implements ModInitializer {
         private final Screen p;
         private TextFieldWidget f1, f2, f3;
         public WaypointSettings(Screen p) { super(Text.literal("")); this.p = p; }
+        @Override
         protected void init() {
             int x = width/2+20;
             f1 = new TextFieldWidget(textRenderer, x, height/2-45, 50, 16, Text.literal(""));
@@ -310,13 +308,10 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
-            if(f1.mouseClicked(mx, my, b) || f2.mouseClicked(mx, my, b) || f3.mouseClicked(mx, my, b)) return true;
+            f1.setFocused(f1.mouseClicked(mx, my, b));
+            f2.setFocused(f2.mouseClicked(mx, my, b));
+            f3.setFocused(f3.mouseClicked(mx, my, b));
             return super.mouseClicked(mx, my, b);
-        }
-        @Override
-        public boolean charTyped(char chr, int m) {
-            if (f1.charTyped(chr, m) || f2.charTyped(chr, m) || f3.charTyped(chr, m)) return true;
-            return super.charTyped(chr, m);
         }
         @Override
         public boolean keyPressed(int k, int s, int m) {
@@ -324,7 +319,6 @@ public class ExampleMod implements ModInitializer {
                 try { wpX=Double.parseDouble(f1.getText()); wpY=Double.parseDouble(f2.getText()); wpZ=Double.parseDouble(f3.getText()); } catch(Exception ignored){}
                 saveConfig(); client.setScreen(p); return true;
             }
-            if (f1.keyPressed(k, s, m) || f2.keyPressed(k, s, m) || f3.keyPressed(k, s, m)) return true;
             return super.keyPressed(k, s, m);
         }
     }
