@@ -5,10 +5,9 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [],
   "client": [
-    "ExampleMixin"
+    "GameRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1
   }
 }
-
