@@ -30,7 +30,7 @@ import java.nio.file.Paths;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния модулей (все на месте)
+    // Состояния всех модулей
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
     
@@ -39,13 +39,12 @@ public class ExampleMod implements ModInitializer {
     public static double wpX = 0, wpY = 64, wpZ = 0;
     public static float shakeIntensity = 0.5f;
 
-    // Клавиши
+    // Клавиши управления
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
     public static int keyAT = GLFW.GLFW_KEY_UNKNOWN, keyWP = GLFW.GLFW_KEY_UNKNOWN;
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    private final Random random = new Random();
 
     @Override
     public void onInitialize() {
@@ -55,7 +54,7 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            // Открытие меню на G или 0
+            // Меню (G или 0)
             if ((isPressed(h, GLFW.GLFW_KEY_G) || isPressed(h, GLFW.GLFW_KEY_0)) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -112,8 +111,8 @@ public class ExampleMod implements ModInitializer {
         }
         
         if (target != null) {
-            // ИСПРАВЛЕНИЕ: Создаем финальную копию для лямбды, чтобы билд не падал
-            final PlayerEntity finalTarget = target; 
+            // ИСПРАВЛЕНИЕ: создаем финальную переменную для использования в лямбде
+            final PlayerEntity finalTarget = target;
             Vec3d targetPos = finalTarget.getPos().add(0, finalTarget.getHeight() * 0.5, 0);
             updateRotations(client.player, targetPos, 100.0f);
 
@@ -122,7 +121,6 @@ public class ExampleMod implements ModInitializer {
             Vec3d look = client.player.getRotationVec(1.0F).multiply(reach);
             Box box = finalTarget.getBoundingBox().expand(0.1);
             
-            // Здесь была ошибка компиляции в логах Github
             EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), box, (e) -> e == finalTarget, reach * reach);
 
             if (client.player.getAttackCooldownProgress(0) >= 1.0f && hit != null) {
@@ -190,8 +188,8 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int nx, int ny, float d) {
             ctx.fill(0, 0, width, height, 0x90000000); 
             int x = width/2 - 90, y = height/2 - 105;
-            ctx.fill(x, y, x + 180, y + 170, 0xFF050505);
-            ctx.drawBorder(x, y, 180, 170, 0xFF00AAFF);
+            ctx.fill(x, y, x + 180, y + 175, 0xFF050505);
+            ctx.drawBorder(x, y, 180, 175, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width/2, y + 10, -1);
             
             String[] n = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "Waypoint", "Anti-Velocity"};
