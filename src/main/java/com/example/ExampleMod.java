@@ -26,7 +26,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
 
-    public static double kaRange = 3.8, kaWallsRange = 3.0;
+    public static double kaRange = 3.3, kaWallsRange = 0.0; // Снижено для легитности
     public static double wpX = 0, wpY = 64, wpZ = 0;
     
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
@@ -59,18 +59,17 @@ public class ExampleMod implements ModInitializer {
             if (fullbright) client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(net.minecraft.entity.effect.StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) handleAutoTotem(client);
             
-            // Безопасный AutoRun
-            if (autoRun && (client.player.forwardSpeed > 0)) {
+            if (autoRun && client.player.forwardSpeed > 0 && !client.player.isSneaking()) {
                 client.player.setSprinting(true);
             }
             
             if (killaura) runAura(client); else auraTarget = null;
             if (triggerbot) runTrigger(client);
 
-            // AntiVelocity (Настроено под AresMine)
             if (antiVelocity && client.player.hurtTime > 0) {
                 Vec3d v = client.player.getVelocity();
-                client.player.setVelocity(v.x * 0.6, v.y, v.z * 0.6);
+                // Для FunTime используем 0.8, чтобы не улететь за AntiKnockback
+                client.player.setVelocity(v.x * 0.8, v.y, v.z * 0.8);
             }
         });
 
@@ -99,8 +98,9 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
+        // Теперь бьет и инвизников
         auraTarget = client.world.getPlayers().stream()
-                .filter(p -> p != client.player && p.isAlive() && !p.isCreative() && !p.isInvisible())
+                .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
                 .filter(p -> client.player.distanceTo(p) <= kaRange)
                 .min(Comparator.comparingDouble(client.player::distanceTo))
                 .orElse(null);
@@ -108,17 +108,21 @@ public class ExampleMod implements ModInitializer {
         if (auraTarget != null) {
             Vec3d targetPos = auraTarget.getBoundingBox().getCenter();
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
-            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            
+            // Расчет углов с добавлением Jitter (рандомной тряски)
+            float jitter = (random.nextFloat() - 0.5f) * 0.4f;
+            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F + jitter;
+            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z))) + jitter;
 
-            // Плавная наводка (Rotation)
             client.player.setYaw(targetYaw);
             client.player.setPitch(targetPitch);
 
-            // Логика ударов (Cooldown 1.0f)
-            if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                // Бьем только при падении для критов, либо если на земле
-                if (client.player.isOnGround() || client.player.getVelocity().y < 0) {
+            // Рандомная задержка для обхода проверки на CPS/Timing
+            float waitValue = 1.0f + (random.nextFloat() * 0.12f); 
+            
+            if (client.player.getAttackCooldownProgress(0) >= waitValue) {
+                // Проверка на видимость (не бить сквозь стены)
+                if (client.player.canSee(auraTarget)) {
                     client.interactionManager.attackEntity(client.player, auraTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -134,7 +138,7 @@ public class ExampleMod implements ModInitializer {
             client.player, start, end, client.player.getBoundingBox().stretch(client.player.getRotationVec(1.0f).multiply(r)).expand(1.0),
             (e) -> e instanceof PlayerEntity && e.isAlive(), r * r);
         
-        if (hit != null && client.player.getAttackCooldownProgress(0) >= (tbCrits ? 1.0f : 0.92f)) {
+        if (hit != null && client.player.getAttackCooldownProgress(0) >= (tbCrits ? 1.0f : 0.95f)) {
             client.interactionManager.attackEntity(client.player, hit.getEntity());
             client.player.swingHand(Hand.MAIN_HAND);
         }
