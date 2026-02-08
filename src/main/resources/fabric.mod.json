@@ -7,6 +7,9 @@
   "authors": ["aoksoryanchik"],
   "contact": {},
   "license": "MIT",
+  "mixins": [
+    "bubble.mixins.json"
+  ],
   "environment": "*",
   "entrypoints": {
     "main": ["com.example.ExampleMod"]
