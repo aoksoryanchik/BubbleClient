@@ -60,7 +60,7 @@ public class ExampleMod implements ModInitializer {
 
             if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
 
-            // Исправленный ESP
+            // ESP Logic - Принудительное обновление каждый тик
             for (Entity e : client.world.getEntities()) {
                 if (e instanceof PlayerEntity && e != client.player) {
                     e.setGlowing(esp);
@@ -79,8 +79,8 @@ public class ExampleMod implements ModInitializer {
 
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             
-            // Улучшенный автототем (срабатывает при < 10 HP для надежности)
-            if (autoTotem && client.player.getHealth() <= 10.0f) handleAutoTotem(client);
+            // Улучшенный Автототем (срабатывает чуть раньше для пинга)
+            if (autoTotem && client.player.getHealth() <= 8.0f) handleAutoTotem(client);
             
             if (autoRun && (client.player.forwardSpeed > 0 || killaura)) client.player.setSprinting(true);
 
@@ -126,9 +126,12 @@ public class ExampleMod implements ModInitializer {
             }
         }
         if (target != null) {
-            float randomHeight = 0.35f + random.nextFloat() * 0.3f;
+            // Рандомная точка удара (голова/грудь)
+            float randomHeight = 0.4f + random.nextFloat() * 0.4f;
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * randomHeight, 0);
+            
             updateRotations(client.player, targetPos);
+            
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
@@ -141,13 +144,19 @@ public class ExampleMod implements ModInitializer {
         double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
+
+        // SMOOTH ROTATIONS (0.2f = 20% доводки в тик)
+        float smooth = 0.22f;
+        float deltaYaw = MathHelper.wrapDegrees(tYaw - player.getYaw());
+        float deltaPitch = tPitch - player.getPitch();
+
+        player.setYaw(player.getYaw() + deltaYaw * smooth);
+        player.setPitch(player.getPitch() + deltaPitch * smooth);
+
         if (screenShake) {
-            tYaw += (random.nextFloat() - 0.5f) * shakeIntensity;
-            tPitch += (random.nextFloat() - 0.5f) * shakeIntensity;
+            player.setYaw(player.getYaw() + (random.nextFloat() - 0.5f) * (shakeIntensity / 2));
+            player.setPitch(player.getPitch() + (random.nextFloat() - 0.5f) * (shakeIntensity / 2));
         }
-        float speed = 0.25f; // Замедлил для беспалевности
-        player.setYaw(player.getYaw() + MathHelper.clamp(MathHelper.wrapDegrees(tYaw - player.getYaw()), -speed * 45, speed * 45));
-        player.setPitch(player.getPitch() + MathHelper.clamp(MathHelper.wrapDegrees(tPitch - player.getPitch()), -speed * 45, speed * 45));
     }
 
     private void runTrigger(MinecraftClient client) {
@@ -165,7 +174,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void sendNotify(String module, boolean state) {
-        if (MinecraftClient.getInstance().player != null) {
+        if (MinecraftClient.getInstance().player != null && !isDestructed) {
             MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[Bubble] §f" + module + " : " + (state ? "§aON" : "§cOFF")), true);
         }
     }
@@ -184,14 +193,14 @@ public class ExampleMod implements ModInitializer {
         ms.pop();
     }
 
-    // --- GUI СЕКЦИЯ (БЕЗ РАЗМЫТИЯ) ---
+    // --- GUI БЕЗ РАЗМЫТИЯ ---
 
     public static class BubbleMenu extends Screen {
         private String bindingModule = null;
         public BubbleMenu() { super(Text.literal("")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xAA000000); // Четкий темный фон без блюра
+            ctx.fill(0, 0, width, height, 0x95000000); // Обычный темный фон
             int x = width / 2 - 90, y = height / 2 - 110;
             ctx.fill(x, y, x + 180, y + 200, 0xFF050505);
             ctx.drawBorder(x, y, 180, 200, 0xFF00AAFF);
@@ -204,9 +213,9 @@ public class ExampleMod implements ModInitializer {
             for (int i = 0; i < n.length; i++) {
                 int iy = y + 35 + i * 22;
                 boolean h = mx >= x + 10 && mx <= x + 170 && my >= iy && my <= iy + 18;
-                ctx.fill(x + 10, iy, x + 170, iy + 18, h ? 0xFF202020 : 0xFF101010);
-                String kName = (bindingModule != null && bindingModule.equals(n[i])) ? "..." : (keys[i] == -1 ? "NONE" : GLFW.glfwGetKeyName(keys[i], 0));
-                ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + kName + "]", x + 15, iy + 5, s[i] ? 0xFF00FF00 : 0xFFFF3333);
+                ctx.fill(x + 10, iy, x + 170, iy + 18, h ? 0xFF222222 : 0xFF111111);
+                String keyName = (bindingModule != null && bindingModule.equals(n[i])) ? "..." : (keys[i] == -1 ? "NONE" : GLFW.glfwGetKeyName(keys[i], 0));
+                ctx.drawTextWithShadow(textRenderer, n[i] + " §7[" + keyName + "]", x + 15, iy + 5, s[i] ? 0xFF00FF00 : 0xFFFF3333);
                 if (i == 0 || i == 6) ctx.drawTextWithShadow(textRenderer, "⚙", x + 160, iy + 5, -1);
             }
         }
@@ -260,17 +269,18 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xCC000000);
             int x = width / 2, y = height / 2;
-            ctx.fill(x - 120, y - 80, x + 120, y + 80, 0xFF0A0A0A);
-            ctx.drawBorder(x - 120, y - 80, 240, 160, 0xFF00AAFF);
+            ctx.fill(x - 120, y - 90, x + 120, y + 80, 0xFF0A0A0A);
+            ctx.drawBorder(x - 120, y - 90, 240, 170, 0xFF00AAFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "§bKILL AURA", x, y - 80, -1);
+            
             ctx.drawTextWithShadow(textRenderer, "Range:", x - 20, y - 37, -1);
             ctx.drawTextWithShadow(textRenderer, "Walls:", x - 20, y - 17, -1);
             
-            // Боковая панель конфигов
+            // Серверные конфиги
             String[] cfgs = {"AresMine", "MineBlaze", "FunTime"};
             for (int i = 0; i < 3; i++) {
                 int cy = y - 40 + i * 25;
-                boolean h = mx >= x - 110 && mx <= x - 40 && my >= cy && my <= cy + 18;
-                ctx.fill(x - 110, cy, x - 40, cy + 18, h ? 0xFF303030 : 0xFF151515);
+                ctx.fill(x - 110, cy, x - 40, cy + 18, 0xFF151515);
                 ctx.drawCenteredTextWithShadow(textRenderer, cfgs[i], x - 75, cy + 5, 0xFF00AAFF);
             }
             super.render(ctx, mx, my, d);
@@ -281,9 +291,9 @@ public class ExampleMod implements ModInitializer {
             for (int i = 0; i < 3; i++) {
                 int cy = y - 40 + i * 25;
                 if (mx >= x - 110 && mx <= x - 40 && my >= cy && my <= cy + 18) {
-                    if (i == 0) { kaRange = 3.8; kaWallsRange = 3.0; }
-                    if (i == 1) { kaRange = 3.4; kaWallsRange = 2.8; }
-                    if (i == 2) { kaRange = 3.1; kaWallsRange = 2.5; }
+                    if (i == 0) { kaRange = 3.7; kaWallsRange = 3.0; } // Ares
+                    if (i == 1) { kaRange = 3.4; kaWallsRange = 2.8; } // Blaze
+                    if (i == 2) { kaRange = 3.1; kaWallsRange = 2.5; } // Fun
                     f1.setText(String.valueOf(kaRange)); f2.setText(String.valueOf(kaWallsRange));
                     return true;
                 }
@@ -336,7 +346,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // Сохранение и загрузка (без изменений структуры, чтобы конфиг не слетел)
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange + ":" + kaWallsRange + ":" + wpX + ":" + wpY + ":" + wpZ + ":" + vmX + ":" + vmY + ":" + vmZ + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + keyWP + ":" + shakeIntensity + ":" + antiVelocity + ":" + tbCrits + ":" + vmLX + ":" + vmLY + ":" + vmLZ + ":" + keyESP + ":" + keyVM);
@@ -364,3 +373,4 @@ public class ExampleMod implements ModInitializer {
         if (!d) keyStates[k] = false; return false;
     }
 }
+
