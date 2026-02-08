@@ -4,7 +4,6 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -14,6 +13,7 @@ import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.item.Items;
+import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -40,6 +40,10 @@ public class ExampleMod implements ModInitializer {
     private static final String CONFIG_FILE = "bubble_config.txt";
     private static final Random rnd = new Random();
     public static PlayerEntity auraTarget = null;
+    
+    // Переменные для Silent Rotations
+    private static float silentYaw, silentPitch;
+    private static boolean needSilent = false;
 
     @Override
     public void onInitialize() {
@@ -67,7 +71,7 @@ public class ExampleMod implements ModInitializer {
                 client.player.setSprinting(true);
             }
 
-            if (killaura) runAura(client); else auraTarget = null;
+            if (killaura) runAura(client); else { auraTarget = null; needSilent = false; }
             if (triggerbot) runTrigger(client);
 
             if (antiVelocity && client.player.hurtTime > 0) {
@@ -110,22 +114,24 @@ public class ExampleMod implements ModInitializer {
                 bestDist = d; auraTarget = p;
             }
         }
+        
         if (auraTarget != null) {
-            // Предикт и наводка
-            Vec3d targetVec = auraTarget.getPos().add(
-                (auraTarget.getX() - auraTarget.prevX) * 2.0,
-                auraTarget.getHeight() * 0.5,
-                (auraTarget.getZ() - auraTarget.prevZ) * 2.0
-            );
-            updateRotations(client.player, targetVec, 180.0f);
-            
+            // SILENT ROTATIONS: Рассчитываем углы, но не меняем их у игрока визуально
+            Vec3d targetVec = auraTarget.getPos().add(0, auraTarget.getHeight() * 0.5, 0);
+            Vec3d diff = targetVec.subtract(client.player.getEyePos());
+            silentYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
+            silentPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            needSilent = true;
+
+            // Отправляем пакет поворота на сервер перед ударом
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(silentYaw, silentPitch, client.player.isOnGround()));
+
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                // Дополнительная проверка на дистанцию перед ударом (чтобы не миссать)
-                if (client.player.distanceTo(auraTarget) <= kaRange) {
-                    client.interactionManager.attackEntity(client.player, auraTarget);
-                    client.player.swingHand(Hand.MAIN_HAND);
-                }
+                client.interactionManager.attackEntity(client.player, auraTarget);
+                client.player.swingHand(Hand.MAIN_HAND);
             }
+        } else {
+            needSilent = false;
         }
     }
 
@@ -141,14 +147,6 @@ public class ExampleMod implements ModInitializer {
                 client.player.swingHand(Hand.MAIN_HAND);
             }
         }
-    }
-
-    private void updateRotations(PlayerEntity player, Vec3d target, float speed) {
-        Vec3d diff = target.subtract(player.getEyePos());
-        float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-        player.setYaw(player.getYaw() + MathHelper.clamp(MathHelper.wrapDegrees(tYaw - player.getYaw()), -speed, speed));
-        player.setPitch(player.getPitch() + MathHelper.clamp(MathHelper.wrapDegrees(tPitch - player.getPitch()), -speed, speed));
     }
 
     private void sendNotify(String m, boolean s) {
