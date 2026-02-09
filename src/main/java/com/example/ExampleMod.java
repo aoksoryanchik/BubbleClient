@@ -97,12 +97,13 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
+        // Аура активна, только если ты пытаешься ударить (зажат ЛКМ)
         if (!client.options.attackKey.isPressed()) {
             auraTarget = null;
             return;
         }
 
-        // Рандомизация дистанции для обхода ReachCheck (Range до Range-0.4)
+        // Динамический ренж для обхода античита (разброс 0.4 блока)
         double currentDynamicRange = kaRange - (random.nextDouble() * 0.4);
         double currentDynamicWalls = kaWallsRange > 0 ? kaWallsRange - (random.nextDouble() * 0.4) : 0;
 
@@ -113,30 +114,32 @@ public class ExampleMod implements ModInitializer {
                 .orElse(null);
 
         if (auraTarget != null) {
-            // Рандомизация точки удара внутри хитбокса (чтобы не бить всегда в одну точку)
-            double rndX = (random.nextDouble() - 0.5) * 0.2;
-            double rndY = (random.nextDouble() - 0.5) * 0.3;
-            double rndZ = (random.nextDouble() - 0.5) * 0.2;
-
-            Vec3d targetPos = auraTarget.getBoundingBox().getCenter().add(rndX, rndY, rndZ);
+            // Предикшн: учитываем движение врага и наше собственное движение
+            Vec3d targetVel = auraTarget.getVelocity();
+            Vec3d myVel = client.player.getVelocity();
             
-            // Предикшн движения
-            targetPos = targetPos.add(auraTarget.getVelocity().x * 1.5, 0, auraTarget.getVelocity().z * 1.5);
-
+            // Смещение точки удара (рандом внутри хитбокса + предикшн)
+            Vec3d targetPos = auraTarget.getBoundingBox().getCenter().add(
+                (targetVel.x - myVel.x) * 2.2, 
+                (targetVel.y - myVel.y) * 1.5, // Коррекция для прыжков
+                (targetVel.z - myVel.z) * 2.2
+            ).add((random.nextDouble()-0.5)*0.1, (random.nextDouble()-0.5)*0.1, (random.nextDouble()-0.5)*0.1);
+            
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавная доводка
+            // Улучшенная плавная доводка (Magnetic Aim)
             float yawDiff = MathHelper.wrapDegrees(targetYaw - client.player.getYaw());
             float pitchDiff = targetPitch - client.player.getPitch();
-            float turnSpeed = 0.65f; 
-            
-            client.player.setYaw(client.player.getYaw() + yawDiff * turnSpeed);
-            client.player.setPitch(client.player.getPitch() + pitchDiff * turnSpeed);
 
-            // Удар с проверкой угла и кулдауна
-            if (Math.abs(yawDiff) < 35 && client.player.getAttackCooldownProgress(0) >= 1.0f) {
+            // Скорость поворота 0.75 - достаточно быстро для прыжков, но плавно для античита
+            float speed = 0.75f;
+            client.player.setYaw(client.player.getYaw() + yawDiff * speed);
+            client.player.setPitch(client.player.getPitch() + pitchDiff * speed);
+
+            // Проверка: бьем, если прицел наведен и кулдаун прошел
+            if (Math.abs(yawDiff) < 30 && client.player.getAttackCooldownProgress(0) >= 1.0f) {
                 client.interactionManager.attackEntity(client.player, auraTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -193,7 +196,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI (Без изменений) ---
+    // --- GUI (Полный код меню) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
