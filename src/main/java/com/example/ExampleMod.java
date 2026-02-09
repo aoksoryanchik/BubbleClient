@@ -97,7 +97,13 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
-        // Убрана проверка !p.isInvisible(), теперь бьет невидимок
+        // Наводка и работа ауры теперь ТОЛЬКО при нажатой ЛКМ
+        if (!client.options.attackKey.isPressed()) {
+            auraTarget = null;
+            return;
+        }
+
+        // Бьет всех игроков, включая невидимок
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
                 .filter(p -> client.player.distanceTo(p) <= (client.player.canSee(p) ? kaRange : kaWallsRange))
@@ -110,12 +116,12 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Улучшенная наводка
+            // Плавное вращение головы к цели
             client.player.setYaw(targetYaw);
             client.player.setPitch(targetPitch);
 
+            // Логика автоматического удара при наводке
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                // Оптимизация под криты
                 if (client.player.fallDistance > 0 || client.player.isOnGround()) {
                     client.interactionManager.attackEntity(client.player, auraTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
