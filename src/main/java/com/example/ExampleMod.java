@@ -97,12 +97,13 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
-        // Аура срабатывает только если зажат ЛКМ (имитация клика)
+        // Проверяем нажатие ЛКМ
         if (!client.options.attackKey.isPressed()) {
             auraTarget = null;
             return;
         }
 
+        // Поиск цели (приоритет — ближайший)
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
                 .filter(p -> client.player.distanceTo(p) <= (client.player.canSee(p) ? kaRange : kaWallsRange))
@@ -110,32 +111,37 @@ public class ExampleMod implements ModInitializer {
                 .orElse(null);
 
         if (auraTarget != null) {
-            // Рассчитываем позицию с небольшим случайным смещением (анти-античит)
+            // Центр хитбокса цели с учетом небольшого движения (предикшн)
             Vec3d targetPos = auraTarget.getBoundingBox().getCenter().add(
-                (random.nextDouble() - 0.5) * 0.1, 
-                (random.nextDouble() - 0.5) * 0.1, 
-                (random.nextDouble() - 0.5) * 0.1
+                auraTarget.getVelocity().x * 2, 
+                0, 
+                auraTarget.getVelocity().z * 2
             );
             
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // ПЛАВНАЯ НАВОДКА (Mouse Simulation)
-            // Вместо мгновенного поворота, мы двигаем камеру на 40-70% пути к цели за один тик
-            float speed = 0.5f + random.nextFloat() * 0.2f; 
-            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(targetYaw - client.player.getYaw()) * speed);
-            client.player.setPitch(client.player.getPitch() + (targetPitch - client.player.getPitch()) * speed);
+            // Улучшенная наводка: Магнитный Аим
+            // Вычисляем разницу углов
+            float yawDiff = MathHelper.wrapDegrees(targetYaw - client.player.getYaw());
+            float pitchDiff = targetPitch - client.player.getPitch();
 
-            // Проверка: смотрим ли мы примерно на цель перед ударом
-            float angleDiff = Math.abs(MathHelper.wrapDegrees(targetYaw - client.player.getYaw()));
+            // Скорость доводки: чем дальше прицел, тем сильнее он тянется (умное сглаживание)
+            float turnSpeed = 0.65f; // Настрой под себя (0.1 - слабо, 1.0 - мгновенно)
             
-            if (angleDiff < 20.0f && client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                // Прыжок/Падение для критов (AresMine любит криты)
-                if (client.player.fallDistance > 0 || client.player.isOnGround()) {
-                    client.interactionManager.attackEntity(client.player, auraTarget);
-                    client.player.swingHand(Hand.MAIN_HAND);
+            client.player.setYaw(client.player.getYaw() + yawDiff * turnSpeed);
+            client.player.setPitch(client.player.getPitch() + pitchDiff * turnSpeed);
+
+            // Совершаем удар только если прицел достаточно близко к цели (чтобы не было палевных ударов)
+            if (Math.abs(yawDiff) < 30 && client.player.getAttackCooldownProgress(0) >= 1.0f) {
+                // Прыжок для критов, если мы на земле (важно для Ares/MineBlaze)
+                if (client.player.isOnGround() && !client.player.isSubmergedInWater()) {
+                    // Опционально: можно добавить микро-прыжок тут
                 }
+                
+                client.interactionManager.attackEntity(client.player, auraTarget);
+                client.player.swingHand(Hand.MAIN_HAND);
             }
         }
     }
@@ -348,4 +354,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
