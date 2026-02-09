@@ -83,7 +83,7 @@ public class ExampleMod implements ModInitializer {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
         for (PlayerEntity p : client.world.getPlayers()) {
-            // Бьет невидимок (проверка p.isInvisible() удалена)
+            // Киллаура теперь бьет невидимых игроков
             if (p == client.player || !p.isAlive() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
             if (d <= kaRange && d < bestDist) {
@@ -138,7 +138,7 @@ public class ExampleMod implements ModInitializer {
     private void renderWaypoint(WorldRenderContext context) {
         if (!waypointActive) return;
         MinecraftClient client = MinecraftClient.getInstance();
-        // ИСПРАВЛЕНО: используем getPos().distanceTo() для работы с Vec3d
+        // ИСПРАВЛЕНИЕ ОШИБКИ ИЗ ЛОГА 11724.jpg: используем Vec3d для дистанции
         double d = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
         MatrixStack ms = context.matrixStack();
         ms.push();
