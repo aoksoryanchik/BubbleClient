@@ -97,49 +97,46 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
-        // Проверяем нажатие ЛКМ
         if (!client.options.attackKey.isPressed()) {
             auraTarget = null;
             return;
         }
 
-        // Поиск цели (приоритет — ближайший)
+        // Рандомизация дистанции для обхода ReachCheck (Range до Range-0.4)
+        double currentDynamicRange = kaRange - (random.nextDouble() * 0.4);
+        double currentDynamicWalls = kaWallsRange > 0 ? kaWallsRange - (random.nextDouble() * 0.4) : 0;
+
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
-                .filter(p -> client.player.distanceTo(p) <= (client.player.canSee(p) ? kaRange : kaWallsRange))
+                .filter(p -> client.player.distanceTo(p) <= (client.player.canSee(p) ? currentDynamicRange : currentDynamicWalls))
                 .min(Comparator.comparingDouble(client.player::distanceTo))
                 .orElse(null);
 
         if (auraTarget != null) {
-            // Центр хитбокса цели с учетом небольшого движения (предикшн)
-            Vec3d targetPos = auraTarget.getBoundingBox().getCenter().add(
-                auraTarget.getVelocity().x * 2, 
-                0, 
-                auraTarget.getVelocity().z * 2
-            );
+            // Рандомизация точки удара внутри хитбокса (чтобы не бить всегда в одну точку)
+            double rndX = (random.nextDouble() - 0.5) * 0.2;
+            double rndY = (random.nextDouble() - 0.5) * 0.3;
+            double rndZ = (random.nextDouble() - 0.5) * 0.2;
+
+            Vec3d targetPos = auraTarget.getBoundingBox().getCenter().add(rndX, rndY, rndZ);
             
+            // Предикшн движения
+            targetPos = targetPos.add(auraTarget.getVelocity().x * 1.5, 0, auraTarget.getVelocity().z * 1.5);
+
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Улучшенная наводка: Магнитный Аим
-            // Вычисляем разницу углов
+            // Плавная доводка
             float yawDiff = MathHelper.wrapDegrees(targetYaw - client.player.getYaw());
             float pitchDiff = targetPitch - client.player.getPitch();
-
-            // Скорость доводки: чем дальше прицел, тем сильнее он тянется (умное сглаживание)
-            float turnSpeed = 0.65f; // Настрой под себя (0.1 - слабо, 1.0 - мгновенно)
+            float turnSpeed = 0.65f; 
             
             client.player.setYaw(client.player.getYaw() + yawDiff * turnSpeed);
             client.player.setPitch(client.player.getPitch() + pitchDiff * turnSpeed);
 
-            // Совершаем удар только если прицел достаточно близко к цели (чтобы не было палевных ударов)
-            if (Math.abs(yawDiff) < 30 && client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                // Прыжок для критов, если мы на земле (важно для Ares/MineBlaze)
-                if (client.player.isOnGround() && !client.player.isSubmergedInWater()) {
-                    // Опционально: можно добавить микро-прыжок тут
-                }
-                
+            // Удар с проверкой угла и кулдауна
+            if (Math.abs(yawDiff) < 35 && client.player.getAttackCooldownProgress(0) >= 1.0f) {
                 client.interactionManager.attackEntity(client.player, auraTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -196,7 +193,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI ---
+    // --- GUI (Без изменений) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -354,3 +351,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
