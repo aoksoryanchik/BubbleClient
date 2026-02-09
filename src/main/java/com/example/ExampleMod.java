@@ -97,13 +97,15 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
-        // Наводка и работа ауры теперь ТОЛЬКО при нажатой ЛКМ
-        if (!client.options.attackKey.isPressed()) {
+        // Теперь проверяем: если ты кликнул ИЛИ зажал ЛКМ
+        // Это гарантирует, что на одиночный клик наводка тоже сработает мгновенно
+        boolean isAttacking = client.options.attackKey.isPressed() || client.mouse.wasLeftButtonClicked();
+
+        if (!isAttacking) {
             auraTarget = null;
             return;
         }
 
-        // Бьет всех игроков, включая невидимок
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
                 .filter(p -> client.player.distanceTo(p) <= (client.player.canSee(p) ? kaRange : kaWallsRange))
@@ -116,11 +118,11 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавное вращение головы к цели
+            // Мгновенная наводка при клике
             client.player.setYaw(targetYaw);
             client.player.setPitch(targetPitch);
 
-            // Логика автоматического удара при наводке
+            // Удар происходит, если кулдаун прошел
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
                 if (client.player.fallDistance > 0 || client.player.isOnGround()) {
                     client.interactionManager.attackEntity(client.player, auraTarget);
