@@ -97,14 +97,10 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
-        if (!client.options.attackKey.isPressed()) {
-            auraTarget = null;
-            return;
-        }
-
         // Рандомная дистанция (Range до Range - 0.4) для обхода античита
         double dynamicRange = kaRange - (random.nextDouble() * 0.4);
 
+        // Поиск цели без проверки нажатия клавиш (Полный автомат)
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
                 .filter(p -> client.player.distanceTo(p) <= (client.player.canSee(p) ? dynamicRange : kaWallsRange))
@@ -112,34 +108,33 @@ public class ExampleMod implements ModInitializer {
                 .orElse(null);
 
         if (auraTarget != null) {
-            // Улучшенный предикшн для прыжков (учитываем Y-скорость)
+            // Предикшн позиции
             Vec3d targetPos = auraTarget.getBoundingBox().getCenter().add(
                 auraTarget.getVelocity().x * 2.0,
-                auraTarget.getVelocity().y,
+                auraTarget.getVelocity().y * 1.1,
                 auraTarget.getVelocity().z * 2.0
             );
 
-            // Рандомизация точки удара внутри тела
-            targetPos = targetPos.add((random.nextDouble()-0.5)*0.1, (random.nextDouble()-0.5)*0.15, (random.nextDouble()-0.5)*0.1);
+            // Рандомизация точки внутри хитбокса
+            targetPos = targetPos.add((random.nextDouble()-0.5)*0.1, (random.nextDouble()-0.5)*0.1, (random.nextDouble()-0.5)*0.1);
 
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Сглаживание и обход "задирания" головы
             float yawDiff = MathHelper.wrapDegrees(targetYaw - client.player.getYaw());
             float pitchDiff = MathHelper.wrapDegrees(targetPitch - client.player.getPitch());
 
-            // Скорость наводки выше, когда ты прыгаешь, чтобы не терять фокус
-            float speed = client.player.isOnGround() ? 0.6f : 0.85f;
-            
+            // Плавная наводка
+            float speed = client.player.isOnGround() ? 0.7f : 0.9f;
             client.player.setYaw(client.player.getYaw() + yawDiff * speed);
             client.player.setPitch(MathHelper.clamp(client.player.getPitch() + pitchDiff * speed, -90f, 90f));
 
-            // ЛОГИКА КРИТОВ: бьем только если падаем или стоим на земле
-            boolean canCrit = client.player.fallDistance > 0 || client.player.isOnGround();
+            // Авто-удар с учетом КД и Критов
+            // canAttack - разрешаем удар, если мы в фазе падения (для крита) или стоим
+            boolean canAttack = client.player.fallDistance > 0 || client.player.isOnGround();
             
-            if (Math.abs(yawDiff) < 35 && client.player.getAttackCooldownProgress(0) >= 0.95f && canCrit) {
+            if (Math.abs(yawDiff) < 40 && client.player.getAttackCooldownProgress(0) >= 0.98f && canAttack) {
                 client.interactionManager.attackEntity(client.player, auraTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -196,7 +191,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI ---
+    // --- GUI (Полная версия меню) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
