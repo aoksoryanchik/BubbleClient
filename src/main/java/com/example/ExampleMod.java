@@ -97,11 +97,8 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
-        // Теперь проверяем: если ты кликнул ИЛИ зажал ЛКМ
-        // Это гарантирует, что на одиночный клик наводка тоже сработает мгновенно
-        boolean isAttacking = client.options.attackKey.isPressed() || client.mouse.wasLeftButtonClicked();
-
-        if (!isAttacking) {
+        // Аура срабатывает только если зажат ЛКМ (имитация клика)
+        if (!client.options.attackKey.isPressed()) {
             auraTarget = null;
             return;
         }
@@ -113,17 +110,28 @@ public class ExampleMod implements ModInitializer {
                 .orElse(null);
 
         if (auraTarget != null) {
-            Vec3d targetPos = auraTarget.getBoundingBox().getCenter();
+            // Рассчитываем позицию с небольшим случайным смещением (анти-античит)
+            Vec3d targetPos = auraTarget.getBoundingBox().getCenter().add(
+                (random.nextDouble() - 0.5) * 0.1, 
+                (random.nextDouble() - 0.5) * 0.1, 
+                (random.nextDouble() - 0.5) * 0.1
+            );
+            
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Мгновенная наводка при клике
-            client.player.setYaw(targetYaw);
-            client.player.setPitch(targetPitch);
+            // ПЛАВНАЯ НАВОДКА (Mouse Simulation)
+            // Вместо мгновенного поворота, мы двигаем камеру на 40-70% пути к цели за один тик
+            float speed = 0.5f + random.nextFloat() * 0.2f; 
+            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(targetYaw - client.player.getYaw()) * speed);
+            client.player.setPitch(client.player.getPitch() + (targetPitch - client.player.getPitch()) * speed);
 
-            // Удар происходит, если кулдаун прошел
-            if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
+            // Проверка: смотрим ли мы примерно на цель перед ударом
+            float angleDiff = Math.abs(MathHelper.wrapDegrees(targetYaw - client.player.getYaw()));
+            
+            if (angleDiff < 20.0f && client.player.getAttackCooldownProgress(0) >= 1.0f) {
+                // Прыжок/Падение для критов (AresMine любит криты)
                 if (client.player.fallDistance > 0 || client.player.isOnGround()) {
                     client.interactionManager.attackEntity(client.player, auraTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
