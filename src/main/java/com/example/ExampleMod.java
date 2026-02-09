@@ -36,6 +36,9 @@ public class ExampleMod implements ModInitializer {
     private static final String CONFIG_FILE = "bubble_config.txt";
     private static final Random random = new Random();
     public static PlayerEntity auraTarget = null;
+    
+    // Переменная для хранения рандомного порога удара
+    private static float currentAttackThreshold = 0.95f;
 
     @Override
     public void onInitialize() {
@@ -97,10 +100,9 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
-        // Рандомная дистанция (Range до Range - 0.4) для обхода античита
-        double dynamicRange = kaRange - (random.nextDouble() * 0.4);
+        // Динамический ренж
+        double dynamicRange = kaRange - (random.nextDouble() * 0.35);
 
-        // Поиск цели без проверки нажатия клавиш (Полный автомат)
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
                 .filter(p -> client.player.distanceTo(p) <= (client.player.canSee(p) ? dynamicRange : kaWallsRange))
@@ -108,14 +110,14 @@ public class ExampleMod implements ModInitializer {
                 .orElse(null);
 
         if (auraTarget != null) {
-            // Предикшн позиции
+            // Предикшн
             Vec3d targetPos = auraTarget.getBoundingBox().getCenter().add(
-                auraTarget.getVelocity().x * 2.0,
-                auraTarget.getVelocity().y * 1.1,
-                auraTarget.getVelocity().z * 2.0
+                auraTarget.getVelocity().x * 2.1,
+                auraTarget.getVelocity().y,
+                auraTarget.getVelocity().z * 2.1
             );
 
-            // Рандомизация точки внутри хитбокса
+            // Рандом точки удара
             targetPos = targetPos.add((random.nextDouble()-0.5)*0.1, (random.nextDouble()-0.5)*0.1, (random.nextDouble()-0.5)*0.1);
 
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
@@ -125,19 +127,26 @@ public class ExampleMod implements ModInitializer {
             float yawDiff = MathHelper.wrapDegrees(targetYaw - client.player.getYaw());
             float pitchDiff = MathHelper.wrapDegrees(targetPitch - client.player.getPitch());
 
-            // Плавная наводка
-            float speed = client.player.isOnGround() ? 0.7f : 0.9f;
+            // Быстрая доводка (0.95 в прыжке для максимальной точности)
+            float speed = client.player.isOnGround() ? 0.75f : 0.95f;
             client.player.setYaw(client.player.getYaw() + yawDiff * speed);
             client.player.setPitch(MathHelper.clamp(client.player.getPitch() + pitchDiff * speed, -90f, 90f));
 
-            // Авто-удар с учетом КД и Критов
-            // canAttack - разрешаем удар, если мы в фазе падения (для крита) или стоим
-            boolean canAttack = client.player.fallDistance > 0 || client.player.isOnGround();
-            
-            if (Math.abs(yawDiff) < 40 && client.player.getAttackCooldownProgress(0) >= 0.98f && canAttack) {
-                client.interactionManager.attackEntity(client.player, auraTarget);
-                client.player.swingHand(Hand.MAIN_HAND);
+            // ЛОГИКА РАНДОМНОГО УДАРА
+            // Бьем, если кулдаун прошел порог (0.93 - 0.98)
+            if (Math.abs(yawDiff) < 45 && client.player.getAttackCooldownProgress(0) >= currentAttackThreshold) {
+                // Условие для критов: если мы в прыжке, то только при падении, если на земле - всегда
+                if (client.player.isOnGround() || client.player.fallDistance > 0) {
+                    client.interactionManager.attackEntity(client.player, auraTarget);
+                    client.player.swingHand(Hand.MAIN_HAND);
+                    
+                    // Генерируем новый порог для следующего удара (от 0.93 до 0.98)
+                    currentAttackThreshold = 0.93f + (random.nextFloat() * 0.05f);
+                }
             }
+        } else {
+            // Сбрасываем порог, если цели нет
+            currentAttackThreshold = 0.95f;
         }
     }
 
@@ -149,9 +158,10 @@ public class ExampleMod implements ModInitializer {
             client.player, start, end, client.player.getBoundingBox().stretch(client.player.getRotationVec(1.0f).multiply(r)).expand(1.0),
             (e) -> e instanceof PlayerEntity && e.isAlive(), r * r);
         
-        if (hit != null && client.player.getAttackCooldownProgress(0) >= (tbCrits ? 1.0f : 0.92f)) {
+        if (hit != null && client.player.getAttackCooldownProgress(0) >= currentAttackThreshold) {
             client.interactionManager.attackEntity(client.player, hit.getEntity());
             client.player.swingHand(Hand.MAIN_HAND);
+            currentAttackThreshold = 0.93f + (random.nextFloat() * 0.05f);
         }
     }
 
@@ -191,7 +201,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI (Полная версия меню) ---
+    // --- GUI ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
