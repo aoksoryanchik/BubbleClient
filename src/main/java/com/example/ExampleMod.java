@@ -102,49 +102,44 @@ public class ExampleMod implements ModInitializer {
             return;
         }
 
-        // Рандомная дистанция для обхода Reach
-        double dynamicRange = kaRange - (random.nextDouble() * 0.45);
+        // Рандомная дистанция (Range до Range - 0.4) для обхода античита
+        double dynamicRange = kaRange - (random.nextDouble() * 0.4);
 
-        // Поиск лучшей цели (по дистанции и углу взгляда)
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
                 .filter(p -> client.player.distanceTo(p) <= (client.player.canSee(p) ? dynamicRange : kaWallsRange))
-                .min(Comparator.comparingDouble(p -> {
-                    // Приоритет тем, на кого мы уже смотрим
-                    Vec3d diff = p.getPos().add(0, 1.5, 0).subtract(client.player.getEyePos());
-                    float ty = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-                    return Math.abs(MathHelper.wrapDegrees(ty - client.player.getYaw())) + client.player.distanceTo(p) * 2;
-                }))
+                .min(Comparator.comparingDouble(p -> client.player.distanceTo(p)))
                 .orElse(null);
 
         if (auraTarget != null) {
-            // Предикшн и смещение
-            Vec3d vel = auraTarget.getVelocity().subtract(client.player.getVelocity());
+            // Улучшенный предикшн для прыжков (учитываем Y-скорость)
             Vec3d targetPos = auraTarget.getBoundingBox().getCenter().add(
-                vel.x * 2.0, 
-                vel.y * 1.2, 
-                vel.z * 2.0
+                auraTarget.getVelocity().x * 2.0,
+                auraTarget.getVelocity().y,
+                auraTarget.getVelocity().z * 2.0
             );
 
-            // Рандом точки удара
-            targetPos = targetPos.add((random.nextDouble()-0.5)*0.15, (random.nextDouble()-0.5)*0.1, (random.nextDouble()-0.5)*0.15);
+            // Рандомизация точки удара внутри тела
+            targetPos = targetPos.add((random.nextDouble()-0.5)*0.1, (random.nextDouble()-0.5)*0.15, (random.nextDouble()-0.5)*0.1);
 
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // ПЛАВНАЯ КОРРЕКЦИЯ УГЛОВ (без улетов)
+            // Сглаживание и обход "задирания" головы
             float yawDiff = MathHelper.wrapDegrees(targetYaw - client.player.getYaw());
             float pitchDiff = MathHelper.wrapDegrees(targetPitch - client.player.getPitch());
 
-            // Адаптивная скорость: чем ближе прицел, тем он "вязче"
-            float speedMultiplier = Math.abs(yawDiff) < 15 ? 0.45f : 0.75f;
+            // Скорость наводки выше, когда ты прыгаешь, чтобы не терять фокус
+            float speed = client.player.isOnGround() ? 0.6f : 0.85f;
             
-            client.player.setYaw(client.player.getYaw() + yawDiff * speedMultiplier);
-            client.player.setPitch(MathHelper.clamp(client.player.getPitch() + pitchDiff * speedMultiplier, -90f, 90f));
+            client.player.setYaw(client.player.getYaw() + yawDiff * speed);
+            client.player.setPitch(MathHelper.clamp(client.player.getPitch() + pitchDiff * speed, -90f, 90f));
 
-            // Удар
-            if (Math.abs(yawDiff) < 30 && client.player.getAttackCooldownProgress(0) >= 1.0f) {
+            // ЛОГИКА КРИТОВ: бьем только если падаем или стоим на земле
+            boolean canCrit = client.player.fallDistance > 0 || client.player.isOnGround();
+            
+            if (Math.abs(yawDiff) < 35 && client.player.getAttackCooldownProgress(0) >= 0.95f && canCrit) {
                 client.interactionManager.attackEntity(client.player, auraTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -201,7 +196,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI (Полная версия) ---
+    // --- GUI ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -359,3 +354,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
