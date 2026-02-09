@@ -26,7 +26,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, tbCrits = true;
 
-    public static double kaRange = 3.3, kaWallsRange = 0.0;
+    public static double kaRange = 3.8, kaWallsRange = 3.0;
     public static double wpX = 0, wpY = 64, wpZ = 0;
     
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN, keyFB = GLFW.GLFW_KEY_UNKNOWN;
@@ -59,7 +59,7 @@ public class ExampleMod implements ModInitializer {
             if (fullbright) client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(net.minecraft.entity.effect.StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) handleAutoTotem(client);
             
-            if (autoRun && client.player.forwardSpeed > 0 && !client.player.isSneaking()) {
+            if (autoRun && (client.player.forwardSpeed > 0)) {
                 client.player.setSprinting(true);
             }
             
@@ -68,7 +68,7 @@ public class ExampleMod implements ModInitializer {
 
             if (antiVelocity && client.player.hurtTime > 0) {
                 Vec3d v = client.player.getVelocity();
-                client.player.setVelocity(v.x * 0.75, v.y, v.z * 0.75);
+                client.player.setVelocity(v.x * 0.6, v.y, v.z * 0.6);
             }
         });
 
@@ -97,26 +97,26 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
+        // Убрана проверка !p.isInvisible(), теперь бьет невидимок
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
-                .filter(p -> client.player.distanceTo(p) <= kaRange)
+                .filter(p -> client.player.distanceTo(p) <= (client.player.canSee(p) ? kaRange : kaWallsRange))
                 .min(Comparator.comparingDouble(client.player::distanceTo))
                 .orElse(null);
 
         if (auraTarget != null) {
             Vec3d targetPos = auraTarget.getBoundingBox().getCenter();
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
-            
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Легитная плавная наводка
-            float speed = 0.2f;
-            client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(targetYaw - client.player.getYaw()) * speed);
-            client.player.setPitch(client.player.getPitch() + (targetPitch - client.player.getPitch()) * speed);
+            // Улучшенная наводка
+            client.player.setYaw(targetYaw);
+            client.player.setPitch(targetPitch);
 
             if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
-                if (client.player.canSee(auraTarget)) {
+                // Оптимизация под криты
+                if (client.player.fallDistance > 0 || client.player.isOnGround()) {
                     client.interactionManager.attackEntity(client.player, auraTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -132,7 +132,7 @@ public class ExampleMod implements ModInitializer {
             client.player, start, end, client.player.getBoundingBox().stretch(client.player.getRotationVec(1.0f).multiply(r)).expand(1.0),
             (e) -> e instanceof PlayerEntity && e.isAlive(), r * r);
         
-        if (hit != null && client.player.getAttackCooldownProgress(0) >= 1.0f) {
+        if (hit != null && client.player.getAttackCooldownProgress(0) >= (tbCrits ? 1.0f : 0.92f)) {
             client.interactionManager.attackEntity(client.player, hit.getEntity());
             client.player.swingHand(Hand.MAIN_HAND);
         }
@@ -174,6 +174,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // --- GUI ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -264,11 +265,7 @@ public class ExampleMod implements ModInitializer {
             return super.mouseClicked(mx, my, b);
         }
         @Override
-        public boolean charTyped(char chr, int m) { 
-            f1.charTyped(chr, m); 
-            f2.charTyped(chr, m); 
-            return true; 
-        }
+        public boolean charTyped(char chr, int m) { f1.charTyped(chr, m); f2.charTyped(chr, m); return true; }
         @Override
         public boolean keyPressed(int k, int s, int m) {
             if(k == GLFW.GLFW_KEY_ESCAPE) {
