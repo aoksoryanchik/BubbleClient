@@ -83,7 +83,7 @@ public class ExampleMod implements ModInitializer {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
         for (PlayerEntity p : client.world.getPlayers()) {
-            // УБРАНА ПРОВЕРКА p.isInvisible(), теперь бьет невидимок
+            // Бьет невидимок (проверка p.isInvisible() удалена)
             if (p == client.player || !p.isAlive() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
             if (d <= kaRange && d < bestDist) {
@@ -138,7 +138,8 @@ public class ExampleMod implements ModInitializer {
     private void renderWaypoint(WorldRenderContext context) {
         if (!waypointActive) return;
         MinecraftClient client = MinecraftClient.getInstance();
-        double d = client.player.distanceTo(new Vec3d(wpX, wpY, wpZ));
+        // ИСПРАВЛЕНО: используем getPos().distanceTo() для работы с Vec3d
+        double d = client.player.getPos().distanceTo(new Vec3d(wpX, wpY, wpZ));
         MatrixStack ms = context.matrixStack();
         ms.push();
         ms.translate(wpX - context.camera().getPos().x, (wpY - context.camera().getPos().y) + 1.3, wpZ - context.camera().getPos().z);
@@ -249,7 +250,7 @@ public class ExampleMod implements ModInitializer {
             if (my >= y - 20 && my <= y - 4) { if (mx >= x + 72 && mx <= x + 84) kaWallsRange += 0.1; if (mx >= x + 10 && mx <= x + 22) kaWallsRange -= 0.1; f2.setText(String.format("%.1f", kaWallsRange)); }
             if (my >= y + 5 && my <= y + 21) { if (mx >= x + 72 && mx <= x + 84) shakeIntensity += 0.1; if (mx >= x + 10 && mx <= x + 22) shakeIntensity -= 0.1; f3.setText(String.format("%.1f", shakeIntensity)); }
             if (mx >= x - 60 && mx <= x + 60) {
-                if (my >= y + 35 && my <= y + 47) autoRun = !autoRun; if (my >= y + 58 && my <= y + 62) antiVelocity = !antiVelocity;
+                if (my >= y + 35 && my <= y + 47) autoRun = !autoRun; if (my >= y + 58 && my <= y + 70) antiVelocity = !antiVelocity;
             }
             f1.mouseClicked(mx, my, b); f2.mouseClicked(mx, my, b); f3.mouseClicked(mx, my, b);
             return super.mouseClicked(mx, my, b);
@@ -368,3 +369,4 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 }
+
