@@ -8,6 +8,8 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.entity.effect.StatusEffects; // Исправленный импорт
+import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.SlotActionType;
@@ -34,7 +36,7 @@ public class ExampleMod implements ModInitializer {
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    private static final Random random = new Random();
+    private final Random random = new Random(); // Рандом для КД
     public static PlayerEntity auraTarget = null;
 
     @Override
@@ -56,7 +58,7 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, keyWP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
             }
 
-            if (fullbright) client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(net.minecraft.entity.util.StatusEffects.NIGHT_VISION, 1000, 0, false, false));
+            if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
 
             if (autoTotem) handleAutoTotem(client);
 
@@ -98,7 +100,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
-        // Логика выбора цели: убрана проверка на невидимость, чтобы бить всех
+        // Выбор цели: убрано !p.isInvisible(), чтобы бить невидимок
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
                 .filter(p -> client.player.distanceTo(p) <= kaRange)
@@ -106,20 +108,19 @@ public class ExampleMod implements ModInitializer {
                 .orElse(null);
 
         if (auraTarget != null) {
-            // BACKTRACK / Позиционирование
             Vec3d targetPos = auraTarget.getPos().add(0, auraTarget.getStandingEyeHeight() * 0.7, 0);
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
 
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавная наводка (Легитная)
             float speed = 0.2f;
             client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(targetYaw - client.player.getYaw()) * speed);
             client.player.setPitch(client.player.getPitch() + (targetPitch - client.player.getPitch()) * speed);
 
-            // Рандомный кулдаун для обхода анти-кликера
-            if (client.player.getAttackCooldownProgress(0) >= 1.0f) {
+            // Рандомное КД от 0.94 до 0.97 для ускорения ударов
+            float randomCooldown = 1.0f - (0.03f + random.nextFloat() * 0.03f);
+            if (client.player.getAttackCooldownProgress(0) >= randomCooldown) {
                 if (client.player.canSee(auraTarget)) {
                     client.interactionManager.attackEntity(client.player, auraTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
@@ -179,7 +180,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI Секция (Без изменений для стабильности) ---
+    // --- GUI Секция ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -342,3 +343,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
