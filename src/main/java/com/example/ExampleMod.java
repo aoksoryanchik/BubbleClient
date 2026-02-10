@@ -8,7 +8,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.entity.effect.StatusEffects; // Исправленный импорт
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Items;
@@ -36,7 +36,7 @@ public class ExampleMod implements ModInitializer {
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    private final Random random = new Random(); // Рандом для КД
+    private final Random random = new Random();
     public static PlayerEntity auraTarget = null;
 
     @Override
@@ -46,7 +46,8 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
-            if (isPressed(h, GLFW.GLFW_KEY_O) && client.currentScreen == null) {
+            // ОТКРЫТИЕ МЕНЮ НА КЛАВИШУ "0" (НАД БУКВАМИ)
+            if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
@@ -100,7 +101,6 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
-        // Выбор цели: убрано !p.isInvisible(), чтобы бить невидимок
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
                 .filter(p -> client.player.distanceTo(p) <= kaRange)
@@ -114,11 +114,12 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            float speed = 0.2f;
+            // НАВОДКА 0.30f
+            float speed = 0.30f;
             client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(targetYaw - client.player.getYaw()) * speed);
             client.player.setPitch(client.player.getPitch() + (targetPitch - client.player.getPitch()) * speed);
 
-            // Рандомное КД от 0.94 до 0.97 для ускорения ударов
+            // РАНДОМНОЕ КД 0.94-0.97
             float randomCooldown = 1.0f - (0.03f + random.nextFloat() * 0.03f);
             if (client.player.getAttackCooldownProgress(0) >= randomCooldown) {
                 if (client.player.canSee(auraTarget)) {
@@ -180,7 +181,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI Секция ---
+    // --- GUI Секция (ПОЛНАЯ) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -197,7 +198,6 @@ public class ExampleMod implements ModInitializer {
                 int iy = y + 35 + i * 22;
                 boolean hv = mx >= x + 10 && mx <= x + 170 && my >= iy && my <= iy + 18;
                 ctx.fill(x + 10, iy, x + 170, iy + 18, hv ? 0xFF1A1A1A : 0xFF101010);
-                String kn = k[i] == GLFW.GLFW_KEY_UNKNOWN ? "NONE" : InputUtil.fromKeyCode(k[i], 0).getLocalizedText().getString().toUpperCase();
                 ctx.drawTextWithShadow(client.textRenderer, n[i] + " [" + (s[i] ? "§aON" : "§cOFF") + "]", x + 15, iy + 5, s[i] ? 0xFF00FF00 : 0xFFFFFFFF);
                 if (i == 0 || i == 4) ctx.drawTextWithShadow(client.textRenderer, "⚙", x + 155, iy + 5, -1);
             }
