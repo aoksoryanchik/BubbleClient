@@ -101,6 +101,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
+        // Бьем всех, включая невидимок
         auraTarget = client.world.getPlayers().stream()
                 .filter(p -> p != client.player && p.isAlive() && !p.isCreative())
                 .filter(p -> client.player.distanceTo(p) <= kaRange)
@@ -108,21 +109,21 @@ public class ExampleMod implements ModInitializer {
                 .orElse(null);
 
         if (auraTarget != null) {
-            Vec3d targetPos = auraTarget.getPos().add(0, auraTarget.getStandingEyeHeight() * 0.7, 0);
+            Vec3d targetPos = auraTarget.getPos().add(0, auraTarget.getStandingEyeHeight() * 0.75, 0);
             Vec3d diff = targetPos.subtract(client.player.getEyePos());
 
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // НАВОДКА 0.30f
-            float speed = 0.30f;
+            // УСКОРЕННАЯ НАВОДКА (0.45f) С МИКРО-РАНДОМОМ
+            float speed = 0.45f + (random.nextFloat() * 0.05f);
             client.player.setYaw(client.player.getYaw() + MathHelper.wrapDegrees(targetYaw - client.player.getYaw()) * speed);
             client.player.setPitch(client.player.getPitch() + (targetPitch - client.player.getPitch()) * speed);
 
             // РАНДОМНОЕ КД 0.94-0.97
             float randomCooldown = 1.0f - (0.03f + random.nextFloat() * 0.03f);
             if (client.player.getAttackCooldownProgress(0) >= randomCooldown) {
-                if (client.player.canSee(auraTarget)) {
+                if (client.player.canSee(auraTarget) || client.player.distanceTo(auraTarget) <= kaWallsRange) {
                     client.interactionManager.attackEntity(client.player, auraTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -181,7 +182,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI Секция (ПОЛНАЯ) ---
+    // --- GUI Секция ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
