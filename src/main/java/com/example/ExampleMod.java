@@ -23,11 +23,11 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class ExampleMod implements ModInitializer {
 
-    // --- ВСЕ МОДУЛИ ВКЛЮЧЕНЫ ---
+    // --- ПОЛНЫЙ ПАКЕТ МОДУЛЕЙ ---
     public static boolean killaura = false, triggerbot = false, autoTotem = true, fullbright = false, waypointActive = false;
     public static boolean autoRun = true, antiVelocity = true, antiInvisible = true;
 
-    // --- НАСТРОЙКИ ---
+    // --- ГЛОБАЛЬНЫЕ НАСТРОЙКИ ---
     public static double kaRange = 3.2, kaWallsRange = 3.0;
     public static float shakeIntensity = 0.5f;
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN;
@@ -35,7 +35,7 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     
-    // Тот самый рандомный порог
+    // Переменная для рандомного порога КД (от 0.93 до 0.96)
     private float currentCooldownThreshold = 0.93f;
 
     @Override
@@ -47,7 +47,7 @@ public class ExampleMod implements ModInitializer {
 
             long h = client.getWindow().getHandle();
             
-            // Меню на 0 и бинд на KA
+            // Меню (клавиша 0) и бинд на KA
             if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -56,13 +56,13 @@ public class ExampleMod implements ModInitializer {
                 sendNotify("KillAura", killaura);
             }
 
-            // 1. FULLBRIGHT
+            // 1. FULLBRIGHT (Максимальное освещение)
             if (fullbright) {
                 client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
                         net.minecraft.entity.effect.StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             }
 
-            // 2. AUTO-TOTEM (Мгновенный Swap)
+            // 2. AUTO-TOTEM (Максимально быстрый Swap-метод)
             if (autoTotem && client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
                 for (int i = 0; i < 45; i++) {
                     if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
@@ -72,19 +72,19 @@ public class ExampleMod implements ModInitializer {
                 }
             }
 
-            // 3. AUTO-RUN
+            // 3. AUTO-RUN (Постоянный спринт)
             if (autoRun && client.player.input.movementForward > 0 && !client.player.isSneaking() && !client.player.isHorizontalCollision) {
                 client.player.setSprinting(true);
             }
 
-            // 4. ANTI-VELOCITY (Полная отмена отдачи)
+            // 4. ANTI-VELOCITY (Обнуление горизонтальной отдачи)
             if (antiVelocity && client.player.velocityModified) {
                 Vec3d velocity = client.player.getVelocity();
                 client.player.setVelocity(0, velocity.y, 0);
-                client.player.velocityModified = false;
+                client.player.velocityModified = false; 
             }
 
-            // 5. KILL AURA (Умный КД 0.93-0.96 + Anti-Invisible)
+            // 5. KILL AURA (С Anti-Invisible и Рандомным КД)
             if (killaura) runKillAura(client);
         });
     }
@@ -95,6 +95,8 @@ public class ExampleMod implements ModInitializer {
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isCreative()) continue;
+            
+            // Anti-Invisible Logic
             if (!antiInvisible && p.isInvisible()) continue;
 
             double d = client.player.distanceTo(p);
@@ -106,12 +108,12 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // Наводка с Shake
+            // Наводка с Shake (Рандомизация хитбокса)
             float[] rots = getRotations(client.player, target);
             client.player.setYaw(rots[0]);
             client.player.setPitch(rots[1]);
 
-            // Рандомный удар в диапазоне 0.93 - 0.96
+            // ПРОВЕРКА КД: Рандом от 0.93 до 0.96
             if (client.player.getAttackCooldownProgress(0) >= currentCooldownThreshold) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
@@ -120,7 +122,7 @@ public class ExampleMod implements ModInitializer {
                 currentCooldownThreshold = 0.93f + (ThreadLocalRandom.current().nextFloat() * (0.96f - 0.93f));
             }
         } else {
-            currentCooldownThreshold = 0.93f;
+            currentCooldownThreshold = 0.93f; 
         }
     }
 
@@ -134,13 +136,14 @@ public class ExampleMod implements ModInitializer {
         Vec3d diff = tPos.subtract(self.getEyePos());
         float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+        
         return new float[]{
                 self.getYaw() + MathHelper.wrapDegrees(yaw - self.getYaw()),
                 self.getPitch() + MathHelper.wrapDegrees(pitch - self.getPitch())
         };
     }
 
-    // --- GUI ---
+    // --- GUI СИСТЕМА (ПОЛНАЯ) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Menu")); }
         @Override
@@ -159,6 +162,7 @@ public class ExampleMod implements ModInitializer {
                 boolean h = mx >= x + 10 && mx <= x + 190 && my >= iy && my <= iy + 18;
                 ctx.fill(x + 10, iy, x + 190, iy + 18, h ? 0xFF202020 : 0xFF141414);
                 ctx.drawTextWithShadow(client.textRenderer, mods[i], x + 20, iy + 5, st[i] ? 0xFF00FFAA : -1);
+                if (i == 0) ctx.drawTextWithShadow(client.textRenderer, "§7[R-CLICK]", x + 125, iy + 5, -1);
             }
         }
         @Override
@@ -194,7 +198,7 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xF8000000);
             int x = width/2, y = height/2;
-            ctx.drawCenteredTextWithShadow(client.textRenderer, "§bKA §fCONFIG", x, y - 85, -1);
+            ctx.drawCenteredTextWithShadow(client.textRenderer, "§bKA §fADVANCED", x, y - 85, -1);
             ctx.drawTextWithShadow(client.textRenderer, "Range:", x - 70, y - 46, -1);
             rF.render(ctx, mx, my, d);
             drawO(ctx, "AutoRun", autoRun, y - 10, mx, my);
@@ -237,7 +241,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- СЕРВИС ---
+    // --- СЕРВИСНЫЕ МЕТОДЫ ---
     private static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange + ":" + autoRun + ":" + antiVelocity + ":" + antiInvisible);
