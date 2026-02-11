@@ -20,7 +20,8 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class AutoBuyMod implements ModInitializer {
+// Имя класса изменено на ExampleMod, чтобы GitHub не выдавал ошибку
+public class ExampleMod implements ModInitializer {
 
     public static boolean autoBuyActive = false;
     public static String targetName = "";
@@ -32,7 +33,7 @@ public class AutoBuyMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        // Перехват команды .b
+        // Блокирует отправку команды .b в общий чат
         ClientSendMessageEvents.ALLOW_CHAT.register(message -> {
             if (message.startsWith(".b ")) {
                 parseCommand(message.substring(3));
@@ -51,7 +52,6 @@ public class AutoBuyMod implements ModInitializer {
             if (autoBuyActive && client.currentScreen instanceof GenericContainerScreen menu) {
                 String title = menu.getTitle().getString().toLowerCase();
                 
-                // Добавлена проверка на меню поиска
                 if (title.contains("аукцион") || title.contains("auction") || title.contains("поиск") || title.contains("search")) {
                     if (!isBuying) scanAndRefresh(client, menu);
                 } 
@@ -64,8 +64,7 @@ public class AutoBuyMod implements ModInitializer {
 
     private void parseCommand(String input) {
         try {
-            // Регулярка для разбора: .b Название Чары (через запятую) Цена
-            // Пример: .b Алмазный нагрудник Защита 4, Прочность 3 500000
+            // Разбор: .b Название Чары (через запятую) Цена
             Pattern pattern = Pattern.compile("^(.*)\\s+(.*)\\s+(\\d+)$");
             Matcher matcher = pattern.matcher(input.trim());
 
@@ -75,7 +74,6 @@ public class AutoBuyMod implements ModInitializer {
                 maxPrice = Long.parseLong(matcher.group(3));
 
                 targetEnchants.clear();
-                // Разбиваем чары по запятой и сразу конвертируем цифры
                 for (String s : enchantsPart.split(",")) {
                     targetEnchants.add(convertDigitsToRoman(s.trim()));
                 }
@@ -85,11 +83,10 @@ public class AutoBuyMod implements ModInitializer {
                 MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[AutoBuy] §fЦена до: §6" + maxPrice + "$"), false);
             }
         } catch (Exception e) {
-            MinecraftClient.getInstance().player.sendMessage(Text.literal("§cОшибка! Пример: .b Алмазный меч Острота 5, Заговор огня 2 50000"), false);
+            MinecraftClient.getInstance().player.sendMessage(Text.literal("§cОшибка! Формат: .b Нагрудник Защита 5, Прочность 3 500000"), false);
         }
     }
 
-    // Конвертер: преобразует "защита 5" в "защита v"
     private String convertDigitsToRoman(String input) {
         String[] roman = {"i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"};
         for (int i = 10; i >= 1; i--) {
@@ -116,7 +113,7 @@ public class AutoBuyMod implements ModInitializer {
             }
         }
 
-        // Авто-обновление (слот 49)
+        // Обновление страницы (слот 49)
         if (!found && !isBuying && System.currentTimeMillis() - lastRefreshTime > 1300) {
             client.interactionManager.clickSlot(menu.getScreenHandler().syncId, 49, 0, SlotActionType.PICKUP, client.player);
             lastRefreshTime = System.currentTimeMillis();
@@ -124,6 +121,7 @@ public class AutoBuyMod implements ModInitializer {
     }
 
     private boolean checkLoreAndEnchants(ItemStack stack) {
+        // Исправлено получение Lore для 1.21.4 (используем компоненты)
         var loreComponent = stack.get(DataComponentTypes.LORE);
         if (loreComponent == null) return false;
         String lore = loreComponent.toString().toLowerCase();
@@ -153,6 +151,7 @@ public class AutoBuyMod implements ModInitializer {
     }
 
     private void confirmPurchase(MinecraftClient client, GenericContainerScreen menu) {
+        // Клик в слот 10 (зеленая панель на твоем фото)
         new Thread(() -> {
             try {
                 Thread.sleep(ThreadLocalRandom.current().nextLong(300, 500));
