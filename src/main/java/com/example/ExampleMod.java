@@ -17,10 +17,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-// Имя класса изменено на ExampleMod, чтобы GitHub не выдавал ошибку
 public class ExampleMod implements ModInitializer {
 
     public static boolean autoBuyActive = false;
@@ -33,25 +30,24 @@ public class ExampleMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        // Блокирует отправку команды .b в общий чат
+        // Перехват команды
         ClientSendMessageEvents.ALLOW_CHAT.register(message -> {
             if (message.startsWith(".b ")) {
-                parseCommand(message.substring(3));
+                parseSmartCommand(message.substring(3));
                 return false; 
             }
             return true;
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null) return;
+            if (client.player == null || !autoBuyActive) return;
             
             if (InputUtil.isKeyPressed(client.getWindow().getHandle(), GLFW.GLFW_KEY_J) && client.currentScreen == null) {
                 client.setScreen(new AutoBuyMenu());
             }
 
-            if (autoBuyActive && client.currentScreen instanceof GenericContainerScreen menu) {
+            if (client.currentScreen instanceof GenericContainerScreen menu) {
                 String title = menu.getTitle().getString().toLowerCase();
-                
                 if (title.contains("аукцион") || title.contains("auction") || title.contains("поиск") || title.contains("search")) {
                     if (!isBuying) scanAndRefresh(client, menu);
                 } 
@@ -62,28 +58,60 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void parseCommand(String input) {
+    private void parseSmartCommand(String input) {
         try {
-            // Разбор: .b Название Чары (через запятую) Цена
-            Pattern pattern = Pattern.compile("^(.*)\\s+(.*)\\s+(\\d+)$");
-            Matcher matcher = pattern.matcher(input.trim());
-
-            if (matcher.find()) {
-                targetName = matcher.group(1).toLowerCase().trim();
-                String enchantsPart = matcher.group(2).toLowerCase();
-                maxPrice = Long.parseLong(matcher.group(3));
-
+            // Формат: Название, чары чары чары цена
+            String[] firstSplit = input.split(",", 2);
+            
+            if (firstSplit.length < 2) {
+                // Если нет запятой вообще (простой поиск предмета по цене)
+                String[] parts = input.trim().split("\\s+");
+                targetName = parts[0].toLowerCase();
+                maxPrice = Long.parseLong(parts[parts.length - 1]);
                 targetEnchants.clear();
-                for (String s : enchantsPart.split(",")) {
-                    targetEnchants.add(convertDigitsToRoman(s.trim()));
+            } else {
+                // Название — всё до первой запятой
+                targetName = firstSplit[0].trim().toLowerCase();
+                
+                // Вторая часть — чары и цена
+                String remaining = firstSplit[1].trim();
+                String[] parts = remaining.split("\\s+");
+                
+                // Цена — всегда последнее слово
+                maxPrice = Long.parseLong(parts[parts.length - 1]);
+                
+                targetEnchants.clear();
+                // Всё остальное между запятой и ценой — это чары
+                StringBuilder currentEnchant = new StringBuilder();
+                for (int i = 0; i < parts.length - 1; i++) {
+                    String part = parts[i].toLowerCase();
+                    
+                    // Если часть - это число (уровень чар), приклеиваем к текущей чаре и сохраняем
+                    if (part.matches("\\d+")) {
+                        currentEnchant.append(" ").append(part);
+                        targetEnchants.add(convertDigitsToRoman(currentEnchant.toString().trim()));
+                        currentEnchant = new StringBuilder();
+                    } else {
+                        // Если это слово (название чары)
+                        if (currentEnchant.length() > 0) {
+                            // Если предыдущее слово не закончилось числом, значит это была чара 1 уровня без цифры
+                            targetEnchants.add(currentEnchant.toString().trim());
+                            currentEnchant = new StringBuilder();
+                        }
+                        currentEnchant.append(part);
+                    }
                 }
-
-                MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[AutoBuy] §fИщу: §a" + targetName), false);
-                MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[AutoBuy] §fЧары: §e" + targetEnchants.toString()), false);
-                MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[AutoBuy] §fЦена до: §6" + maxPrice + "$"), false);
+                // Если осталась чара без уровня в конце
+                if (currentEnchant.length() > 0) targetEnchants.add(currentEnchant.toString().trim());
             }
+
+            MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[AutoBuy] §fНастроено!"), false);
+            MinecraftClient.getInstance().player.sendMessage(Text.literal("§7Предмет: §a" + targetName), false);
+            if (!targetEnchants.isEmpty()) MinecraftClient.getInstance().player.sendMessage(Text.literal("§7Ищу чары: §e" + targetEnchants), false);
+            MinecraftClient.getInstance().player.sendMessage(Text.literal("§7Макс. цена: §6" + maxPrice + "$"), false);
+            
         } catch (Exception e) {
-            MinecraftClient.getInstance().player.sendMessage(Text.literal("§cОшибка! Формат: .b Нагрудник Защита 5, Прочность 3 500000"), false);
+            MinecraftClient.getInstance().player.sendMessage(Text.literal("§cОшибка! Формат: .b Название, чары уровень чары уровень цена"), false);
         }
     }
 
@@ -98,49 +126,41 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void scanAndRefresh(MinecraftClient client, GenericContainerScreen menu) {
-        boolean found = false;
         for (int i = 0; i < 45; i++) {
             ItemStack stack = menu.getScreenHandler().getSlot(i).getStack();
             if (stack.isEmpty()) continue;
 
-            String name = stack.getName().getString().toLowerCase();
-            if (name.contains(targetName)) {
-                if (checkLoreAndEnchants(stack)) {
-                    executeInitialClick(client, menu, i);
-                    found = true;
-                    break;
-                }
+            if (stack.getName().getString().toLowerCase().contains(targetName) && checkLore(stack)) {
+                executeClick(client, menu, i);
+                return;
             }
         }
 
-        // Обновление страницы (слот 49)
-        if (!found && !isBuying && System.currentTimeMillis() - lastRefreshTime > 1300) {
+        if (!isBuying && System.currentTimeMillis() - lastRefreshTime > 1300) {
             client.interactionManager.clickSlot(menu.getScreenHandler().syncId, 49, 0, SlotActionType.PICKUP, client.player);
             lastRefreshTime = System.currentTimeMillis();
         }
     }
 
-    private boolean checkLoreAndEnchants(ItemStack stack) {
-        // Исправлено получение Lore для 1.21.4 (используем компоненты)
-        var loreComponent = stack.get(DataComponentTypes.LORE);
-        if (loreComponent == null) return false;
-        String lore = loreComponent.toString().toLowerCase();
+    private boolean checkLore(ItemStack stack) {
+        var loreComp = stack.get(DataComponentTypes.LORE);
+        if (loreComp == null) return targetEnchants.isEmpty();
+        String lore = loreComp.toString().toLowerCase();
 
         for (String enchant : targetEnchants) {
             if (!lore.contains(enchant)) return false;
         }
 
-        long price = -1;
         if (lore.contains("$")) {
             try {
-                String pricePart = lore.substring(lore.lastIndexOf("$") + 1);
-                price = Long.parseLong(pricePart.replaceAll("[^0-9]", ""));
-            } catch (Exception ignored) {}
+                String pStr = lore.substring(lore.lastIndexOf("$") + 1).replaceAll("[^0-9]", "");
+                return Long.parseLong(pStr) <= maxPrice;
+            } catch (Exception e) { return false; }
         }
-        return price != -1 && price <= maxPrice;
+        return false;
     }
 
-    private void executeInitialClick(MinecraftClient client, GenericContainerScreen menu, int slot) {
+    private void executeClick(MinecraftClient client, GenericContainerScreen menu, int slot) {
         isBuying = true;
         new Thread(() -> {
             try {
@@ -151,17 +171,17 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void confirmPurchase(MinecraftClient client, GenericContainerScreen menu) {
-        // Клик в слот 10 (зеленая панель на твоем фото)
         new Thread(() -> {
             try {
                 Thread.sleep(ThreadLocalRandom.current().nextLong(300, 500));
                 client.interactionManager.clickSlot(menu.getScreenHandler().syncId, 10, 0, SlotActionType.PICKUP, client.player);
-                Thread.sleep(1200);
+                Thread.sleep(1500);
                 isBuying = false;
             } catch (Exception ignored) {}
         }).start();
     }
 
+    // GUI Оставлено без изменений для стабильности
     public static class AutoBuyMenu extends Screen {
         public AutoBuyMenu() { super(Text.literal("AutoBuy")); }
         @Override
