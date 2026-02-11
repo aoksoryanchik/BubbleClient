@@ -25,23 +25,33 @@ public class AutoBuyMod implements ModInitializer {
     public static long maxPrice = 0;
 
     private boolean isBuying = false;
+    private long lastRefreshTime = 0;
 
     @Override
     public void onInitialize() {
-        // Открытие меню на J
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
+            
+            // Меню на J
             if (InputUtil.isKeyPressed(client.getWindow().getHandle(), GLFW.GLFW_KEY_J) && client.currentScreen == null) {
                 client.setScreen(new AutoBuyMenu());
             }
 
-            // Сканирование AH (только если открыт сундук/меню аукциона)
+            // Логика работы в меню AH
             if (autoBuyActive && client.currentScreen instanceof GenericContainerScreen menu) {
-                if (!isBuying) scanAuction(client, menu);
+                String title = menu.getTitle().getString().toLowerCase();
+                
+                // Если мы в главном меню аукциона
+                if (title.contains("аукцион") || title.contains("auction")) {
+                    if (!isBuying) scanAndRefresh(client, menu);
+                } 
+                // Если открылось окно "Подтверждение покупки" (как на твоем фото)
+                else if (title.contains("подтверждение")) {
+                    confirmPurchase(client, menu);
+                }
             }
         });
 
-        // Команда в чате: .b Название Чары Цена
         ClientReceiveMessageEvents.ALLOW_SEND.register(message -> {
             if (message.startsWith(".b ")) {
                 parseCommand(message.substring(3));
@@ -60,89 +70,77 @@ public class AutoBuyMod implements ModInitializer {
             for (int i = 1; i < parts.length - 1; i++) {
                 targetEnchants.add(parts[i].toLowerCase());
             }
-            MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[AutoBuy] §fНастроено: §a" + targetName + " §fдо §6" + maxPrice + "$"), false);
+            MinecraftClient.getInstance().player.sendMessage(Text.literal("§b[AutoBuy] §fПоиск: §a" + targetName + " §fдо §6" + maxPrice + "$"), false);
         } catch (Exception e) {
-            MinecraftClient.getInstance().player.sendMessage(Text.literal("§cОшибка! Используй: .b Название Чары Цена"), false);
+            MinecraftClient.getInstance().player.sendMessage(Text.literal("§cОшибка! Пример: .b Меч Острота 50000"), false);
         }
     }
 
-    private void scanAuction(MinecraftClient client, GenericContainerScreen menu) {
-        // Проходим по слотам (обычно в AH это первые 45 слотов)
-        for (int i = 0; i < 54; i++) {
+    private void scanAndRefresh(MinecraftClient client, GenericContainerScreen menu) {
+        boolean found = false;
+        // Сканируем товары (обычно слоты 0-44)
+        for (int i = 0; i < 45; i++) {
             ItemStack stack = menu.getScreenHandler().getSlot(i).getStack();
             if (stack.isEmpty()) continue;
 
-            String itemName = stack.getName().getString().toLowerCase();
-            
-            // Если название совпадает
-            if (itemName.contains(targetName)) {
-                if (checkLoreAndPrice(stack)) {
-                    executePurchase(client, menu, i);
-                    break;
-                }
+            if (stack.getName().getString().toLowerCase().contains(targetName) && checkLoreAndPrice(stack)) {
+                executeInitialClick(client, menu, i);
+                found = true;
+                break;
             }
+        }
+
+        // Если не нашли и прошло 1.5 сек — жмем кнопку "Обновить" (слот 49: 6 вниз, 5 вправо)
+        if (!found && !isBuying && System.currentTimeMillis() - lastRefreshTime > 1500) {
+            client.interactionManager.clickSlot(menu.getScreenHandler().syncId, 49, 0, SlotActionType.PICKUP, client.player);
+            lastRefreshTime = System.currentTimeMillis();
         }
     }
 
     private boolean checkLoreAndPrice(ItemStack stack) {
-        if (!stack.hasNbt()) return false;
-        
-        // Получаем весь лор предмета
-        String loreData = stack.getNbt().getCompound("display").get("Lore").toString().toLowerCase();
+        if (!stack.hasNbt() || !stack.getNbt().contains("display")) return false;
+        String lore = stack.getNbt().getCompound("display").get("Lore").toString().toLowerCase();
 
-        // 1. Проверяем чары (должны быть все из списка)
         for (String enchant : targetEnchants) {
-            if (!loreData.contains(enchant)) return false;
+            if (!lore.contains(enchant)) return false;
         }
 
-        // 2. Ищем цену на FunTime (формат обычно: Цена: $ 1,000,000)
         long price = -1;
-        try {
-            // Ищем индекс знака доллара или слова "Цена"
-            if (loreData.contains("$")) {
-                String pricePart = loreData.substring(loreData.lastIndexOf("$") + 1);
-                // Очищаем от мусора, оставляем только цифры
-                String cleanPrice = pricePart.replaceAll("[^0-9]", "");
-                if (!cleanPrice.isEmpty()) price = Long.parseLong(cleanPrice);
-            }
-        } catch (Exception ignored) {}
-
+        if (lore.contains("$")) {
+            try {
+                String pricePart = lore.substring(lore.lastIndexOf("$") + 1);
+                price = Long.parseLong(pricePart.replaceAll("[^0-9]", ""));
+            } catch (Exception ignored) {}
+        }
         return price != -1 && price <= maxPrice;
     }
 
-    private void executePurchase(MinecraftClient client, GenericContainerScreen menu, int slot) {
+    private void executeInitialClick(MinecraftClient client, GenericContainerScreen menu, int slot) {
         isBuying = true;
-        
-        // Рандомная задержка 1200 - 1600 мс (античит FunTime не спалит)
-        long delay = ThreadLocalRandom.current().nextLong(1200, 1600);
-        
         new Thread(() -> {
             try {
-                Thread.sleep(delay);
-                // Первый клик по предмету на аукционе
+                // Задержка перед первым кликом (выбор товара)
+                Thread.sleep(ThreadLocalRandom.current().nextLong(800, 1200));
                 client.interactionManager.clickSlot(menu.getScreenHandler().syncId, slot, 0, SlotActionType.PICKUP, client.player);
-                
-                // Задержка перед подтверждением (имитация движения мышки в центр)
-                Thread.sleep(400);
-                
-                // На FunTime подтверждение обычно в слотах 11 и 15 (зеленое стекло)
-                // Кликаем по слоту подтверждения (проверь в игре, обычно это 11 или 13)
-                client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, 11, 0, SlotActionType.PICKUP, client.player);
-                
-                client.player.sendMessage(Text.literal("§b[AutoBuy] §aПопытка покупки совершена!"), false);
-                
-                Thread.sleep(1000); // Кулдаун чтобы не спамить
-                isBuying = false;
-            } catch (InterruptedException e) {
-                isBuying = false;
-            }
+            } catch (Exception ignored) {}
+        }).start();
+    }
+
+    private void confirmPurchase(MinecraftClient client, GenericContainerScreen menu) {
+        // Кликаем по любой зеленой панели слева. Слот 10 — это центр левой зоны.
+        new Thread(() -> {
+            try {
+                Thread.sleep(ThreadLocalRandom.current().nextLong(400, 700));
+                client.interactionManager.clickSlot(menu.getScreenHandler().syncId, 10, 0, SlotActionType.PICKUP, client.player);
+                Thread.sleep(1000);
+                isBuying = false; // Сбрасываем флаг после покупки
+            } catch (Exception ignored) {}
         }).start();
     }
 
     // --- GUI ---
     public static class AutoBuyMenu extends Screen {
         public AutoBuyMenu() { super(Text.literal("AutoBuy")); }
-
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0x85000000);
@@ -150,12 +148,10 @@ public class AutoBuyMod implements ModInitializer {
             ctx.fill(x, y, x + 160, y + 80, 0xFF101010);
             ctx.drawBorder(x, y, 160, 80, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(client.textRenderer, "§bFUNTIME AUTOBUY", width/2, y + 15, -1);
-            
             boolean h = mx >= x + 30 && mx <= x + 130 && my >= y + 45 && my <= y + 65;
             ctx.fill(x + 30, y + 45, x + 130, y + 65, h ? 0xFF333333 : 0xFF222222);
             ctx.drawCenteredTextWithShadow(client.textRenderer, autoBuyActive ? "§aВКЛЮЧЕН" : "§cВЫКЛЮЧЕН", width/2, y + 51, -1);
         }
-
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2 - 80, y = height/2 - 40;
