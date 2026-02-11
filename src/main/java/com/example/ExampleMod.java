@@ -4,7 +4,8 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.screen.ingame.GenericContainerScreen;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
@@ -26,7 +27,6 @@ public class ExampleMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        // Управление через чат
         ClientSendMessageEvents.ALLOW_CHAT.register(message -> {
             String msg = message.toLowerCase().trim();
             if (msg.equals(".b on")) {
@@ -46,14 +46,13 @@ public class ExampleMod implements ModInitializer {
             return true;
         });
 
-        // Основная логика (максимально облегченная)
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!active || client.player == null || isBuying) return;
 
-            if (client.currentScreen instanceof GenericContainerScreen menu) {
-                String title = menu.getTitle().getString().toLowerCase();
+            Screen screen = client.currentScreen;
+            if (screen instanceof HandledScreen<?> menu) {
+                String title = screen.getTitle().getString().toLowerCase();
                 
-                // Проверка только заголовков аукциона
                 if (title.contains("аукцион") || title.contains("поиск") || title.contains("search")) {
                     scan(client, menu);
                 } 
@@ -74,7 +73,8 @@ public class ExampleMod implements ModInitializer {
                 targetEnchants.clear();
             } else {
                 targetName = split[0].trim().toLowerCase();
-                String[] p = split[1].trim().split("\\s+");
+                String remaining = split[1].trim();
+                String[] p = remaining.split("\\s+");
                 maxPrice = Long.parseLong(p[p.length - 1]);
                 targetEnchants.clear();
                 
@@ -91,7 +91,7 @@ public class ExampleMod implements ModInitializer {
                 }
                 if (!currentEnc.isEmpty()) targetEnchants.add(currentEnc);
             }
-            log("§fИщу: §a" + targetName + " §7| §e" + targetEnchants + " §7| §6" + maxPrice + "$");
+            log("§fИщу: §a" + targetName + " §7| §6" + maxPrice + "$");
             active = true;
         } catch (Exception e) { log("§cОшибка формата!"); }
     }
@@ -104,7 +104,7 @@ public class ExampleMod implements ModInitializer {
         return in;
     }
 
-    private void scan(MinecraftClient client, GenericContainerScreen menu) {
+    private void scan(MinecraftClient client, HandledScreen<?> menu) {
         for (int i = 0; i < 45; i++) {
             ItemStack s = menu.getScreenHandler().getSlot(i).getStack();
             if (!s.isEmpty() && s.getName().getString().toLowerCase().contains(targetName)) {
@@ -113,7 +113,7 @@ public class ExampleMod implements ModInitializer {
                     int slot = i;
                     new Thread(() -> {
                         try {
-                            Thread.sleep(ThreadLocalRandom.current().nextLong(650, 950));
+                            Thread.sleep(ThreadLocalRandom.current().nextLong(700, 1000));
                             client.interactionManager.clickSlot(menu.getScreenHandler().syncId, slot, 0, SlotActionType.PICKUP, client.player);
                         } catch (Exception ignored) {}
                     }).start();
@@ -121,8 +121,7 @@ public class ExampleMod implements ModInitializer {
                 }
             }
         }
-        // Обновление (слот 49)
-        if (System.currentTimeMillis() - lastRefresh > 1400) {
+        if (System.currentTimeMillis() - lastRefresh > 1500) {
             client.interactionManager.clickSlot(menu.getScreenHandler().syncId, 49, 0, SlotActionType.PICKUP, client.player);
             lastRefresh = System.currentTimeMillis();
         }
@@ -142,12 +141,12 @@ public class ExampleMod implements ModInitializer {
         return false;
     }
 
-    private void confirm(MinecraftClient client, GenericContainerScreen menu) {
+    private void confirm(MinecraftClient client, HandledScreen<?> menu) {
         new Thread(() -> {
             try {
-                Thread.sleep(ThreadLocalRandom.current().nextLong(350, 550));
+                Thread.sleep(ThreadLocalRandom.current().nextLong(400, 600));
                 client.interactionManager.clickSlot(menu.getScreenHandler().syncId, 10, 0, SlotActionType.PICKUP, client.player);
-                Thread.sleep(1200);
+                Thread.sleep(1500);
                 isBuying = false;
             } catch (Exception ignored) { isBuying = false; }
         }).start();
