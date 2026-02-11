@@ -23,17 +23,20 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class ExampleMod implements ModInitializer {
 
-    // --- ВСЕ ФУНКЦИИ В СТРОЮ ---
+    // --- МОДУЛИ ---
     public static boolean killaura = false, triggerbot = false, autoTotem = true, fullbright = false, waypointActive = false;
     public static boolean autoRun = true, antiVelocity = true, antiInvisible = true;
 
-    // --- ПАРАМЕТРЫ ---
+    // --- НАСТРОЙКИ ---
     public static double kaRange = 3.2, kaWallsRange = 3.0;
     public static float shakeIntensity = 0.5f;
     public static int keyKA = GLFW.GLFW_KEY_UNKNOWN;
     
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
+    
+    // Переменная для хранения текущего рандомного порога КД
+    private float currentCooldownThreshold = 0.93f;
 
     @Override
     public void onInitialize() {
@@ -44,17 +47,20 @@ public class ExampleMod implements ModInitializer {
 
             long h = client.getWindow().getHandle();
             
-            // Меню на 0 и бинд на KA
+            // Меню и бинды
             if (isPressed(h, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
             if (client.currentScreen == null && isPressed(h, keyKA)) {
                 killaura = !killaura;
                 sendNotify("KillAura", killaura);
             }
 
-            // 1. FULLBRIGHT
-            if (fullbright) client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(net.minecraft.entity.effect.StatusEffects.NIGHT_VISION, 1000, 0, false, false));
+            // 1. FULLBRIGHT (Максимум)
+            if (fullbright) {
+                client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
+                        net.minecraft.entity.effect.StatusEffects.NIGHT_VISION, 1000, 0, false, false));
+            }
 
-            // 2. AUTO-TOTEM (Неурезанный Swap)
+            // 2. AUTO-TOTEM (Мгновенный Swap)
             if (autoTotem && client.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
                 for (int i = 0; i < 45; i++) {
                     if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
@@ -69,12 +75,14 @@ public class ExampleMod implements ModInitializer {
                 client.player.setSprinting(true);
             }
 
-            // 4. ANTI-VELOCITY (Мгновенный сброс вектора отталкивания)
+            // 4. ANTI-VELOCITY (Исправлено: Полная блокировка отдачи)
             if (antiVelocity && client.player.velocityModified) {
-                client.player.setVelocity(0, client.player.getVelocity().y, 0);
+                Vec3d currentVel = client.player.getVelocity();
+                client.player.setVelocity(0, currentVel.y, 0);
+                client.player.velocityModified = false;
             }
 
-            // 5. KILL AURA (С функцией Anti-Invisible и умным КД)
+            // 5. KILL AURA (С рандомным КД 0.93-0.96)
             if (killaura) runKillAura(client);
         });
     }
@@ -86,7 +94,7 @@ public class ExampleMod implements ModInitializer {
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isCreative()) continue;
             
-            // ПРОВЕРКА НА ИНВИЗ
+            // ANTI-INVISIBLE (Включено в ядро)
             if (!antiInvisible && p.isInvisible()) continue;
 
             double d = client.player.distanceTo(p);
@@ -97,16 +105,22 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // Наводка с Shake (рандомизация по хитбоксу)
+            // Наводка с Shake
             float[] rots = getRotations(client.player, target);
             client.player.setYaw(rots[0]);
             client.player.setPitch(rots[1]);
 
-            // УМНОЕ КД: Бьет на 0.93 (когда крит почти заряжен)
-            if (client.player.getAttackCooldownProgress(0) >= 0.93f) {
+            // РАНДОМНОЕ КД: Проверка порога от 0.93 до 0.96
+            if (client.player.getAttackCooldownProgress(0) >= currentCooldownThreshold) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
+                
+                // Генерируем новый порог для следующего удара
+                currentCooldownThreshold = 0.93f + (ThreadLocalRandom.current().nextFloat() * (0.96f - 0.93f));
             }
+        } else {
+            // Если цели нет, сбрасываем порог на дефолт
+            currentCooldownThreshold = 0.93f;
         }
     }
 
@@ -114,7 +128,7 @@ public class ExampleMod implements ModInitializer {
         double s = shakeIntensity * 0.13;
         Vec3d tPos = target.getPos().add(
                 ThreadLocalRandom.current().nextDouble(-s, s),
-                target.getHeight() * (0.35 + ThreadLocalRandom.current().nextDouble(0.1, 0.3)),
+                target.getHeight() * (0.35 + ThreadLocalRandom.current().nextDouble(0.1, 0.4)),
                 ThreadLocalRandom.current().nextDouble(-s, s)
         );
         Vec3d diff = tPos.subtract(self.getEyePos());
@@ -126,31 +140,34 @@ public class ExampleMod implements ModInitializer {
         };
     }
 
-    // --- GUI ---
+    // --- GUI СИСТЕМА ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Menu")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x90000000);
-            int x = width/2 - 90, y = height/2 - 80;
-            ctx.fill(x, y, x + 180, y + 160, 0xFF121212);
-            ctx.drawBorder(x, y, 180, 160, 0xFF00AAFF);
+            ctx.fill(0, 0, width, height, 0x98000000);
+            int x = width/2 - 100, y = height/2 - 80;
+            ctx.fill(x, y, x + 200, y + 160, 0xFF0D0D0D);
+            ctx.drawBorder(x, y, 200, 160, 0xFF00AAFF);
             ctx.drawCenteredTextWithShadow(client.textRenderer, "§bBUBBLE §fPREMIUM", width/2, y + 12, -1);
+            
             String[] mods = {"KillAura", "TriggerBot", "AutoTotem", "FullBright", "Waypoint"};
             boolean[] st = {killaura, triggerbot, autoTotem, fullbright, waypointActive};
+            
             for (int i = 0; i < mods.length; i++) {
                 int iy = y + 40 + (i * 22);
-                boolean h = mx >= x + 10 && mx <= x + 170 && my >= iy && my <= iy + 18;
-                ctx.fill(x + 10, iy, x + 170, iy + 18, h ? 0xFF252525 : 0xFF181818);
-                ctx.drawTextWithShadow(client.textRenderer, mods[i], x + 15, iy + 5, st[i] ? 0xFF00FFCC : -1);
+                boolean h = mx >= x + 10 && mx <= x + 190 && my >= iy && my <= iy + 18;
+                ctx.fill(x + 10, iy, x + 190, iy + 18, h ? 0xFF202020 : 0xFF141414);
+                ctx.drawTextWithShadow(client.textRenderer, mods[i], x + 20, iy + 5, st[i] ? 0xFF00FFAA : -1);
+                if (i == 0) ctx.drawTextWithShadow(client.textRenderer, "§7[SETTINGS]", x + 130, iy + 5, -1);
             }
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
-            int x = width/2 - 90, y = height/2 - 80;
+            int x = width/2 - 100, y = height/2 - 80;
             for (int i = 0; i < 5; i++) {
                 int iy = y + 40 + (i * 22);
-                if (mx >= x + 10 && mx <= x + 170 && my >= iy && my <= iy + 18) {
+                if (mx >= x + 10 && mx <= x + 190 && my >= iy && my <= iy + 18) {
                     if (i == 0 && b == 1) client.setScreen(new KillAuraSettings(this));
                     else if (i == 0) killaura = !killaura;
                     if (i == 1) triggerbot = !triggerbot;
@@ -176,9 +193,9 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xF5000000);
+            ctx.fill(0, 0, width, height, 0xF8000000);
             int x = width/2, y = height/2;
-            ctx.drawCenteredTextWithShadow(client.textRenderer, "§bKA §fCONFIG", x, y - 80, -1);
+            ctx.drawCenteredTextWithShadow(client.textRenderer, "§bKA §fCONFIG", x, y - 85, -1);
             ctx.drawTextWithShadow(client.textRenderer, "Range:", x - 70, y - 46, -1);
             rF.render(ctx, mx, my, d);
             drawO(ctx, "AutoRun", autoRun, y - 10, mx, my);
@@ -189,25 +206,25 @@ public class ExampleMod implements ModInitializer {
             drawP(ctx, "FunTime", x + 45, y + 60, mx, my);
         }
         private void drawO(DrawContext ctx, String n, boolean s, int y, int mx, int my) {
-            boolean h = mx >= width/2 - 70 && mx <= width/2 + 70 && my >= y && my <= y + 10;
+            boolean h = mx >= width/2 - 80 && mx <= width/2 + 80 && my >= y && my <= y + 12;
             ctx.drawCenteredTextWithShadow(client.textRenderer, n + ": " + (s ? "§aON" : "§cOFF"), width/2, y, h ? 0xFF00AAFF : -1);
         }
         private void drawP(DrawContext ctx, String n, int x, int y, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 45 && my >= y && my <= y + 12;
-            ctx.drawCenteredTextWithShadow(client.textRenderer, n, x + 22, y, h ? 0xFF00AAFF : -1);
+            boolean h = mx >= x && mx <= x + 50 && my >= y && my <= y + 14;
+            ctx.drawCenteredTextWithShadow(client.textRenderer, n, x + 25, y, h ? 0xFF00AAFF : -1);
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
-            if (mx >= x - 70 && mx <= x + 70) {
-                if (my >= y - 10 && my <= y) autoRun = !autoRun;
-                if (my >= y + 10 && my <= y + 20) antiVelocity = !antiVelocity;
-                if (my >= y + 30 && my <= y + 40) antiInvisible = !antiInvisible;
+            if (mx >= x - 80 && mx <= x + 80) {
+                if (my >= y - 10 && my <= y + 2) autoRun = !autoRun;
+                if (my >= y + 10 && my <= y + 22) antiVelocity = !antiVelocity;
+                if (my >= y + 30 && my <= y + 42) antiInvisible = !antiInvisible;
             }
-            if (my >= y + 60 && my <= y + 72) {
-                if (mx >= x - 85 && mx <= x - 40) { kaRange = 3.8; rF.setText("3.8"); }
-                if (mx >= x - 20 && mx <= x + 25) { kaRange = 3.1; rF.setText("3.1"); }
-                if (mx >= x + 45 && mx <= x + 100) { kaRange = 3.02; rF.setText("3.02"); }
+            if (my >= y + 60 && my <= y + 74) {
+                if (mx >= x - 85 && mx <= x - 35) { kaRange = 3.8; rF.setText("3.8"); }
+                if (mx >= x - 20 && mx <= x + 30) { kaRange = 3.1; rF.setText("3.1"); }
+                if (mx >= x + 45 && mx <= x + 95) { kaRange = 3.02; rF.setText("3.02"); }
             }
             return super.mouseClicked(mx, my, b);
         }
@@ -221,7 +238,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- СЕРВИС ---
+    // --- СЛУЖЕБНЫЕ ---
     private static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange + ":" + autoRun + ":" + antiVelocity + ":" + antiInvisible);
