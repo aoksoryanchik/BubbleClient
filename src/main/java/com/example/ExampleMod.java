@@ -2,7 +2,6 @@ package com.example;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -10,13 +9,9 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
@@ -28,17 +23,16 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class ExampleMod implements ModInitializer {
 
-    // --- ГЛОБАЛЬНЫЕ МОДУЛИ ---
+    // --- ГЛАВНЫЕ МОДУЛИ ---
     public static boolean killaura = false, triggerbot = false, autoTotem = true, fullbright = false, waypointActive = false;
     public static boolean autoRun = true, antiVelocity = true, antiInvisible = true;
 
     // --- НАСТРОЙКИ ---
     public static double kaRange = 3.2, kaWallsRange = 3.0;
     public static float shakeIntensity = 0.5f;
-    public static double wpX = 0, wpY = 64, wpZ = 0;
     
     // Бинды
-    public static int keyKA = GLFW.GLFW_KEY_UNKNOWN, keyTB = GLFW.GLFW_KEY_UNKNOWN;
+    public static int keyKA = GLFW.GLFW_KEY_UNKNOWN;
     
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
@@ -53,13 +47,13 @@ public class ExampleMod implements ModInitializer {
 
             handleKeybinds(client);
 
-            // 1. FULLBRIGHT (Максимальное освещение)
+            // 1. FULLBRIGHT
             if (fullbright) {
                 client.player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
                         net.minecraft.entity.effect.StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             }
 
-            // 2. AUTO-TOTEM (Неурезанная логика перекладывания)
+            // 2. AUTO-TOTEM (Максимальная скорость через Swap)
             if (autoTotem) runAutoTotem(client);
 
             // 3. AUTO-RUN (Умный спринт)
@@ -69,12 +63,12 @@ public class ExampleMod implements ModInitializer {
                 }
             }
 
-            // 4. ANTI-VELOCITY (Логика отмены отдачи через обнуление векторов)
+            // 4. ANTI-VELOCITY (Обнуление горизонтальной отдачи)
             if (antiVelocity && client.player.velocityModified) {
                 client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
 
-            // 5. KILL AURA (Основной движок)
+            // 5. KILL AURA (Движок с Anti-Invisible)
             if (killaura) runKillAura(client); else currentTarget = null;
         });
     }
@@ -86,12 +80,11 @@ public class ExampleMod implements ModInitializer {
         for (PlayerEntity player : client.world.getPlayers()) {
             if (player == client.player || !player.isAlive() || player.isCreative()) continue;
 
-            // ФУНКЦИЯ ANTI-INVISIBLE (Бьет невидимок, если включено)
+            // ФУНКЦИЯ ANTI-INVISIBLE: Игнорируем или бьем невидимок
             if (!antiInvisible && player.isInvisible()) continue;
 
             double d = client.player.distanceTo(player);
             if (d <= bestDist) {
-                // Raytrace / Wall Check
                 if (!client.player.canSee(player) && d > kaWallsRange) continue;
                 bestDist = d;
                 target = player;
@@ -100,12 +93,12 @@ public class ExampleMod implements ModInitializer {
 
         currentTarget = target;
         if (target != null) {
-            // Сложная наводка (Rotations + Shake)
+            // Ротации с Shake-эффектом для обхода детектов
             float[] rots = getRotations(client.player, target);
             client.player.setYaw(rots[0]);
             client.player.setPitch(rots[1]);
 
-            // Пакетная критическая атака (если в прыжке)
+            // Удар на пике КД (идеально для 1.21.4)
             if (client.player.getAttackCooldownProgress(0) >= 0.93f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
@@ -115,10 +108,9 @@ public class ExampleMod implements ModInitializer {
 
     private float[] getRotations(PlayerEntity self, PlayerEntity target) {
         double s = shakeIntensity * 0.13;
-        // Наводка не в одну точку, а в область хитбокса (обход античита)
         Vec3d targetPos = target.getPos().add(
                 ThreadLocalRandom.current().nextDouble(-s, s),
-                target.getHeight() * (0.3 + ThreadLocalRandom.current().nextDouble(0.1, 0.4)),
+                target.getHeight() * (0.35 + ThreadLocalRandom.current().nextDouble(0.1, 0.35)),
                 ThreadLocalRandom.current().nextDouble(-s, s)
         );
 
@@ -136,10 +128,8 @@ public class ExampleMod implements ModInitializer {
 
     private void runAutoTotem(MinecraftClient client) {
         if (client.player.getOffHandStack().getItem() == Items.TOTEM_OF_UNDYING) return;
-        
         for (int i = 0; i < 45; i++) {
             if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
-                // Быстрый перенос в левую руку
                 client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, i < 9 ? i + 36 : i, 45, SlotActionType.SWAP, client.player);
                 break;
             }
@@ -156,7 +146,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- ГРАФИЧЕСКИЙ ИНТЕРФЕЙС (GUI) ---
+    // --- GUI ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Menu")); }
         @Override
@@ -165,7 +155,7 @@ public class ExampleMod implements ModInitializer {
             int x = width/2 - 90, y = height/2 - 80;
             ctx.fill(x, y, x + 180, y + 160, 0xFF101010);
             ctx.drawBorder(x, y, 180, 160, 0xFF00AAFF);
-            ctx.drawCenteredTextWithShadow(client.textRenderer, "§bBUBBLE §fCLIENT", width/2, y + 10, -1);
+            ctx.drawCenteredTextWithShadow(client.textRenderer, "§bBUBBLE §fPREMIUM", width/2, y + 12, -1);
 
             String[] mods = {"KillAura", "TriggerBot", "AutoTotem", "FullBright", "Waypoint"};
             boolean[] states = {killaura, triggerbot, autoTotem, fullbright, waypointActive};
@@ -175,7 +165,7 @@ public class ExampleMod implements ModInitializer {
                 boolean hover = mx >= x + 10 && mx <= x + 170 && my >= iy && my <= iy + 18;
                 ctx.fill(x + 10, iy, x + 170, iy + 18, hover ? 0xFF202020 : 0xFF161616);
                 ctx.drawTextWithShadow(client.textRenderer, mods[i], x + 15, iy + 5, states[i] ? 0xFF00FFAA : -1);
-                if (i == 0) ctx.drawTextWithShadow(client.textRenderer, "§7[R]", x + 155, iy + 5, -1);
+                if (i == 0) ctx.drawTextWithShadow(client.textRenderer, "§7[SETTINGS]", x + 115, iy + 5, -1);
             }
         }
 
@@ -212,10 +202,10 @@ public class ExampleMod implements ModInitializer {
 
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xF0000000);
+            ctx.fill(0, 0, width, height, 0xF5000000);
             int x = width/2, y = height/2;
             ctx.drawCenteredTextWithShadow(client.textRenderer, "§bKILL AURA §fADVANCED", x, y - 80, -1);
-            ctx.drawTextWithShadow(client.textRenderer, "Range:", x - 70, y - 46, -1);
+            ctx.drawTextWithShadow(client.textRenderer, "Reach:", x - 70, y - 46, -1);
             rangeField.render(ctx, mx, my, d);
 
             drawOpt(ctx, "AutoRun", autoRun, y - 10, mx, my);
@@ -263,7 +253,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- СЛУЖЕБНЫЕ МЕТОДЫ ---
     private static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange + ":" + autoRun + ":" + antiVelocity + ":" + antiInvisible);
