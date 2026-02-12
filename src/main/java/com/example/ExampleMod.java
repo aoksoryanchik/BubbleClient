@@ -5,17 +5,18 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.client.util.math.RotationAxis;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ProjectileUtil;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
@@ -23,7 +24,6 @@ import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
-import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.*;
@@ -60,7 +60,6 @@ public class ExampleMod implements ModInitializer {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Обработка биндов
             if (client.currentScreen == null) {
                 if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
                 if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
@@ -94,7 +93,6 @@ public class ExampleMod implements ModInitializer {
     private void runAura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
-
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
@@ -118,9 +116,9 @@ public class ExampleMod implements ModInitializer {
 
     private void updateRotations(PlayerEntity player, Vec3d target) {
         Vec3d diff = target.subtract(player.getEyePos());
-        double diffXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
+        double dXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
         float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
-        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, diffXZ));
+        float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
 
         if (screenShake) {
             tYaw += (random.nextFloat() - 0.5f) * shakeIntensity * 10;
@@ -139,8 +137,7 @@ public class ExampleMod implements ModInitializer {
         EntityHitResult hit = ProjectileUtil.raycast(client.player, eye, eye.add(look), client.player.getBoundingBox().expand(look.x, look.y, look.z).expand(1.0), (e) -> e instanceof PlayerEntity && e.isAlive(), reach * reach);
 
         if (hit != null && hit.getEntity() instanceof PlayerEntity) {
-            float cdLimit = tbCrits ? 1.0f : 0.95f;
-            if (client.player.getAttackCooldownProgress(0) >= cdLimit) {
+            if (client.player.getAttackCooldownProgress(0) >= (tbCrits ? 1.0f : 0.95f)) {
                 client.interactionManager.attackEntity(client.player, hit.getEntity());
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -164,23 +161,21 @@ public class ExampleMod implements ModInitializer {
     private void renderWaypoint(WorldRenderContext context) {
         if (!waypointActive) return;
         MinecraftClient client = MinecraftClient.getInstance();
-        Vec3d wpVec = new Vec3d(wpX, wpY, wpZ);
+        Vec3d cam = context.camera().getPos();
         MatrixStack ms = context.matrixStack();
         ms.push();
-        Vec3d cam = context.camera().getPos();
         ms.translate(wpX - cam.x, wpY - cam.y + 1.5, wpZ - cam.z);
         ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
         ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
         ms.scale(-0.025f, -0.025f, 0.025f);
         
-        String text = String.format("WAYPOINT [%d, %d, %d]", (int)wpX, (int)wpY, (int)wpZ);
+        String text = "WAYPOINT [" + (int)wpX + ", " + (int)wpY + ", " + (int)wpZ + "]";
         float w = client.textRenderer.getWidth(text) / 2f;
         VertexConsumerProvider vcp = context.consumers();
         client.textRenderer.draw(text, -w, 0, -1, false, ms.peek().getPositionMatrix(), vcp, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
         ms.pop();
     }
 
-    // --- GUI SECTION ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -188,7 +183,6 @@ public class ExampleMod implements ModInitializer {
             int x = width / 2 - 90, y = height / 2 - 105;
             ctx.fill(x, y, x + 180, y + 155, 0xFF050505);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lBUBBLE CLIENT", width / 2, y + 10, -1);
-            
             String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "Waypoint"};
             boolean[] states = {killaura, triggerbot, fullbright, autoTotem, waypointActive};
             int[] keys = {keyKA, keyTB, keyFB, keyAT, keyMP};
@@ -208,19 +202,15 @@ public class ExampleMod implements ModInitializer {
             for (int i = 0; i < 5; i++) {
                 int iy = y + 35 + i * 22;
                 if (mx >= x + 10 && mx <= x + 170 && my >= iy && my <= iy + 18) {
-                    if (b == 0) {
-                        if (i == 0) killaura = !killaura;
-                        if (i == 1) triggerbot = !triggerbot;
-                        if (i == 2) fullbright = !fullbright;
-                        if (i == 3) autoTotem = !autoTotem;
-                        if (i == 4) waypointActive = !waypointActive;
-                    } else {
-                        client.setScreen(new BindScreen(this, i));
-                    }
-                    if (mx >= x + 150) { // Переход в настройки через стрелочку
+                    if (b == 1) { client.setScreen(new BindScreen(this, i)); return true; }
+                    if (mx >= x + 150) {
                         if (i == 0) client.setScreen(new KillAuraSettings(this));
                         if (i == 4) client.setScreen(new WaypointSettings(this));
+                        return true;
                     }
+                    if (i == 0) killaura = !killaura; if (i == 1) triggerbot = !triggerbot;
+                    if (i == 2) fullbright = !fullbright; if (i == 3) autoTotem = !autoTotem;
+                    if (i == 4) waypointActive = !waypointActive;
                     saveConfig(); return true;
                 }
             }
@@ -229,9 +219,9 @@ public class ExampleMod implements ModInitializer {
     }
 
     public static class KillAuraSettings extends Screen {
-        private final Screen parent;
+        private final Screen p;
         private TextFieldWidget f1, f2, f3;
-        public KillAuraSettings(Screen p) { super(Text.literal("")); this.parent = p; }
+        public KillAuraSettings(Screen p) { super(Text.literal("")); this.p = p; }
 
         @Override
         protected void init() {
@@ -239,11 +229,11 @@ public class ExampleMod implements ModInitializer {
             f1 = new TextFieldWidget(textRenderer, x, height / 2 - 45, 45, 16, Text.literal(""));
             f2 = new TextFieldWidget(textRenderer, x, height / 2 - 20, 45, 16, Text.literal(""));
             f3 = new TextFieldWidget(textRenderer, x, height / 2 + 5, 45, 16, Text.literal(""));
-            updateFields();
+            refreshFields();
             addDrawableChild(f1); addDrawableChild(f2); addDrawableChild(f3);
         }
 
-        private void updateFields() {
+        private void refreshFields() {
             f1.setText(String.format("%.1f", kaRange));
             f2.setText(String.format("%.1f", kaWallsRange));
             f3.setText(String.format("%.1f", shakeIntensity));
@@ -255,12 +245,9 @@ public class ExampleMod implements ModInitializer {
             int x = width / 2, y = height / 2;
             ctx.fill(x - 115, y - 95, x + 115, y + 110, 0xFF0A0A0A);
             ctx.drawCenteredTextWithShadow(textRenderer, "§b§lKILL AURA SETTINGS", x, y - 85, -1);
-            
             ctx.drawTextWithShadow(textRenderer, "Range:", x - 105, y - 41, -1);
             ctx.drawTextWithShadow(textRenderer, "Walls:", x - 105, y - 16, -1);
             ctx.drawTextWithShadow(textRenderer, "Shake:", x - 105, y + 9, -1);
-
-            // Кнопки конфигов
             drawCfgBtn(ctx, "MineBlaze", x + 10, y + 35, mx, my);
             drawCfgBtn(ctx, "AresMine", x + 10, y + 60, mx, my);
             super.render(ctx, mx, my, delta);
@@ -278,11 +265,11 @@ public class ExampleMod implements ModInitializer {
             if (mx >= x + 10 && mx <= x + 110) {
                 if (my >= y + 35 && my <= y + 53) { // MineBlaze
                     kaRange = 3.1; kaWallsRange = 0.0; shakeIntensity = 0.2f; antiVelocity = false; autoRun = true;
-                    updateFields(); return true;
+                    refreshFields(); return true;
                 }
                 if (my >= y + 60 && my <= y + 78) { // AresMine
                     kaRange = 3.8; kaWallsRange = 3.0; shakeIntensity = 0.5f; antiVelocity = true; autoRun = true;
-                    updateFields(); return true;
+                    refreshFields(); return true;
                 }
             }
             return super.mouseClicked(mx, my, b);
@@ -296,16 +283,16 @@ public class ExampleMod implements ModInitializer {
                     kaWallsRange = Double.parseDouble(f2.getText().replace(",", "."));
                     shakeIntensity = Float.parseFloat(f3.getText().replace(",", "."));
                 } catch (Exception ignored) {}
-                saveConfig(); client.setScreen(parent); return true;
+                saveConfig(); client.setScreen(p); return true;
             }
             return super.keyPressed(k, s, m);
         }
     }
 
     public static class WaypointSettings extends Screen {
-        private final Screen parent;
+        private final Screen p;
         private TextFieldWidget f1, f2, f3;
-        public WaypointSettings(Screen p) { super(Text.literal("")); this.parent = p; }
+        public WaypointSettings(Screen p) { super(Text.literal("")); this.p = p; }
         @Override
         protected void init() {
             int x = width / 2 + 20;
@@ -327,15 +314,15 @@ public class ExampleMod implements ModInitializer {
                 try {
                     wpX = Double.parseDouble(f1.getText()); wpY = Double.parseDouble(f2.getText()); wpZ = Double.parseDouble(f3.getText());
                 } catch (Exception ignored) {}
-                saveConfig(); client.setScreen(parent); return true;
+                saveConfig(); client.setScreen(p); return true;
             }
             return super.keyPressed(k, s, m);
         }
     }
 
     public static class BindScreen extends Screen {
-        private final Screen parent; private final int id;
-        public BindScreen(Screen p, int id) { super(Text.literal("")); this.parent = p; this.id = id; }
+        private final Screen p; private final int id;
+        public BindScreen(Screen p, int id) { super(Text.literal("")); this.p = p; this.id = id; }
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             ctx.fill(0, 0, width, height, 0xEE000000);
@@ -346,7 +333,7 @@ public class ExampleMod implements ModInitializer {
             if (k == GLFW.GLFW_KEY_ESCAPE) k = GLFW.GLFW_KEY_UNKNOWN;
             if (id == 0) keyKA = k; if (id == 1) keyTB = k; if (id == 2) keyFB = k;
             if (id == 3) keyAT = k; if (id == 4) keyMP = k;
-            saveConfig(); client.setScreen(parent); return true;
+            saveConfig(); client.setScreen(p); return true;
         }
     }
 
