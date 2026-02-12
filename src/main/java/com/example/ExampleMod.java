@@ -12,7 +12,7 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.client.util.math.RotationAxis;
+import net.minecraft.util.math.RotationAxis;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.entity.effect.StatusEffectInstance;
@@ -29,10 +29,10 @@ import org.lwjgl.glfw.GLFW;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
+    // --- ПЕРЕМЕННЫЕ (сохранено все как было) ---
     public static boolean killaura = false, triggerbot = false, fullbright = false, waypointActive = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, screenShake = true, tbCrits = true;
     public static boolean stickyAura = false;
@@ -56,10 +56,12 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long h = client.getWindow().getHandle();
 
+            // Открытие меню
             if (isPressed(h, GLFW.GLFW_KEY_GRAVE_ACCENT) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
+            // Бинды
             if (client.currentScreen == null) {
                 if (isPressed(h, keyKA)) { killaura = !killaura; sendNotify("KillAura", killaura); }
                 if (isPressed(h, keyTB)) { triggerbot = !triggerbot; sendNotify("TriggerBot", triggerbot); }
@@ -68,6 +70,7 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(h, keyMP)) { waypointActive = !waypointActive; sendNotify("Waypoint", waypointActive); }
             }
 
+            // Функционал
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) handleAutoTotem(client);
             if (autoRun && (client.player.forwardSpeed > 0 || killaura)) client.player.setSprinting(true);
@@ -76,6 +79,7 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot) runTrigger(client);
         });
 
+        // Регистрация рендера вейпоинта (ИСПРАВЛЕН ИМПОРТ)
         WorldRenderEvents.LAST.register(this::renderWaypoint);
     }
 
@@ -93,6 +97,7 @@ public class ExampleMod implements ModInitializer {
     private void runAura(MinecraftClient client) {
         PlayerEntity target = null;
         double bestDist = Double.MAX_VALUE;
+
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible() || p.isCreative()) continue;
             double d = client.player.distanceTo(p);
@@ -103,6 +108,7 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
+            // Рандомизация точки удара (твоя логика)
             float randomHeight = 0.3f + random.nextFloat() * 0.4f;
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * randomHeight, 0);
             updateRotations(client.player, targetPos);
@@ -120,6 +126,7 @@ public class ExampleMod implements ModInitializer {
         float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90F;
         float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, dXZ));
 
+        // Shake эффект (твоя логика)
         if (screenShake) {
             tYaw += (random.nextFloat() - 0.5f) * shakeIntensity * 10;
             tPitch += (random.nextFloat() - 0.5f) * shakeIntensity * 10;
@@ -158,6 +165,7 @@ public class ExampleMod implements ModInitializer {
         return false;
     }
 
+    // ИСПРАВЛЕННЫЙ МЕТОД РЕНДЕРА (RotationAxis и TextRenderer)
     private void renderWaypoint(WorldRenderContext context) {
         if (!waypointActive) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -165,6 +173,7 @@ public class ExampleMod implements ModInitializer {
         MatrixStack ms = context.matrixStack();
         ms.push();
         ms.translate(wpX - cam.x, wpY - cam.y + 1.5, wpZ - cam.z);
+        // Исправлено: RotationAxis теперь берется из net.minecraft.util.math
         ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
         ms.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
         ms.scale(-0.025f, -0.025f, 0.025f);
@@ -172,10 +181,12 @@ public class ExampleMod implements ModInitializer {
         String text = "WAYPOINT [" + (int)wpX + ", " + (int)wpY + ", " + (int)wpZ + "]";
         float w = client.textRenderer.getWidth(text) / 2f;
         VertexConsumerProvider vcp = context.consumers();
+        // Исправлено: TextRenderer.TextLayerType теперь доступен через импорт
         client.textRenderer.draw(text, -w, 0, -1, false, ms.peek().getPositionMatrix(), vcp, TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
         ms.pop();
     }
 
+    // --- GUI СЕКЦИЯ (ОСТАВЛЕНА БЕЗ ИЗМЕНЕНИЙ) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("")); }
         @Override
@@ -337,6 +348,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // --- КОНФИГ (ОСТАВЛЕН БЕЗ ИЗМЕНЕНИЙ) ---
     private static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange + ":" + kaWallsRange + ":" + wpX + ":" + wpY + ":" + wpZ + ":0:0:0:" + (autoRun ? 1 : 0) + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + keyMP + ":" + shakeIntensity + ":" + (antiVelocity ? 1 : 0) + ":" + (tbCrits ? 1 : 0));
