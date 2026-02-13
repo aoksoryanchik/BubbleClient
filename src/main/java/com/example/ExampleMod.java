@@ -90,26 +90,43 @@ public class ExampleMod implements ModInitializer {
         for (PlayerEntity p : c.world.getPlayers()) {
             if (p == c.player || !p.isAlive() || p.isSpectator()) continue;
             if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
+            
             double d = c.player.distanceTo(p);
             if (d > kaRange || d >= best) continue;
+            if (!c.player.canSee(p) && d > kaWallsRange) continue;
+            
             best = d;
             auraTarget = p;
         }
 
         if (auraTarget != null) {
-            rotate(c.player, auraTarget.getPos().add(0, auraTarget.getHeight() * 0.5, 0), kaLegit);
-            
-            // Target Strafe (Копирование движения)
+            // Безопасный TargetAura (магнит к цели)
             if (targetAura) {
-                Vec3d targetVel = auraTarget.getVelocity();
-                c.player.addVelocity(targetVel.x, 0, targetVel.z);
+                double dist = c.player.distanceTo(auraTarget);
+                if (dist > 1.5D && dist <= kaRange) {
+                    Vec3d dir = auraTarget.getPos().subtract(c.player.getPos()).normalize();
+                    double speed = c.player.isSprinting() ? 0.08 : 0.04;
+                    c.player.addVelocity(dir.x * speed, 0, dir.z * speed);
+                }
             }
             if (autoRun) c.player.setSprinting(true);
 
-            float cooldown = c.player.getAttackCooldownProgress(0.5f);
-            boolean isFalling = c.player.getVelocity().y < -0.05 && !c.player.isOnGround();
+            // Плавное наведение
+            boolean isLookingAtTarget = rotate(c.player, auraTarget.getPos().add(0, auraTarget.getHeight() * 0.5, 0), kaLegit);
             
-            if (c.player.isOnGround() ? (cooldown >= 1.0F) : (isFalling && cooldown >= 0.9F)) {
+            // Логика критов
+            float cooldown = c.player.getAttackCooldownProgress(0.5f);
+            boolean isFalling = c.player.getVelocity().y < -0.01 && !c.player.isOnGround();
+            
+            boolean canStrike = false;
+            if (kaLegit) { // Строгая проверка для легита
+                canStrike = isFalling ? (cooldown >= 0.9F) : (c.player.isOnGround() && cooldown >= 1.0F);
+            } else { // Агрессивная для AresMine
+                canStrike = cooldown >= 0.9F; 
+            }
+
+            // Бьем ТОЛЬКО если смотрим на врага (убирает миссы и детекты)
+            if (canStrike && isLookingAtTarget) {
                 c.interactionManager.attackEntity(c.player, auraTarget);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -129,13 +146,22 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void rotate(PlayerEntity p, Vec3d t, boolean legit) {
+    private boolean rotate(PlayerEntity p, Vec3d t, boolean legit) {
         Vec3d d = t.subtract(p.getEyePos());
         double dist = Math.sqrt(d.x * d.x + d.z * d.z);
         float ty = (float) Math.toDegrees(Math.atan2(d.z, d.x)) - 90.0F;
         float tp = (float) -Math.toDegrees(Math.atan2(d.y, dist));
-        p.setYaw(p.getYaw() + MathHelper.wrapDegrees(ty - p.getYaw()) * (legit ? 0.45F : 1.0F));
-        p.setPitch(p.getPitch() + MathHelper.wrapDegrees(tp - p.getPitch()) * (legit ? 0.45F : 1.0F));
+        
+        float yawDiff = MathHelper.wrapDegrees(ty - p.getYaw());
+        float pitchDiff = MathHelper.wrapDegrees(tp - p.getPitch());
+        
+        // Лимитируем скорость поворота для обхода античитов
+        float maxSpeed = legit ? 15.0F : 45.0F;
+        p.setYaw(p.getYaw() + MathHelper.clamp(yawDiff, -maxSpeed, maxSpeed));
+        p.setPitch(p.getPitch() + MathHelper.clamp(pitchDiff, -maxSpeed, maxSpeed));
+        
+        // Возвращаем true, если прицел близок к цели (угол < 35 градусов)
+        return Math.abs(yawDiff) < 35.0F;
     }
 
     private void notify(MinecraftClient c, String m, boolean s) {
@@ -160,7 +186,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange + ":" + kaWallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + antiVelocity + ":" + targetAura + ":" + friendsRaw);
+            w.println(kaRange + ":" + kaWallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + antiVelocity + ":" + targetAura + ":" + kaLegit + ":" + friendsRaw);
         } catch (Exception ignored) {}
     }
 
@@ -168,13 +194,13 @@ public class ExampleMod implements ModInitializer {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":", -1);
-            if (p.length >= 9) {
+            if (p.length >= 11) {
                 kaRange = Double.parseDouble(p[0]); kaWallsRange = Double.parseDouble(p[1]); 
                 autoRun = Boolean.parseBoolean(p[2]); keyKA = Integer.parseInt(p[3]); 
                 keyTB = Integer.parseInt(p[4]); keyFB = Integer.parseInt(p[5]); 
                 keyAT = Integer.parseInt(p[6]); antiVelocity = Boolean.parseBoolean(p[7]); 
-                targetAura = Boolean.parseBoolean(p[8]);
-                if (p.length > 9) updateFriends(p[9]);
+                targetAura = Boolean.parseBoolean(p[8]); kaLegit = Boolean.parseBoolean(p[9]);
+                updateFriends(p[10]);
             }
         } catch (Exception ignored) {}
     }
@@ -219,56 +245,96 @@ public class ExampleMod implements ModInitializer {
     }
 
     public static class KillAuraSettings extends Screen {
-        private final Screen p; private TextFieldWidget fF;
+        private final Screen p; 
+        private TextFieldWidget rF, wF, fF;
+        
         public KillAuraSettings(Screen p) { super(Text.literal("KA")); this.p = p; }
+        
         @Override protected void init() {
             int x = width/2, y = height/2;
-            fF = new TextFieldWidget(textRenderer, x + 115, y - 50, 100, 14, Text.literal("Friends:"));
+            
+            rF = new TextFieldWidget(textRenderer, x - 100, y - 75, 80, 14, Text.literal("")); 
+            rF.setText(String.valueOf(kaRange));
+            
+            wF = new TextFieldWidget(textRenderer, x - 100, y - 55, 80, 14, Text.literal("")); 
+            wF.setText(String.valueOf(kaWallsRange));
+            
+            fF = new TextFieldWidget(textRenderer, x + 15, y - 75, 100, 14, Text.literal("Friends:"));
             fF.setText(friendsRaw.isEmpty() ? "Friends:" : friendsRaw);
             fF.setChangedListener(s -> { if(fF.isFocused() && s.equals("Friends:")) fF.setText(""); });
-            addDrawableChild(fF);
+            
+            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
         }
+        
         @Override public void renderBackground(DrawContext ctx, int x, int y, float d) { ctx.fill(0, 0, width, height, 0x80000000); }
+        
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             super.render(ctx, mx, my, d);
             int x = width/2, y = height/2;
-            ctx.fill(x-180, y-95, x+110, y+115, -16448251);
-            ctx.fill(x+112, y-95, x+225, y+30, -16448251);
-            ctx.drawCenteredTextWithShadow(textRenderer, "KA SETTINGS", x - 35, y-88, -1);
-            ctx.drawCenteredTextWithShadow(textRenderer, "FRIENDS", x + 168, y-88, 0xFF55FF55);
             
-            drawBtn(ctx, x-170, y-70, 200, 14, "AutoRun: ", autoRun, mx, my);
-            drawBtn(ctx, x-170, y-50, 200, 14, "AntiVelocity: ", antiVelocity, mx, my);
-            drawBtn(ctx, x-170, y-30, 200, 14, "TargetAura: ", targetAura, mx, my);
+            // Левая панель (Настройки)
+            ctx.fill(x - 180, y - 100, x - 5, y + 90, -16448251);
+            ctx.drawCenteredTextWithShadow(textRenderer, "KA SETTINGS", x - 92, y - 90, -1);
+            
+            ctx.drawText(textRenderer, "Range:", x - 170, y - 72, -1, true);
+            ctx.drawText(textRenderer, "Walls:", x - 170, y - 52, -1, true);
+            
+            drawBtn(ctx, x - 170, y - 30, 155, 14, "AutoRun: ", autoRun, mx, my);
+            drawBtn(ctx, x - 170, y - 10, 155, 14, "AntiVelocity: ", antiVelocity, mx, my);
+            drawBtn(ctx, x - 170, y + 10, 155, 14, "TargetAura: ", targetAura, mx, my);
 
-            ctx.drawCenteredTextWithShadow(textRenderer, "CFG", x - 35, y+45, -1);
-            btn(ctx, x-170, y+55, 270, 14, "MineBlaze (Legit Crits)", mx, my);
-            btn(ctx, x-170, y+75, 270, 14, "AresMine (Max Distance)", mx, my);
+            ctx.drawCenteredTextWithShadow(textRenderer, "CFG", x - 92, y + 35, -1);
+            btn(ctx, x - 170, y + 50, 155, 14, "MineBlaze", mx, my);
+            btn(ctx, x - 170, y + 70, 155, 14, "AresMine", mx, my);
+
+            // Правая панель (Друзья)
+            ctx.fill(x + 5, y - 100, x + 130, y + 90, -16448251);
+            ctx.drawCenteredTextWithShadow(textRenderer, "FRIENDS", x + 67, y - 90, 0xFF55FF55);
         }
+        
         private void drawBtn(DrawContext c, int x, int y, int w, int h, String t, boolean s, int mx, int my) {
             c.fill(x, y, x+w, y+h, (mx>=x && mx<=x+w && my>=y && my<=y+h) ? -14540254 : -15658735);
             c.drawText(textRenderer, t, x+5, y+3, -1, true);
-            c.drawText(textRenderer, s ? "ВКЛ" : "ВЫКЛ", x+w-35, y+3, s ? 0xFF00FF00 : 0xFFFF0000, true);
+            c.drawText(textRenderer, s ? "ВКЛ" : "ВЫКЛ", x+w-30, y+3, s ? 0xFF00FF00 : 0xFFFF0000, true);
         }
+        
         private void btn(DrawContext c, int x, int y, int w, int h, String t, int mx, int my) {
             c.fill(x, y, x+w, y+h, (mx>=x && mx<=x+w && my>=y && my<=y+h) ? -14540254 : -15658735);
             c.drawCenteredTextWithShadow(textRenderer, t, x+w/2, y+3, -1);
         }
+        
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
-            if (mx >= x-170 && mx <= x+100) {
-                if (my >= y-70 && my <= y-56) autoRun = !autoRun;
-                if (my >= y-50 && my <= y-36) antiVelocity = !antiVelocity;
-                if (my >= y-30 && my <= y-16) targetAura = !targetAura;
-                if (my >= y+55 && my <= y+69) { kaRange=3.2; kaLegit=true; autoRun=true; targetAura=false; }
-                if (my >= y+75 && my <= y+89) { kaRange=3.8; kaLegit=false; autoRun=true; targetAura=true; }
-                saveConfig();
+            if (mx >= x - 170 && mx <= x - 15) {
+                if (my >= y - 30 && my <= y - 16) autoRun = !autoRun;
+                if (my >= y - 10 && my <= y + 4) antiVelocity = !antiVelocity;
+                if (my >= y + 10 && my <= y + 24) targetAura = !targetAura;
+                
+                // Нажатие на MineBlaze
+                if (my >= y + 50 && my <= y + 64) { 
+                    kaRange = 3.2; kaWallsRange = 0.0; kaLegit = true; autoRun = true; targetAura = false; 
+                    rF.setText("3.2"); wF.setText("0.0");
+                }
+                // Нажатие на AresMine
+                if (my >= y + 70 && my <= y + 84) { 
+                    kaRange = 3.6; kaWallsRange = 3.6; kaLegit = false; autoRun = true; targetAura = true; 
+                    rF.setText("3.6"); wF.setText("3.6");
+                }
             }
             return super.mouseClicked(mx, my, b);
         }
-        @Override public void close() { updateFriends(fF.getText()); saveConfig(); client.setScreen(p); }
+        
+        @Override public void close() { 
+            try {
+                kaRange = Double.parseDouble(rF.getText());
+                kaWallsRange = Double.parseDouble(wF.getText());
+            } catch (Exception ignored) {}
+            updateFriends(fF.getText()); 
+            saveConfig(); 
+            client.setScreen(p); 
+        }
     }
 
     public static class BindScreen extends Screen {
@@ -288,3 +354,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
