@@ -32,7 +32,7 @@ import java.util.List;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true;
-    public static double kaRange = 3.1D, kaWallsRange = 0.0D; // Дефолты под MineBlaze
+    public static double kaRange = 3.1D, kaWallsRange = 0.0D;
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1;
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
@@ -46,6 +46,10 @@ public class ExampleMod implements ModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
+
+            // Блокировка тряски FOV (приближение/отдаление)
+            // Это заставляет камеру стоять мертво при спринте/ударах
+            client.options.getFovEffectScale().setValue(0.0);
 
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
@@ -103,21 +107,21 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
 
-            // Мягкая наводка для предотвращения тряски
-            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
+            // Идеально плавная наводка (как будто ведешь рукой)
+            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.55, 0);
             Vec3d diff = targetPos.subtract(c.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавность 0.4f убирает тряску, сохраняя скорость наводки
-            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.4f));
-            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.4f));
+            // Плавность 0.35f полностью убирает эффект тряски при наведении
+            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.35f));
+            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.35f));
 
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
             
-            // Проверка на мисс: разница углов должна быть минимальной для удара
+            // Проверка угла перед ударом для минимизации миссов
             float yawDiff = Math.abs(MathHelper.wrapDegrees(c.player.getYaw() - targetYaw));
-            if (cooldown >= 0.93F && yawDiff < 20.0F) {
+            if (cooldown >= 0.93F && yawDiff < 18.0F) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -277,4 +281,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
