@@ -53,8 +53,7 @@ public class ExampleMod implements ModInitializer {
             if (client.field_1724 == null || client.field_1687 == null) return;
             long h = client.method_22683().method_4490();
 
-            // Открытие меню на клавишу U (код 48)
-            if (isPressed(h, 48) && client.field_1755 == null) {
+            if (isPressed(h, GLFW.GLFW_KEY_U) && client.field_1755 == null) {
                 client.method_1507(new BubbleMenu());
             }
 
@@ -119,7 +118,7 @@ public class ExampleMod implements ModInitializer {
             class_243 tPos = auraTarget.method_19538().method_1031(offset, auraTarget.method_17682() * (0.4D + rnd.nextDouble() * 0.3D), offset);
             updateRotations(client.field_1724, tPos, 100.0F);
             if (client.field_1724.method_7261(0.0F) >= 1.0F) {
-                client.field_1761.method_2918(client.field_1724, auraTarget);
+                client.field_1761.method_2918(client.field_1724, (class_1297) auraTarget);
                 client.field_1724.method_6104(class_1268.field_5808);
             }
         }
@@ -130,10 +129,10 @@ public class ExampleMod implements ModInitializer {
         class_243 eye = client.field_1724.method_33571();
         class_243 look = client.field_1724.method_5828(1.0F).method_1021(reach);
         class_238 box = client.field_1724.method_5829().method_1009(look.field_1352, look.field_1351, look.field_1350).method_1014(1.0D);
-        class_3966 hit = class_1675.method_18075(client.field_1724, eye, eye.method_1019(look), box, e -> (e instanceof class_1657 && e.method_5805()), reach * reach);
+        class_3966 hit = class_1675.method_18075((class_1297)client.field_1724, eye, eye.method_1019(look), box, e -> (e instanceof class_1657 && e.method_5805()), reach * reach);
         if (hit != null && hit.method_17782() instanceof class_1657 target) {
             if (client.field_1724.method_7261(0.0F) >= (tbCrits ? 1.0F : 0.92F)) {
-                client.field_1761.method_2918(client.field_1724, target);
+                client.field_1761.method_2918(client.field_1724, (class_1297) target);
                 client.field_1724.method_6104(class_1268.field_5808);
             }
         }
