@@ -11,7 +11,7 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.Entity; // ДОБАВЛЕН ВАЖНЫЙ ИМПОРТ
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
@@ -85,43 +85,79 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    // ЛОГИКА ESP (ИСПРАВЛЕННАЯ)
+    // ЛОГИКА ESP (ИСПРАВЛЕННАЯ ПОЛНОСТЬЮ)
     private void onWorldRender(WorldRenderContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!esp || client.player == null) return;
         
+        // Получаем tickDelta прямо из контекста события (это работает во всех версиях Fabric)
+        float tickDelta = context.tickDelta();
+
         for (PlayerEntity player : client.world.getPlayers()) {
             if (player == client.player || !player.isAlive() || player.isInvisible()) continue;
             
-            // ИСПРАВЛЕНИЕ ЦВЕТА: Всегда белый (1.0f, 1.0f, 1.0f)
-            // Игнорируем друзей/врагов для цвета, как ты и просил
-            drawEntityBox(context, player, 1.0f, 1.0f, 1.0f, 1.0f);
+            drawEntityBox(context, player, tickDelta, 1.0f, 1.0f, 1.0f, 1.0f);
         }
     }
 
-    private void drawEntityBox(WorldRenderContext ctx, PlayerEntity entity, float r, float g, float b, float a) {
+    private void drawEntityBox(WorldRenderContext ctx, PlayerEntity entity, float tickDelta, float r, float g, float b, float a) {
         MatrixStack matrices = ctx.matrixStack();
         Vec3d camPos = ctx.camera().getPos();
         
-        // ИСПРАВЛЕНИЕ TICKDELTA: Берем напрямую из клиента, чтобы не было ошибки
-        float tickDelta = MinecraftClient.getInstance().getTickDelta();
-
         matrices.push();
+        
+        // Интерполяция позиции для плавности
         double x = MathHelper.lerp(tickDelta, entity.prevX, entity.getX()) - camPos.x;
         double y = MathHelper.lerp(tickDelta, entity.prevY, entity.getY()) - camPos.y;
         double z = MathHelper.lerp(tickDelta, entity.prevZ, entity.getZ()) - camPos.z;
+        
         matrices.translate(x, y, z);
 
+        // Получаем BoundingBox и сдвигаем его в 0,0,0
         Box box = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
+        
         VertexConsumer buffer = ctx.consumers().getBuffer(RenderLayer.getLines());
         
-        // ИСПРАВЛЕНИЕ DRAWBOX: Передаем координаты напрямую, а не объект Box
-        WorldRenderer.drawBox(matrices, buffer, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, r, g, b, a);
+        // ВМЕСТО WorldRenderer.drawBox ИСПОЛЬЗУЕМ РУЧНУЮ ОТРИСОВКУ (чтобы не было ошибок)
+        drawOutlinedBox(matrices, buffer, box, r, g, b, a);
         
         matrices.pop();
     }
 
-    // ЛОГИКА КИЛЛАУРЫ И ОСТАЛЬНОГО
+    // НОВАЯ ФУНКЦИЯ РУЧНОЙ ОТРИСОВКИ КОРОБКИ (Работает везде)
+    private void drawOutlinedBox(MatrixStack matrices, VertexConsumer buffer, Box box, float r, float g, float b, float a) {
+        MatrixStack.Entry entry = matrices.peek();
+        float minX = (float) box.minX;
+        float minY = (float) box.minY;
+        float minZ = (float) box.minZ;
+        float maxX = (float) box.maxX;
+        float maxY = (float) box.maxY;
+        float maxZ = (float) box.maxZ;
+
+        // Рисуем 12 линий (ребра куба)
+        drawLine(entry, buffer, minX, minY, minZ, maxX, minY, minZ, r, g, b, a);
+        drawLine(entry, buffer, minX, maxY, minZ, maxX, maxY, minZ, r, g, b, a);
+        drawLine(entry, buffer, minX, minY, maxZ, maxX, minY, maxZ, r, g, b, a);
+        drawLine(entry, buffer, minX, maxY, maxZ, maxX, maxY, maxZ, r, g, b, a);
+
+        drawLine(entry, buffer, minX, minY, minZ, minX, maxY, minZ, r, g, b, a);
+        drawLine(entry, buffer, maxX, minY, minZ, maxX, maxY, minZ, r, g, b, a);
+        drawLine(entry, buffer, minX, minY, maxZ, minX, maxY, maxZ, r, g, b, a);
+        drawLine(entry, buffer, maxX, minY, maxZ, maxX, maxY, maxZ, r, g, b, a);
+
+        drawLine(entry, buffer, minX, minY, minZ, minX, minY, maxZ, r, g, b, a);
+        drawLine(entry, buffer, maxX, minY, minZ, maxX, minY, maxZ, r, g, b, a);
+        drawLine(entry, buffer, minX, maxY, minZ, minX, maxY, maxZ, r, g, b, a);
+        drawLine(entry, buffer, maxX, maxY, minZ, maxX, maxY, maxZ, r, g, b, a);
+    }
+
+    private void drawLine(MatrixStack.Entry entry, VertexConsumer buffer, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float b, float a) {
+        // Обычные нормали для линий
+        buffer.vertex(entry.getPositionMatrix(), x1, y1, z1).color(r, g, b, a).normal(entry.getNormalMatrix(), 1.0F, 0.0F, 0.0F).next();
+        buffer.vertex(entry.getPositionMatrix(), x2, y2, z2).color(r, g, b, a).normal(entry.getNormalMatrix(), 1.0F, 0.0F, 0.0F).next();
+    }
+
+    // ЛОГИКА КИЛЛАУРЫ И ОСТАЛЬНОГО (Без изменений)
     private void checkTotem(MinecraftClient c) {
         if (c.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
             for (int i = 0; i < 45; i++) {
@@ -167,7 +203,6 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient c) {
         HitResult h = c.crosshairTarget;
         if (h != null && h.getType() == HitResult.Type.ENTITY) {
-            // ИСПРАВЛЕНИЕ Entity: Теперь класс импортирован, ошибка исчезнет
             Entity e = ((EntityHitResult) h).getEntity();
             if (e instanceof PlayerEntity && e.isAlive() && !friendsList.contains(e.getName().getString().toLowerCase())) {
                 if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
