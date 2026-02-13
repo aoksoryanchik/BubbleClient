@@ -55,12 +55,16 @@ public class ExampleMod implements ModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
+            
+            // Отключение тряски FOV
             client.options.getFovEffectScale().setValue(0.0);
 
+            // Меню на клавишу 0
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
+            // Обработка биндов
             if (client.currentScreen == null) {
                 if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
                 if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
@@ -85,7 +89,7 @@ public class ExampleMod implements ModInitializer {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!esp || client.player == null) return;
         
-        // Исправленное получение tickDelta для всех новых версий Fabric
+        // Исправлено получение tickDelta
         float tickDelta = client.getRenderTickCounter().getTickDelta(true);
 
         for (PlayerEntity player : client.world.getPlayers()) {
@@ -117,18 +121,18 @@ public class ExampleMod implements ModInitializer {
         float x1 = (float)box.minX, y1 = (float)box.minY, z1 = (float)box.minZ;
         float x2 = (float)box.maxX, y2 = (float)box.maxY, z2 = (float)box.maxZ;
 
-        // Рисуем 12 линий бокса. Используем normal(0, 1, 0) напрямую, чтобы избежать ошибок типов Matrix3f
-        // Нижний квадрат
+        // Рисуем грани (без вызова .next() для совместимости с 1.21+)
+        // Нижнее основание
         drawLine(posMat, buffer, x1, y1, z1, x2, y1, z1, r, g, b, a);
         drawLine(posMat, buffer, x2, y1, z1, x2, y1, z2, r, g, b, a);
         drawLine(posMat, buffer, x2, y1, z2, x1, y1, z2, r, g, b, a);
         drawLine(posMat, buffer, x1, y1, z2, x1, y1, z1, r, g, b, a);
-        // Верхний квадрат
+        // Верхнее основание
         drawLine(posMat, buffer, x1, y2, z1, x2, y2, z1, r, g, b, a);
         drawLine(posMat, buffer, x2, y2, z1, x2, y2, z2, r, g, b, a);
         drawLine(posMat, buffer, x2, y2, z2, x1, y2, z2, r, g, b, a);
         drawLine(posMat, buffer, x1, y2, z2, x1, y2, z1, r, g, b, a);
-        // Стойки
+        // Вертикальные линии
         drawLine(posMat, buffer, x1, y1, z1, x1, y2, z1, r, g, b, a);
         drawLine(posMat, buffer, x2, y1, z1, x2, y2, z1, r, g, b, a);
         drawLine(posMat, buffer, x2, y1, z2, x2, y2, z2, r, g, b, a);
@@ -136,9 +140,9 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void drawLine(Matrix4f posMat, VertexConsumer buffer, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float b, float a) {
-        // Версия для Minecraft 1.20.6 / 1.21+
-        buffer.vertex(posMat, x1, y1, z1).color(r, g, b, a).normal(0, 1, 0).next();
-        buffer.vertex(posMat, x2, y2, z2).color(r, g, b, a).normal(0, 1, 0).next();
+        // Формат для новых версий: позиция -> цвет -> нормаль
+        buffer.vertex(posMat, x1, y1, z1).color(r, g, b, a).normal(0, 1, 0);
+        buffer.vertex(posMat, x2, y2, z2).color(r, g, b, a).normal(0, 1, 0);
     }
 
     private void checkTotem(MinecraftClient c) {
@@ -235,6 +239,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // Класс меню
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
