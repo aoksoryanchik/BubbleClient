@@ -99,28 +99,20 @@ public class ExampleMod implements ModInitializer {
             double d = c.player.distanceTo(p);
             if (d > kaRange || d >= best) continue;
             if (!c.player.canSee(p) && d > kaWallsRange) continue;
-            
-            // Legit Check: если включен легит, не бить тех, кто за спиной (FOV 120)
             if (kaLegit) {
                 float yaw = (float) Math.toDegrees(Math.atan2(p.getZ() - c.player.getZ(), p.getX() - c.player.getX())) - 90.0F;
                 if (Math.abs(MathHelper.wrapDegrees(yaw - c.player.getYaw())) > 60) continue;
             }
-
             best = d;
             auraTarget = p;
         }
-
         if (auraTarget != null) {
             double jitter = kaLegit ? 0.02 : 0.1;
             double o = (rnd.nextDouble() - 0.5) * jitter;
             lookAt(c.player, auraTarget.getPos().add(o, auraTarget.getHeight() * (0.4 + rnd.nextDouble() * 0.3), o), kaLegit);
-            
-            // Атака
             long now = System.currentTimeMillis();
             float cooldown = c.player.getAttackCooldownProgress(0);
-            
             boolean canAttack = kaLegit ? (cooldown >= 1.0F && now - lastAttackTime > 150 + rnd.nextInt(100)) : (cooldown >= 1.0F);
-            
             if (canAttack) {
                 c.interactionManager.attackEntity(c.player, auraTarget);
                 c.player.swingHand(Hand.MAIN_HAND);
@@ -145,8 +137,7 @@ public class ExampleMod implements ModInitializer {
         double dist = Math.sqrt(d.x * d.x + d.z * d.z);
         float ty = (float) Math.toDegrees(Math.atan2(d.z, d.x)) - 90.0F;
         float tp = (float) -Math.toDegrees(Math.atan2(d.y, dist));
-        
-        float speed = legit ? 0.25F : 1.0F; // Легитная наводка медленнее
+        float speed = legit ? 0.25F : 1.0F;
         p.setYaw(p.getYaw() + MathHelper.wrapDegrees(ty - p.getYaw()) * speed);
         p.setPitch(p.getPitch() + MathHelper.wrapDegrees(tp - p.getPitch()) * speed);
     }
@@ -185,14 +176,21 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI ---
+    // --- GUI С ЭКСТРЕМАЛЬНЫМ УДАЛЕНИЕМ БЛЮРА ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.of("Bubble")); }
+        
+        @Override
+        public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+            // Метод пустой: это блокирует стандартный вызов шейдера блюра в новых версиях
+        }
+
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            if (client.gameRenderer.getShader() != null) client.gameRenderer.setBlockEntityBatchId(null); // Попытка убить блюр
-            ctx.fill(0, 0, width, height, 0x70000000); 
+            // Рисуем свой фон (просто затемнение)
+            ctx.fill(0, 0, width, height, 0x80000000); 
+            
             int cx = width / 2, cy = height / 2;
             ctx.fill(cx - 90, cy - 105, cx + 90, cy + 155, -16448251);
             ctx.drawBorder(cx - 90, cy - 105, 180, 260, -16733441);
@@ -208,6 +206,7 @@ public class ExampleMod implements ModInitializer {
             }
             super.render(ctx, mx, my, d);
         }
+        
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
@@ -241,24 +240,20 @@ public class ExampleMod implements ModInitializer {
             wF = new TextFieldWidget(textRenderer, x+25, y-50, 45, 14, Text.of("")); wF.setText(String.valueOf(kaWallsRange));
             addDrawableChild(rF); addDrawableChild(wF);
         }
+        @Override public void renderBackground(DrawContext c, int x, int y, float d) {}
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x70000000);
+            ctx.fill(0, 0, width, height, 0x80000000);
             int x = width/2, y = height/2;
             ctx.fill(x-180, y-95, x+110, y+110, -16448251); ctx.drawBorder(x-180, y-95, 290, 205, -16733441);
             ctx.drawCenteredTextWithShadow(textRenderer, "KA SETTINGS", x - 35, y-88, -1);
             ctx.drawText(textRenderer, "Range:", x-170, y-67, -1, true); ctx.drawText(textRenderer, "Walls:", x-170, y-47, -1, true);
-            
-            // Основные кнопки
             btn(ctx, x-170, y-25, 200, 14, "AutoRun: " + autoRun, mx, my);
             btn(ctx, x-170, y-5, 200, 14, "AntiVelocity: " + antiVelocity, mx, my);
             btn(ctx, x-170, y+15, 200, 14, "BIND KEY", mx, my);
-            
-            // Правое меню (Легит)
             ctx.fill(x + 40, y - 25, x + 100, y + 15, kaLegit ? 0xAA00FF00 : 0xAAFF0000);
             ctx.drawCenteredTextWithShadow(textRenderer, "LEGIT", x + 70, y - 10, -1);
             ctx.drawCenteredTextWithShadow(textRenderer, kaLegit ? "ON" : "OFF", x + 70, y, -1);
-
             ctx.drawCenteredTextWithShadow(textRenderer, "PRESETS", x - 35, y+45, -1);
             btn(ctx, x-170, y+55, 270, 14, "MineBlaze (Legit Recommend)", mx, my);
             btn(ctx, x-170, y+75, 270, 14, "AresMine (Blatant)", mx, my);
@@ -282,11 +277,7 @@ public class ExampleMod implements ModInitializer {
             }
             return super.mouseClicked(mx, my, b);
         }
-        @Override
-        public void close() {
-            try { kaRange = Double.parseDouble(rF.getText()); kaWallsRange = Double.parseDouble(wF.getText()); } catch(Exception e){}
-            saveConfig(); client.setScreen(p);
-        }
+        @Override public void close() { try { kaRange=Double.parseDouble(rF.getText()); kaWallsRange=Double.parseDouble(wF.getText()); }catch(Exception e){} saveConfig(); client.setScreen(p); }
     }
 
     public static class WaypointSettings extends Screen {
@@ -300,9 +291,10 @@ public class ExampleMod implements ModInitializer {
             fZ = new TextFieldWidget(textRenderer, x, y+5, 50, 16, Text.of("")); fZ.setText(String.valueOf((int)wpZ));
             addDrawableChild(fX); addDrawableChild(fY); addDrawableChild(fZ);
         }
+        @Override public void renderBackground(DrawContext c, int x, int y, float d) {}
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x70000000);
+            ctx.fill(0, 0, width, height, 0x80000000);
             int x = width/2, y = height/2;
             ctx.fill(x-115, y-90, x+115, y+90, -16448251); ctx.drawBorder(x-115, y-90, 230, 180, -16733441);
             ctx.drawCenteredTextWithShadow(textRenderer, "WAYPOINT", x, y-80, -1);
@@ -319,16 +311,13 @@ public class ExampleMod implements ModInitializer {
             if (mx >= x-100 && mx <= x+100 && my >= y+40 && my <= y+55) { client.setScreen(new BindScreen(this, 4)); return true; }
             return super.mouseClicked(mx, my, b);
         }
-        @Override
-        public void close() {
-            try { wpX = Double.parseDouble(fX.getText()); wpY = Double.parseDouble(fY.getText()); wpZ = Double.parseDouble(fZ.getText()); } catch(Exception e){}
-            saveConfig(); client.setScreen(p);
-        }
+        @Override public void close() { try { wpX=Double.parseDouble(fX.getText()); wpY=Double.parseDouble(fY.getText()); wpZ=Double.parseDouble(fZ.getText()); }catch(Exception e){} saveConfig(); client.setScreen(p); }
     }
 
     public static class BindScreen extends Screen {
         private final Screen p; private final int id;
         public BindScreen(Screen p, int id) { super(Text.of("Bind")); this.p = p; this.id = id; }
+        @Override public void renderBackground(DrawContext c, int x, int y, float d) {}
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             ctx.fill(0, 0, width, height, 0xCC000000);
