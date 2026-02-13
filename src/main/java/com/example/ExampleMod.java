@@ -31,7 +31,7 @@ import java.util.List;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false;
-    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, kaLegit = false;
+    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, targetAura = true, kaLegit = false;
     public static double kaRange = 3.8D, kaWallsRange = 3.0D;
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1;
     public static String friendsRaw = "";
@@ -61,14 +61,12 @@ public class ExampleMod implements ModInitializer {
 
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
-            if (autoRun && killaura && auraTarget != null && auraTarget.isAlive()) client.player.setSprinting(true);
             
             if (killaura) runAura(client); else auraTarget = null;
             if (triggerbot) runTrigger(client);
             
             if (antiVelocity && client.player.hurtTime > 0) {
-                Vec3d v = client.player.getVelocity();
-                client.player.setVelocity(0, v.y, 0);
+                client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
         });
     }
@@ -91,13 +89,9 @@ public class ExampleMod implements ModInitializer {
         double best = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
             if (p == c.player || !p.isAlive() || p.isSpectator()) continue;
-            String name = p.getName().getString().toLowerCase();
-            if (friendsList.contains(name)) continue;
-            
+            if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = c.player.distanceTo(p);
             if (d > kaRange || d >= best) continue;
-            if (!c.player.canSee(p) && d > kaWallsRange) continue;
-            
             best = d;
             auraTarget = p;
         }
@@ -105,21 +99,17 @@ public class ExampleMod implements ModInitializer {
         if (auraTarget != null) {
             rotate(c.player, auraTarget.getPos().add(0, auraTarget.getHeight() * 0.5, 0), kaLegit);
             
-            float cooldown = c.player.getAttackCooldownProgress(0.5f);
-            double vy = c.player.getVelocity().y;
-            // Критуем только если падаем (vy < 0)
-            boolean isFalling = vy < -0.05 && !c.player.isOnGround() && !c.player.isClimbing() && !c.player.isTouchingWater();
-            
-            boolean canStrike;
-            if (!c.player.isOnGround()) {
-                // В воздухе: ждем падения для крита
-                canStrike = isFalling && cooldown >= 0.92F;
-            } else {
-                // На земле: бьем сразу по готовности КД
-                canStrike = cooldown >= 1.0F;
+            // Target Strafe (Копирование движения)
+            if (targetAura) {
+                Vec3d targetVel = auraTarget.getVelocity();
+                c.player.addVelocity(targetVel.x, 0, targetVel.z);
             }
+            if (autoRun) c.player.setSprinting(true);
 
-            if (canStrike) {
+            float cooldown = c.player.getAttackCooldownProgress(0.5f);
+            boolean isFalling = c.player.getVelocity().y < -0.05 && !c.player.isOnGround();
+            
+            if (c.player.isOnGround() ? (cooldown >= 1.0F) : (isFalling && cooldown >= 0.9F)) {
                 c.interactionManager.attackEntity(c.player, auraTarget);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -130,13 +120,10 @@ public class ExampleMod implements ModInitializer {
         HitResult h = c.crosshairTarget;
         if (h != null && h.getType() == HitResult.Type.ENTITY) {
             Entity e = ((EntityHitResult) h).getEntity();
-            if (e instanceof PlayerEntity && e.isAlive()) {
-                String name = e.getName().getString().toLowerCase();
-                if (!friendsList.contains(name)) {
-                    if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
-                        c.interactionManager.attackEntity(c.player, e);
-                        c.player.swingHand(Hand.MAIN_HAND);
-                    }
+            if (e instanceof PlayerEntity && e.isAlive() && !friendsList.contains(e.getName().getString().toLowerCase())) {
+                if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
+                    c.interactionManager.attackEntity(c.player, e);
+                    c.player.swingHand(Hand.MAIN_HAND);
                 }
             }
         }
@@ -147,13 +134,12 @@ public class ExampleMod implements ModInitializer {
         double dist = Math.sqrt(d.x * d.x + d.z * d.z);
         float ty = (float) Math.toDegrees(Math.atan2(d.z, d.x)) - 90.0F;
         float tp = (float) -Math.toDegrees(Math.atan2(d.y, dist));
-        float speed = legit ? 0.45F : 1.0F;
-        p.setYaw(p.getYaw() + MathHelper.wrapDegrees(ty - p.getYaw()) * speed);
-        p.setPitch(p.getPitch() + MathHelper.wrapDegrees(tp - p.getPitch()) * speed);
+        p.setYaw(p.getYaw() + MathHelper.wrapDegrees(ty - p.getYaw()) * (legit ? 0.45F : 1.0F));
+        p.setPitch(p.getPitch() + MathHelper.wrapDegrees(tp - p.getPitch()) * (legit ? 0.45F : 1.0F));
     }
 
     private void notify(MinecraftClient c, String m, boolean s) {
-        c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (s ? "§aON" : "§cOFF")), true);
+        c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (s ? "§aВКЛ" : "§cВЫКЛ")), true);
     }
 
     private boolean isPressed(long h, int k) {
@@ -167,28 +153,27 @@ public class ExampleMod implements ModInitializer {
     public static void updateFriends(String raw) {
         friendsRaw = raw;
         friendsList.clear();
-        if (!raw.isEmpty()) {
+        if (!raw.isEmpty() && !raw.equals("Friends:")) {
             Arrays.stream(raw.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
         }
     }
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange + ":" + kaWallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + antiVelocity + ":" + kaLegit + ":" + friendsRaw);
+            w.println(kaRange + ":" + kaWallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + antiVelocity + ":" + targetAura + ":" + friendsRaw);
         } catch (Exception ignored) {}
     }
 
     public void loadConfig() {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
-            String content = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0);
-            String[] p = content.split(":", -1);
+            String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":", -1);
             if (p.length >= 9) {
                 kaRange = Double.parseDouble(p[0]); kaWallsRange = Double.parseDouble(p[1]); 
                 autoRun = Boolean.parseBoolean(p[2]); keyKA = Integer.parseInt(p[3]); 
                 keyTB = Integer.parseInt(p[4]); keyFB = Integer.parseInt(p[5]); 
                 keyAT = Integer.parseInt(p[6]); antiVelocity = Boolean.parseBoolean(p[7]); 
-                kaLegit = Boolean.parseBoolean(p[8]);
+                targetAura = Boolean.parseBoolean(p[8]);
                 if (p.length > 9) updateFriends(p[9]);
             }
         } catch (Exception ignored) {}
@@ -198,9 +183,7 @@ public class ExampleMod implements ModInitializer {
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
-        @Override public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
-            context.fill(0, 0, width, height, 0x80000000); 
-        }
+        @Override public void renderBackground(DrawContext context, int x, int y, float d) { context.fill(0, 0, width, height, 0x80000000); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             super.render(ctx, mx, my, d);
@@ -211,8 +194,7 @@ public class ExampleMod implements ModInitializer {
             boolean[] s = { killaura, triggerbot, fullbright, autoTotem };
             for (int i = 0; i < 4; i++) {
                 int iy = cy - 60 + i * 25;
-                boolean h = (mx >= cx - 80 && mx <= cx + 80 && my >= iy && my <= iy + 20);
-                ctx.fill(cx - 80, iy, cx + 80, iy + 20, h ? -15066598 : -15724528);
+                ctx.fill(cx - 80, iy, cx + 80, iy + 20, (mx >= cx - 80 && mx <= cx + 80 && my >= iy && my <= iy + 20) ? -15066598 : -15724528);
                 ctx.drawText(textRenderer, n[i], cx - 75, iy + 6, s[i] ? 0xFF00FF00 : 0xFFFFFFFF, true);
             }
         }
@@ -237,59 +219,62 @@ public class ExampleMod implements ModInitializer {
     }
 
     public static class KillAuraSettings extends Screen {
-        private final Screen p; private TextFieldWidget rF, wF, fF;
+        private final Screen p; private TextFieldWidget fF;
         public KillAuraSettings(Screen p) { super(Text.literal("KA")); this.p = p; }
         @Override protected void init() {
             int x = width/2, y = height/2;
-            rF = new TextFieldWidget(textRenderer, x-60, y-70, 45, 14, Text.literal("")); rF.setText(String.valueOf(kaRange));
-            wF = new TextFieldWidget(textRenderer, x-60, y-50, 45, 14, Text.literal("")); wF.setText(String.valueOf(kaWallsRange));
-            fF = new TextFieldWidget(textRenderer, x + 120, y - 50, 100, 14, Text.literal("")); fF.setText(friendsRaw);
-            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
+            fF = new TextFieldWidget(textRenderer, x + 115, y - 50, 100, 14, Text.literal("Friends:"));
+            fF.setText(friendsRaw.isEmpty() ? "Friends:" : friendsRaw);
+            fF.setChangedListener(s -> { if(fF.isFocused() && s.equals("Friends:")) fF.setText(""); });
+            addDrawableChild(fF);
         }
-        @Override public void renderBackground(DrawContext context, int x, int y, float d) {
-            context.fill(0, 0, width, height, 0x80000000);
-        }
+        @Override public void renderBackground(DrawContext ctx, int x, int y, float d) { ctx.fill(0, 0, width, height, 0x80000000); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             super.render(ctx, mx, my, d);
             int x = width/2, y = height/2;
             ctx.fill(x-180, y-95, x+110, y+115, -16448251);
+            ctx.fill(x+112, y-95, x+225, y+30, -16448251);
             ctx.drawCenteredTextWithShadow(textRenderer, "KA SETTINGS", x - 35, y-88, -1);
-            ctx.drawText(textRenderer, "Range:", x-170, y-67, -1, true);
-            ctx.drawText(textRenderer, "Walls:", x-170, y-47, -1, true);
-            drawBtn(ctx, x-170, y-25, 200, 14, "AutoRun: ", autoRun, mx, my);
-            drawBtn(ctx, x-170, y-5, 200, 14, "AntiVel: ", antiVelocity, mx, my);
+            ctx.drawCenteredTextWithShadow(textRenderer, "FRIENDS", x + 168, y-88, 0xFF55FF55);
+            
+            drawBtn(ctx, x-170, y-70, 200, 14, "AutoRun: ", autoRun, mx, my);
+            drawBtn(ctx, x-170, y-50, 200, 14, "AntiVelocity: ", antiVelocity, mx, my);
+            drawBtn(ctx, x-170, y-30, 200, 14, "TargetAura: ", targetAura, mx, my);
+
+            ctx.drawCenteredTextWithShadow(textRenderer, "CFG", x - 35, y+45, -1);
+            btn(ctx, x-170, y+55, 270, 14, "MineBlaze (Legit Crits)", mx, my);
+            btn(ctx, x-170, y+75, 270, 14, "AresMine (Max Distance)", mx, my);
         }
         private void drawBtn(DrawContext c, int x, int y, int w, int h, String t, boolean s, int mx, int my) {
             c.fill(x, y, x+w, y+h, (mx>=x && mx<=x+w && my>=y && my<=y+h) ? -14540254 : -15658735);
-            c.drawText(textRenderer, t + (s ? "ON" : "OFF"), x+5, y+3, s ? 0xFF00FF00 : 0xFFFF0000, true);
+            c.drawText(textRenderer, t, x+5, y+3, -1, true);
+            c.drawText(textRenderer, s ? "ВКЛ" : "ВЫКЛ", x+w-35, y+3, s ? 0xFF00FF00 : 0xFFFF0000, true);
+        }
+        private void btn(DrawContext c, int x, int y, int w, int h, String t, int mx, int my) {
+            c.fill(x, y, x+w, y+h, (mx>=x && mx<=x+w && my>=y && my<=y+h) ? -14540254 : -15658735);
+            c.drawCenteredTextWithShadow(textRenderer, t, x+w/2, y+3, -1);
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
-            if (mx >= x-170 && mx <= x+30) {
-                if (my >= y-25 && my <= y-11) autoRun = !autoRun;
-                if (my >= y-5 && my <= y+9) antiVelocity = !antiVelocity;
+            if (mx >= x-170 && mx <= x+100) {
+                if (my >= y-70 && my <= y-56) autoRun = !autoRun;
+                if (my >= y-50 && my <= y-36) antiVelocity = !antiVelocity;
+                if (my >= y-30 && my <= y-16) targetAura = !targetAura;
+                if (my >= y+55 && my <= y+69) { kaRange=3.2; kaLegit=true; autoRun=true; targetAura=false; }
+                if (my >= y+75 && my <= y+89) { kaRange=3.8; kaLegit=false; autoRun=true; targetAura=true; }
                 saveConfig();
             }
             return super.mouseClicked(mx, my, b);
         }
-        @Override public void close() { 
-            try { 
-                kaRange=Double.parseDouble(rF.getText()); 
-                kaWallsRange=Double.parseDouble(wF.getText());
-                updateFriends(fF.getText());
-            } catch(Exception e){} 
-            saveConfig(); client.setScreen(p); 
-        }
+        @Override public void close() { updateFriends(fF.getText()); saveConfig(); client.setScreen(p); }
     }
 
     public static class BindScreen extends Screen {
         private final Screen p; private final int id;
         public BindScreen(Screen p, int id) { super(Text.literal("Bind")); this.p = p; this.id = id; }
-        @Override public void renderBackground(DrawContext context, int x, int y, float d) {
-            context.fill(0, 0, width, height, 0xCC000000);
-        }
+        @Override public void renderBackground(DrawContext context, int x, int y, float d) { context.fill(0, 0, width, height, 0xCC000000); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
             super.render(ctx, mx, my, d);
@@ -303,4 +288,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
