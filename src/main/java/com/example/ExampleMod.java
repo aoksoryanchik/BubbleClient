@@ -24,6 +24,8 @@ import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import org.joml.Matrix4f;
+import org.joml.Matrix3f;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.FileWriter;
@@ -49,22 +51,17 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Регистрация рендеринга ESP
         WorldRenderEvents.END.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
-            
-            // Фикс тряски FOV
             client.options.getFovEffectScale().setValue(0.0);
 
-            // Открытие меню на 0
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Бинды функций
             if (client.currentScreen == null) {
                 if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
                 if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
@@ -85,17 +82,15 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    // ЛОГИКА ESP (ИСПРАВЛЕННАЯ ПОЛНОСТЬЮ)
     private void onWorldRender(WorldRenderContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!esp || client.player == null) return;
         
-        // Получаем tickDelta прямо из контекста события (это работает во всех версиях Fabric)
+        // Исправлено получение tickDelta для новых версий
         float tickDelta = context.tickDelta();
 
         for (PlayerEntity player : client.world.getPlayers()) {
             if (player == client.player || !player.isAlive() || player.isInvisible()) continue;
-            
             drawEntityBox(context, player, tickDelta, 1.0f, 1.0f, 1.0f, 1.0f);
         }
     }
@@ -105,59 +100,50 @@ public class ExampleMod implements ModInitializer {
         Vec3d camPos = ctx.camera().getPos();
         
         matrices.push();
-        
-        // Интерполяция позиции для плавности
         double x = MathHelper.lerp(tickDelta, entity.prevX, entity.getX()) - camPos.x;
         double y = MathHelper.lerp(tickDelta, entity.prevY, entity.getY()) - camPos.y;
         double z = MathHelper.lerp(tickDelta, entity.prevZ, entity.getZ()) - camPos.z;
-        
         matrices.translate(x, y, z);
 
-        // Получаем BoundingBox и сдвигаем его в 0,0,0
         Box box = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
-        
         VertexConsumer buffer = ctx.consumers().getBuffer(RenderLayer.getLines());
         
-        // ВМЕСТО WorldRenderer.drawBox ИСПОЛЬЗУЕМ РУЧНУЮ ОТРИСОВКУ (чтобы не было ошибок)
         drawOutlinedBox(matrices, buffer, box, r, g, b, a);
-        
         matrices.pop();
     }
 
-    // НОВАЯ ФУНКЦИЯ РУЧНОЙ ОТРИСОВКИ КОРОБКИ (Работает везде)
     private void drawOutlinedBox(MatrixStack matrices, VertexConsumer buffer, Box box, float r, float g, float b, float a) {
         MatrixStack.Entry entry = matrices.peek();
-        float minX = (float) box.minX;
-        float minY = (float) box.minY;
-        float minZ = (float) box.minZ;
-        float maxX = (float) box.maxX;
-        float maxY = (float) box.maxY;
-        float maxZ = (float) box.maxZ;
+        Matrix4f posMat = entry.getPositionMatrix();
+        Matrix3f normMat = entry.getNormalMatrix(); // Исправлено получение матрицы нормалей
 
-        // Рисуем 12 линий (ребра куба)
-        drawLine(entry, buffer, minX, minY, minZ, maxX, minY, minZ, r, g, b, a);
-        drawLine(entry, buffer, minX, maxY, minZ, maxX, maxY, minZ, r, g, b, a);
-        drawLine(entry, buffer, minX, minY, maxZ, maxX, minY, maxZ, r, g, b, a);
-        drawLine(entry, buffer, minX, maxY, maxZ, maxX, maxY, maxZ, r, g, b, a);
+        float x1 = (float)box.minX, y1 = (float)box.minY, z1 = (float)box.minZ;
+        float x2 = (float)box.maxX, y2 = (float)box.maxY, z2 = (float)box.maxZ;
 
-        drawLine(entry, buffer, minX, minY, minZ, minX, maxY, minZ, r, g, b, a);
-        drawLine(entry, buffer, maxX, minY, minZ, maxX, maxY, minZ, r, g, b, a);
-        drawLine(entry, buffer, minX, minY, maxZ, minX, maxY, maxZ, r, g, b, a);
-        drawLine(entry, buffer, maxX, minY, maxZ, maxX, maxY, maxZ, r, g, b, a);
+        // Нижний квадрат
+        drawLine(posMat, normMat, buffer, x1, y1, z1, x2, y1, z1, r, g, b, a);
+        drawLine(posMat, normMat, buffer, x2, y1, z1, x2, y1, z2, r, g, b, a);
+        drawLine(posMat, normMat, buffer, x2, y1, z2, x1, y1, z2, r, g, b, a);
+        drawLine(posMat, normMat, buffer, x1, y1, z2, x1, y1, z1, r, g, b, a);
 
-        drawLine(entry, buffer, minX, minY, minZ, minX, minY, maxZ, r, g, b, a);
-        drawLine(entry, buffer, maxX, minY, minZ, maxX, minY, maxZ, r, g, b, a);
-        drawLine(entry, buffer, minX, maxY, minZ, minX, maxY, maxZ, r, g, b, a);
-        drawLine(entry, buffer, maxX, maxY, minZ, maxX, maxY, maxZ, r, g, b, a);
+        // Верхний квадрат
+        drawLine(posMat, normMat, buffer, x1, y2, z1, x2, y2, z1, r, g, b, a);
+        drawLine(posMat, normMat, buffer, x2, y2, z1, x2, y2, z2, r, g, b, a);
+        drawLine(posMat, normMat, buffer, x2, y2, z2, x1, y2, z2, r, g, b, a);
+        drawLine(posMat, normMat, buffer, x1, y2, z2, x1, y2, z1, r, g, b, a);
+
+        // Стойки
+        drawLine(posMat, normMat, buffer, x1, y1, z1, x1, y2, z1, r, g, b, a);
+        drawLine(posMat, normMat, buffer, x2, y1, z1, x2, y2, z1, r, g, b, a);
+        drawLine(posMat, normMat, buffer, x2, y1, z2, x2, y2, z2, r, g, b, a);
+        drawLine(posMat, normMat, buffer, x1, y1, z2, x1, y2, z2, r, g, b, a);
     }
 
-    private void drawLine(MatrixStack.Entry entry, VertexConsumer buffer, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float b, float a) {
-        // Обычные нормали для линий
-        buffer.vertex(entry.getPositionMatrix(), x1, y1, z1).color(r, g, b, a).normal(entry.getNormalMatrix(), 1.0F, 0.0F, 0.0F).next();
-        buffer.vertex(entry.getPositionMatrix(), x2, y2, z2).color(r, g, b, a).normal(entry.getNormalMatrix(), 1.0F, 0.0F, 0.0F).next();
+    private void drawLine(Matrix4f posMat, Matrix3f normMat, VertexConsumer buffer, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float b, float a) {
+        buffer.vertex(posMat, x1, y1, z1).color(r, g, b, a).normal(normMat, 0, 1, 0).next();
+        buffer.vertex(posMat, x2, y2, z2).color(r, g, b, a).normal(normMat, 0, 1, 0).next();
     }
 
-    // ЛОГИКА КИЛЛАУРЫ И ОСТАЛЬНОГО (Без изменений)
     private void checkTotem(MinecraftClient c) {
         if (c.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
             for (int i = 0; i < 45; i++) {
@@ -252,7 +238,6 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // ИНТЕРФЕЙС
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
