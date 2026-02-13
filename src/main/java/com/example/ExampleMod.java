@@ -28,19 +28,17 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true;
-    public static double kaRange = 3.8D, kaWallsRange = 3.0D;
+    public static double kaRange = 3.1D, kaWallsRange = 0.0D; // Дефолты под MineBlaze
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1;
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
     
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    private final Random random = new Random();
 
     @Override
     public void onInitialize() {
@@ -65,7 +63,6 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
             
-            // Чистый и стабильный AntiVelocity (только по X и Z, Y остается ванильным)
             if (antiVelocity && client.player.hurtTime > 0) {
                 Vec3d v = client.player.getVelocity();
                 client.player.setVelocity(v.x * 0.45D, v.y, v.z * 0.45D);
@@ -106,18 +103,21 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
 
-            // Наведение без тряски (Легитное и чистое)
-            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
-            double distXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
+            // Мягкая наводка для предотвращения тряски
+            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
+            Vec3d diff = targetPos.subtract(c.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
-            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, distXZ));
+            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавное вращение (идеально для AresMine и MineBlaze)
-            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.42f));
-            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.42f));
+            // Плавность 0.4f убирает тряску, сохраняя скорость наводки
+            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.4f));
+            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.4f));
 
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
-            if (cooldown >= 0.93F) {
+            
+            // Проверка на мисс: разница углов должна быть минимальной для удара
+            float yawDiff = Math.abs(MathHelper.wrapDegrees(c.player.getYaw() - targetYaw));
+            if (cooldown >= 0.93F && yawDiff < 20.0F) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
