@@ -62,20 +62,13 @@ public class ExampleMod implements ModInitializer {
 
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
-            
-            // AutoRun с защитой от сбивания моментума при получении урона
-            if (autoRun && client.player.forwardSpeed > 0 && !client.player.horizontalCollision) {
-                client.player.setSprinting(true);
-            }
-
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
             
-            // Улучшенный AntiVelocity: Сохраняем ось Y, чтобы не сбивался прыжок
+            // Чистый и стабильный AntiVelocity (только по X и Z, Y остается ванильным)
             if (antiVelocity && client.player.hurtTime > 0) {
                 Vec3d v = client.player.getVelocity();
-                double preserveY = (!client.player.isOnGround() && v.y > 0) ? v.y : v.y * 0.45D;
-                client.player.setVelocity(v.x * 0.45D, preserveY, v.z * 0.45D);
+                client.player.setVelocity(v.x * 0.45D, v.y, v.z * 0.45D);
             }
         });
     }
@@ -111,28 +104,22 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // Плавная и точная наводка
-            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.65, 0).subtract(c.player.getEyePos());
-            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
-            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            if (autoRun) c.player.setSprinting(true);
 
-            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.48f));
-            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.48f));
+            // Наведение без тряски (Легитное и чистое)
+            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
+            double distXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
+            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
+            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, distXZ));
+
+            // Плавное вращение (идеально для AresMine и MineBlaze)
+            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.42f));
+            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.42f));
 
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
-            
-            // Защита от миссов: бьем только если реально смотрим на цель (разница углов < 15)
-            float yawDiff = Math.abs(MathHelper.wrapDegrees(c.player.getYaw() - targetYaw));
-            
-            if (cooldown >= 0.92F && yawDiff < 15.0F) {
-                if (c.player.isOnGround()) {
-                    c.player.addVelocity(0, 0.04, 0); // Легитный микро-прыжок под крит
-                }
-                
-                if (c.player.distanceTo(target) <= kaRange) {
-                    c.interactionManager.attackEntity(c.player, target);
-                    c.player.swingHand(Hand.MAIN_HAND);
-                }
+            if (cooldown >= 0.93F) {
+                c.interactionManager.attackEntity(c.player, target);
+                c.player.swingHand(Hand.MAIN_HAND);
             }
         }
     }
