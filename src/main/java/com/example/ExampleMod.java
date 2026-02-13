@@ -68,12 +68,11 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
             
-            // Улучшенный AntiVelocity для MineBlaze (Dynamic Bypass)
+            // Legit AntiVelocity (Ares/Blaze bypass)
             if (antiVelocity && client.player.hurtTime > 0) {
                 Vec3d v = client.player.getVelocity();
-                // Рандомизируем множитель от 0.45 до 0.65, чтобы не было флагов на "заморозку"
-                double modifier = 0.45D + (random.nextDouble() * 0.2D);
-                client.player.setVelocity(v.x * modifier, v.y, v.z * modifier);
+                // 0.45D - золотая середина, чтобы не тепало назад
+                client.player.setVelocity(v.x * 0.45D, v.y, v.z * 0.45D);
             }
         });
     }
@@ -109,41 +108,30 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // Убираем визуальную тряску бега при наводке
-            c.options.getBobView().setValue(false);
-            
             if (autoRun) c.player.setSprinting(true);
 
-            // Ротации с рандомизацией точки на теле (грудь/живот)
-            double yOffset = target.getHeight() * (0.65 + (random.nextDouble() * 0.1));
-            Vec3d diff = target.getPos().add(0, yOffset, 0).subtract(c.player.getEyePos());
+            // Наведение БЕЗ лишней тряски
+            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             double distXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, distXZ));
 
-            // Плавность
-            float rotSpeed = kaLegit ? 0.20f : 0.48f;
+            // Плавность такая же, как на AresMine
+            float rotSpeed = 0.42f; 
             c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, rotSpeed));
             c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, rotSpeed));
 
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
-            boolean isFalling = c.player.getVelocity().y < -0.05 && !c.player.isOnGround();
-            
-            // Настройка удара: на MineBlaze/Ares бьем агрессивно
-            boolean ready = cooldown >= 0.93F;
-
-            if (ready) {
+            // Бьем сразу, как только кулдаун почти готов
+            if (cooldown >= 0.93F) {
                 long now = System.currentTimeMillis();
                 if (now - lastAttackTime >= currentRandomDelay) {
                     c.interactionManager.attackEntity(c.player, target);
                     c.player.swingHand(Hand.MAIN_HAND);
                     lastAttackTime = now;
-                    currentRandomDelay = random.nextInt(35); 
+                    currentRandomDelay = random.nextInt(30); 
                 }
             }
-        } else {
-            // Возвращаем тряску, если цели нет (чтобы выглядело легитно)
-            c.options.getBobView().setValue(true);
         }
     }
 
@@ -284,9 +272,10 @@ public class ExampleMod implements ModInitializer {
             if (mx >= x - 170 && mx <= x - 15) {
                 if (my >= y - 30 && my <= y - 16) autoRun = !autoRun;
                 if (my >= y - 10 && my <= y + 4) antiVelocity = !antiVelocity;
-                // Теперь MineBlaze настройки такие же мощные, как у AresMine
-                if (my >= y + 50 && my <= y + 64) { kaRange = 3.6; kaWallsRange = 3.6; kaLegit = false; rangeField.setText("3.6"); wallsField.setText("3.6"); }
-                if (my >= y + 70 && my <= y + 84) { kaRange = 3.6; kaWallsRange = 3.6; kaLegit = false; rangeField.setText("3.6"); wallsField.setText("3.6"); }
+                // MineBlaze CFG: Range 3.1, Walls 0.0
+                if (my >= y + 50 && my <= y + 64) { kaRange = 3.1; kaWallsRange = 0.0; rangeField.setText("3.1"); wallsField.setText("0.0"); }
+                // AresMine CFG: Range 3.6, Walls 3.6
+                if (my >= y + 70 && my <= y + 84) { kaRange = 3.6; kaWallsRange = 3.6; rangeField.setText("3.6"); wallsField.setText("3.6"); }
             }
             return super.mouseClicked(mx, my, b);
         }
