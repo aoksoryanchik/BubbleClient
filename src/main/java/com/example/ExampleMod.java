@@ -61,15 +61,11 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
             }
 
-            // HvH AirWalk (Хождение по воздуху)
+            // ИСПРАВЛЕННЫЙ HVH MOVE (Без лагов)
             if (hvhMode && !client.player.isOnGround()) {
-                Vec3d v = client.player.getVelocity();
                 if (client.options.jumpKey.isPressed()) {
-                    client.player.setVelocity(v.x, 0.42, v.z);
-                } else if (client.options.sneakKey.isPressed()) {
-                    client.player.setVelocity(v.x, -0.42, v.z);
-                } else {
-                    client.player.setVelocity(v.x, 0, v.z); // Зависание
+                    client.player.setVelocity(client.player.getVelocity().x, 0.05, client.player.getVelocity().z);
+                    client.player.jump();
                 }
             }
 
@@ -78,11 +74,10 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
             
-            // HvH Velocity: Полный ноль или легит 0.45
+            // Стабильный AntiVelocity
             if (antiVelocity && client.player.hurtTime > 0) {
-                Vec3d v = client.player.getVelocity();
                 double factor = hvhMode ? 0.0D : 0.45D;
-                client.player.setVelocity(v.x * factor, v.y, v.z * factor);
+                client.player.setVelocity(client.player.getVelocity().x * factor, client.player.getVelocity().y, client.player.getVelocity().z * factor);
             }
         });
     }
@@ -109,7 +104,7 @@ public class ExampleMod implements ModInitializer {
             if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
             
             double d = c.player.distanceTo(p);
-            double currentRange = hvhMode ? 6.0D : kaRange;
+            double currentRange = hvhMode ? 5.5D : kaRange;
             if (d <= currentRange && d < bestDist) {
                 bestDist = d;
                 target = p;
@@ -119,27 +114,21 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
 
-            // HVH Rotations: Игнорим всё, смотрим в центр
-            Vec3d eyePos = c.player.getEyePos();
-            Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
-            Vec3d diff = targetPos.subtract(eyePos);
-            
+            // МГНОВЕННЫЕ РОТАЦИИ ДЛЯ HVH
+            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.5, 0).subtract(c.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
             if (hvhMode) {
                 c.player.setYaw(targetYaw);
                 c.player.setPitch(targetPitch);
-                // Target Strafe (кружение)
-                double angle = (System.currentTimeMillis() / 100.0) % (2 * Math.PI);
-                c.player.addVelocity(Math.cos(angle) * 0.1, 0, Math.sin(angle) * 0.1);
             } else {
                 c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.45f));
                 c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.45f));
             }
 
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
-            if (cooldown >= (hvhMode ? 0.85F : 0.93F)) {
+            if (cooldown >= (hvhMode ? 0.90F : 0.93F)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -244,8 +233,7 @@ public class ExampleMod implements ModInitializer {
         private final Screen parent;
         private TextFieldWidget rangeField, wallsField, friendsField;
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
-        @Override
-        protected void init() {
+        @Override protected void init() {
             int x = width/2, y = height/2;
             rangeField = new TextFieldWidget(textRenderer, x - 100, y - 75, 80, 14, Text.literal(""));
             rangeField.setText(String.valueOf(kaRange));
@@ -255,8 +243,7 @@ public class ExampleMod implements ModInitializer {
             friendsField.setText(friendsRaw.isEmpty() ? "Friends:" : friendsRaw);
             addDrawableChild(rangeField); addDrawableChild(wallsField); addDrawableChild(friendsField);
         }
-        @Override
-        public void render(DrawContext ctx, int mx, int my, float delta) {
+        @Override public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int x = width/2, y = height/2;
             ctx.fill(x - 180, y - 100, x - 5, y + 110, 0xFF1A1A1B);
@@ -276,8 +263,7 @@ public class ExampleMod implements ModInitializer {
             c.fill(x, y, x+w, y+h, (mx>=x && mx<=x+w && my>=y && my<=y+h) ? 0xFF2D2D2E : 0xFF232324);
             c.drawCenteredTextWithShadow(textRenderer, t, x+w/2, y+3, -1);
         }
-        @Override
-        public boolean mouseClicked(double mx, double my, int b) {
+        @Override public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
             if (mx >= x - 170 && mx <= x - 15) {
                 if (my >= y - 30 && my <= y - 16) autoRun = !autoRun;
