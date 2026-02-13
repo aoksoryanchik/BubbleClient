@@ -47,7 +47,8 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // FOV возвращен в ванильное состояние. Теперь эффекты скорости видны.
+            // Стабилизация FOV (убираем тряску при беге и ударах)
+            client.options.getFovEffectScale().setValue(0.0);
 
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
@@ -105,19 +106,20 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
 
-            // МАКСИМАЛЬНО БЫСТРАЯ НАВОДКА (0.65f - очень резко)
+            // Оптимальная наводка: 0.45f - быстро и легитно для MineBlaze/Ares
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.6, 0);
             Vec3d diff = targetPos.subtract(c.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.65f));
-            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.65f));
+            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.45f));
+            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.45f));
 
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
             
-            // Удар без лишних проверок, когда наведен и готов кулдаун
-            if (cooldown >= 0.92F) {
+            // Проверка угла, чтобы не было миссов при резких поворотах
+            float yawDiff = Math.abs(MathHelper.wrapDegrees(c.player.getYaw() - targetYaw));
+            if (cooldown >= 0.92F && yawDiff < 25.0F) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
