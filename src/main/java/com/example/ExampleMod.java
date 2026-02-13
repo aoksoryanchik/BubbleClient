@@ -31,7 +31,7 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    public static boolean killaura = false, triggerbot = false, fullbright = false, hvhMode = false;
+    public static boolean killaura = false, triggerbot = false, fullbright = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true;
     public static double kaRange = 3.8D, kaWallsRange = 3.0D;
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1;
@@ -60,29 +60,15 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
             }
 
-            // HVH AIR CONTROL (Мобильность в прыжке без лагов)
-            if (hvhMode && !client.player.isOnGround()) {
-                Vec3d vel = client.player.getVelocity();
-                // Позволяет резко менять направление в воздухе (Strafe)
-                float yaw = client.player.getYaw();
-                double speed = 0.025D; // Микро-буст для маневренности
-                
-                if (client.options.forwardKey.isPressed()) client.player.addVelocity(Math.sin(-Math.toRadians(yaw)) * speed, 0, Math.cos(Math.toRadians(yaw)) * speed);
-                if (client.options.backKey.isPressed()) client.player.addVelocity(Math.sin(Math.toRadians(yaw)) * speed, 0, -Math.cos(Math.toRadians(yaw)) * speed);
-                
-                // Fast Fall для быстрых критов
-                if (vel.y < 0) client.player.addVelocity(0, -0.015, 0);
-            }
-
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
             
-            // HvH AntiVelocity
+            // Стабильный AntiVelocity (0.45 для обхода античита)
             if (antiVelocity && client.player.hurtTime > 0) {
-                double factor = hvhMode ? 0.02D : 0.45D;
-                client.player.setVelocity(client.player.getVelocity().x * factor, client.player.getVelocity().y, client.player.getVelocity().z * factor);
+                Vec3d v = client.player.getVelocity();
+                client.player.setVelocity(v.x * 0.45D, v.y, v.z * 0.45D);
             }
         });
     }
@@ -109,31 +95,29 @@ public class ExampleMod implements ModInitializer {
             if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
             
             double d = c.player.distanceTo(p);
-            double currentRange = hvhMode ? 5.2D : kaRange;
-            if (d <= currentRange && d < bestDist) {
-                bestDist = d;
-                target = p;
+            if (d <= kaRange && d < bestDist) {
+                if (c.player.canSee(p) || d <= kaWallsRange) {
+                    bestDist = d;
+                    target = p;
+                }
             }
         }
 
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
 
-            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.5, 0).subtract(c.player.getEyePos());
+            // Наведение без тряски (Легитное)
+            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
+            double distXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
-            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, distXZ));
 
-            // HvH Silent Rotations (только пакетно)
-            if (hvhMode) {
-                c.player.setYaw(targetYaw);
-                c.player.setPitch(targetPitch);
-            } else {
-                c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.45f));
-                c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.45f));
-            }
+            // Плавное вращение (как на Ares)
+            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.42f));
+            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.42f));
 
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
-            if (cooldown >= (hvhMode ? 0.88F : 0.93F)) {
+            if (cooldown >= 0.93F) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -180,7 +164,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange + ":" + kaWallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + hvhMode + ":" + friendsRaw);
+            w.println(kaRange + ":" + kaWallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw);
         } catch (Exception ignored) {}
     }
 
@@ -188,12 +172,11 @@ public class ExampleMod implements ModInitializer {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":", -1);
-            if (p.length >= 9) {
+            if (p.length >= 8) {
                 kaRange = Double.parseDouble(p[0]); kaWallsRange = Double.parseDouble(p[1]); 
                 autoRun = Boolean.parseBoolean(p[2]); keyKA = Integer.parseInt(p[3]); 
                 keyTB = Integer.parseInt(p[4]); keyFB = Integer.parseInt(p[5]); 
-                keyAT = Integer.parseInt(p[6]); hvhMode = Boolean.parseBoolean(p[7]); 
-                updateFriends(p[8]);
+                keyAT = Integer.parseInt(p[6]); updateFriends(p[7]);
             }
         } catch (Exception ignored) {}
     }
@@ -251,12 +234,11 @@ public class ExampleMod implements ModInitializer {
         @Override public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int x = width/2, y = height/2;
-            ctx.fill(x - 180, y - 100, x - 5, y + 110, 0xFF1A1A1B);
+            ctx.fill(x - 180, y - 100, x - 5, y + 90, 0xFF1A1A1B);
             ctx.drawText(textRenderer, "Range:", x - 170, y - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", x - 170, y - 52, -1, true);
             drawBtn(ctx, x - 170, y - 30, 155, 14, "AutoRun: ", autoRun, mx, my);
             drawBtn(ctx, x - 170, y - 10, 155, 14, "AntiVelocity: ", antiVelocity, mx, my);
-            drawBtn(ctx, x - 170, y + 10, 155, 14, "HVH MODE: ", hvhMode, mx, my);
             btn(ctx, x - 170, y + 50, 155, 14, "MineBlaze", mx, my);
             btn(ctx, x - 170, y + 70, 155, 14, "AresMine", mx, my);
         }
@@ -273,7 +255,6 @@ public class ExampleMod implements ModInitializer {
             if (mx >= x - 170 && mx <= x - 15) {
                 if (my >= y - 30 && my <= y - 16) autoRun = !autoRun;
                 if (my >= y - 10 && my <= y + 4) antiVelocity = !antiVelocity;
-                if (my >= y + 10 && my <= y + 24) hvhMode = !hvhMode;
                 if (my >= y + 50 && my <= y + 64) { kaRange = 3.1; kaWallsRange = 0.0; rangeField.setText("3.1"); wallsField.setText("0.0"); }
                 if (my >= y + 70 && my <= y + 84) { kaRange = 3.6; kaWallsRange = 3.6; rangeField.setText("3.6"); wallsField.setText("3.6"); }
             }
