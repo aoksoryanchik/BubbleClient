@@ -31,18 +31,16 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    public static boolean killaura = false, triggerbot = false, fullbright = false;
-    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, kaLegit = false;
+    public static boolean killaura = false, triggerbot = false, fullbright = false, hvhMode = false;
+    public static boolean autoTotem = true, autoRun = true, antiVelocity = true;
     public static double kaRange = 3.8D, kaWallsRange = 3.0D;
-    public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1;
+    public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyHvH = -1;
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
     
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    
     private static long lastAttackTime = 0;
-    private static long currentRandomDelay = 0;
     private final Random random = new Random();
 
     @Override
@@ -58,6 +56,7 @@ public class ExampleMod implements ModInitializer {
 
             if (client.currentScreen == null) {
                 if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
+                if (isPressed(win, keyHvH)) { hvhMode = !hvhMode; notify(client, "HvH Mode", hvhMode); }
                 if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
                 if (isPressed(win, keyFB)) { fullbright = !fullbright; notify(client, "FullBright", fullbright); }
                 if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
@@ -68,11 +67,11 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
             
-            // Legit AntiVelocity (Ares/Blaze bypass)
             if (antiVelocity && client.player.hurtTime > 0) {
                 Vec3d v = client.player.getVelocity();
-                // 0.45D - золотая середина, чтобы не тепало назад
-                client.player.setVelocity(v.x * 0.45D, v.y, v.z * 0.45D);
+                // В HvH режиме AntiVelocity почти в ноль, в обычном 0.45
+                double factor = hvhMode ? 0.05D : 0.45D;
+                client.player.setVelocity(v.x * factor, v.y, v.z * factor);
             }
         });
     }
@@ -99,8 +98,11 @@ public class ExampleMod implements ModInitializer {
             if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
             
             double d = c.player.distanceTo(p);
-            if (d <= kaRange && d < bestDist) {
-                if (c.player.canSee(p) || d <= kaWallsRange) {
+            double currentRange = hvhMode ? 6.0D : kaRange;
+            double currentWallRange = hvhMode ? 6.0D : kaWallsRange;
+
+            if (d <= currentRange && d < bestDist) {
+                if (hvhMode || c.player.canSee(p) || d <= currentWallRange) {
                     bestDist = d;
                     target = p;
                 }
@@ -110,27 +112,26 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
 
-            // Наведение БЕЗ лишней тряски
-            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
+            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.5, 0).subtract(c.player.getEyePos());
             double distXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, distXZ));
 
-            // Плавность такая же, как на AresMine
-            float rotSpeed = 0.42f; 
-            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, rotSpeed));
-            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, rotSpeed));
+            if (hvhMode) {
+                // Моментальная наводка без плавности
+                c.player.setYaw(targetYaw);
+                c.player.setPitch(targetPitch);
+            } else {
+                c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.42f));
+                c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.42f));
+            }
 
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
-            // Бьем сразу, как только кулдаун почти готов
-            if (cooldown >= 0.93F) {
-                long now = System.currentTimeMillis();
-                if (now - lastAttackTime >= currentRandomDelay) {
-                    c.interactionManager.attackEntity(c.player, target);
-                    c.player.swingHand(Hand.MAIN_HAND);
-                    lastAttackTime = now;
-                    currentRandomDelay = random.nextInt(30); 
-                }
+            boolean ready = hvhMode ? (cooldown >= 0.85F) : (cooldown >= 0.93F);
+
+            if (ready) {
+                c.interactionManager.attackEntity(c.player, target);
+                c.player.swingHand(Hand.MAIN_HAND);
             }
         }
     }
@@ -175,7 +176,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange + ":" + kaWallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + antiVelocity + ":" + kaLegit + ":" + friendsRaw);
+            w.println(kaRange + ":" + kaWallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + hvhMode + ":" + friendsRaw + ":" + keyHvH);
         } catch (Exception ignored) {}
     }
 
@@ -187,13 +188,11 @@ public class ExampleMod implements ModInitializer {
                 kaRange = Double.parseDouble(p[0]); kaWallsRange = Double.parseDouble(p[1]); 
                 autoRun = Boolean.parseBoolean(p[2]); keyKA = Integer.parseInt(p[3]); 
                 keyTB = Integer.parseInt(p[4]); keyFB = Integer.parseInt(p[5]); 
-                keyAT = Integer.parseInt(p[6]); antiVelocity = Boolean.parseBoolean(p[7]); 
-                kaLegit = Boolean.parseBoolean(p[8]); updateFriends(p[9]);
+                keyAT = Integer.parseInt(p[6]); hvhMode = Boolean.parseBoolean(p[7]); 
+                updateFriends(p[8]); keyHvH = Integer.parseInt(p[9]);
             }
         } catch (Exception ignored) {}
     }
-
-    // --- GUI ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
@@ -201,12 +200,12 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 90, cy - 80, cx + 90, cy + 90, 0xFF1A1A1B);
-            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE CLIENT", cx, cy - 70, -1);
-            String[] n = { "KillAura", "TriggerBot", "FullBright", "AutoTotem" };
-            boolean[] s = { killaura, triggerbot, fullbright, autoTotem };
-            for (int i = 0; i < 4; i++) {
-                int iy = cy - 40 + i * 25;
+            ctx.fill(cx - 90, cy - 100, cx + 90, cy + 110, 0xFF1A1A1B);
+            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE CLIENT", cx, cy - 90, -1);
+            String[] n = { "KillAura", "HvH Mode", "TriggerBot", "FullBright", "AutoTotem" };
+            boolean[] s = { killaura, hvhMode, triggerbot, fullbright, autoTotem };
+            for (int i = 0; i < 5; i++) {
+                int iy = cy - 60 + i * 25;
                 ctx.fill(cx - 80, iy, cx + 80, iy + 20, (mx >= cx - 80 && mx <= cx + 80 && my >= iy && my <= iy + 20) ? 0xFF2D2D2E : 0xFF232324);
                 ctx.drawText(textRenderer, n[i], cx - 75, iy + 6, s[i] ? 0xFF00FF00 : 0xFFFFFFFF, true);
             }
@@ -214,15 +213,16 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            for (int i = 0; i < 4; i++) {
-                int iy = cy - 40 + i * 25;
+            for (int i = 0; i < 5; i++) {
+                int iy = cy - 60 + i * 25;
                 if (mx >= cx - 80 && mx <= cx + 80 && my >= iy && my <= iy + 20) {
                     if (b == 1) { client.setScreen(new BindScreen(this, i)); return true; }
                     if (b == 0) {
                         if (i == 0) client.setScreen(new KillAuraSettings(this));
-                        else if (i == 1) triggerbot = !triggerbot;
-                        else if (i == 2) fullbright = !fullbright;
-                        else if (i == 3) autoTotem = !autoTotem;
+                        else if (i == 1) hvhMode = !hvhMode;
+                        else if (i == 2) triggerbot = !triggerbot;
+                        else if (i == 3) fullbright = !fullbright;
+                        else if (i == 4) autoTotem = !autoTotem;
                         saveConfig(); return true;
                     }
                 }
@@ -235,8 +235,7 @@ public class ExampleMod implements ModInitializer {
         private final Screen parent;
         private TextFieldWidget rangeField, wallsField, friendsField;
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
-        @Override
-        protected void init() {
+        @Override protected void init() {
             int x = width/2, y = height/2;
             rangeField = new TextFieldWidget(textRenderer, x - 100, y - 75, 80, 14, Text.literal(""));
             rangeField.setText(String.valueOf(kaRange));
@@ -246,8 +245,7 @@ public class ExampleMod implements ModInitializer {
             friendsField.setText(friendsRaw.isEmpty() ? "Friends:" : friendsRaw);
             addDrawableChild(rangeField); addDrawableChild(wallsField); addDrawableChild(friendsField);
         }
-        @Override
-        public void render(DrawContext ctx, int mx, int my, float delta) {
+        @Override public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int x = width/2, y = height/2;
             ctx.fill(x - 180, y - 100, x - 5, y + 90, 0xFF1A1A1B);
@@ -266,15 +264,12 @@ public class ExampleMod implements ModInitializer {
             c.fill(x, y, x+w, y+h, (mx>=x && mx<=x+w && my>=y && my<=y+h) ? 0xFF2D2D2E : 0xFF232324);
             c.drawCenteredTextWithShadow(textRenderer, t, x+w/2, y+3, -1);
         }
-        @Override
-        public boolean mouseClicked(double mx, double my, int b) {
+        @Override public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
             if (mx >= x - 170 && mx <= x - 15) {
                 if (my >= y - 30 && my <= y - 16) autoRun = !autoRun;
                 if (my >= y - 10 && my <= y + 4) antiVelocity = !antiVelocity;
-                // MineBlaze CFG: Range 3.1, Walls 0.0
                 if (my >= y + 50 && my <= y + 64) { kaRange = 3.1; kaWallsRange = 0.0; rangeField.setText("3.1"); wallsField.setText("0.0"); }
-                // AresMine CFG: Range 3.6, Walls 3.6
                 if (my >= y + 70 && my <= y + 84) { kaRange = 3.6; kaWallsRange = 3.6; rangeField.setText("3.6"); wallsField.setText("3.6"); }
             }
             return super.mouseClicked(mx, my, b);
@@ -291,7 +286,7 @@ public class ExampleMod implements ModInitializer {
         @Override public void render(DrawContext ctx, int mx, int my, float delta) { super.render(ctx, mx, my, delta); ctx.drawCenteredTextWithShadow(textRenderer, "PRESS ANY KEY", width/2, height/2, -1); }
         @Override public boolean keyPressed(int k, int s, int m) {
             int v = (k == GLFW.GLFW_KEY_ESCAPE) ? -1 : k;
-            if(id==0)keyKA=v; else if(id==1)keyTB=v; else if(id==2)keyFB=v; else if(id==3)keyAT=v;
+            if(id==0)keyKA=v; else if(id==1)keyHvH=v; else if(id==2)keyTB=v; else if(id==3)keyFB=v; else if(id==4)keyAT=v;
             saveConfig(); client.setScreen(parent); return true;
         }
     }
