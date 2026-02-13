@@ -65,7 +65,6 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
             
-            // Стабильный AntiVelocity (0.45 для обхода античита)
             if (antiVelocity && client.player.hurtTime > 0) {
                 Vec3d v = client.player.getVelocity();
                 client.player.setVelocity(v.x * 0.45D, v.y, v.z * 0.45D);
@@ -106,20 +105,26 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
 
-            // Наведение без тряски (Легитное)
-            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
-            double distXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
+            // Наводка (плавная и стабильная)
+            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.65, 0).subtract(c.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
-            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, distXZ));
+            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавное вращение (как на Ares)
-            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.42f));
-            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.42f));
+            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.48f));
+            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.48f));
 
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
-            if (cooldown >= 0.93F) {
-                c.interactionManager.attackEntity(c.player, target);
-                c.player.swingHand(Hand.MAIN_HAND);
+            // Если готов удар и мы на земле - делаем микро-прыжок для крита
+            if (cooldown >= 0.92F) {
+                if (c.player.isOnGround()) {
+                    c.player.addVelocity(0, 0.05, 0); // Тот самый микро-прыжок
+                }
+                
+                // Проверка дистанции перед ударом (чтобы не блочил античит)
+                if (c.player.distanceTo(target) <= kaRange) {
+                    c.interactionManager.attackEntity(c.player, target);
+                    c.player.swingHand(Hand.MAIN_HAND);
+                }
             }
         }
     }
