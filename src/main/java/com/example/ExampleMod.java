@@ -11,6 +11,7 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity; // ДОБАВЛЕН ВАЖНЫЙ ИМПОРТ
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
@@ -48,7 +49,7 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Регистрация рендеринга ESP (независимо от киллауры)
+        // Регистрация рендеринга ESP
         WorldRenderEvents.END.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -84,17 +85,17 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    // ЛОГИКА ESP
+    // ЛОГИКА ESP (ИСПРАВЛЕННАЯ)
     private void onWorldRender(WorldRenderContext context) {
-        if (!esp || MinecraftClient.getInstance().player == null) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (!esp || client.player == null) return;
         
-        for (PlayerEntity player : MinecraftClient.getInstance().world.getPlayers()) {
-            if (player == MinecraftClient.getInstance().player || !player.isAlive() || player.isInvisible()) continue;
+        for (PlayerEntity player : client.world.getPlayers()) {
+            if (player == client.player || !player.isAlive() || player.isInvisible()) continue;
             
-            float r = friendsList.contains(player.getName().getString().toLowerCase()) ? 0.0f : 1.0f;
-            float g = friendsList.contains(player.getName().getString().toLowerCase()) ? 1.0f : 0.0f;
-            
-            drawEntityBox(context, player, r, g, 0.0f, 0.6f);
+            // ИСПРАВЛЕНИЕ ЦВЕТА: Всегда белый (1.0f, 1.0f, 1.0f)
+            // Игнорируем друзей/врагов для цвета, как ты и просил
+            drawEntityBox(context, player, 1.0f, 1.0f, 1.0f, 1.0f);
         }
     }
 
@@ -102,15 +103,20 @@ public class ExampleMod implements ModInitializer {
         MatrixStack matrices = ctx.matrixStack();
         Vec3d camPos = ctx.camera().getPos();
         
+        // ИСПРАВЛЕНИЕ TICKDELTA: Берем напрямую из клиента, чтобы не было ошибки
+        float tickDelta = MinecraftClient.getInstance().getTickDelta();
+
         matrices.push();
-        double x = MathHelper.lerp(ctx.tickDelta(), entity.prevX, entity.getX()) - camPos.x;
-        double y = MathHelper.lerp(ctx.tickDelta(), entity.prevY, entity.getY()) - camPos.y;
-        double z = MathHelper.lerp(ctx.tickDelta(), entity.prevZ, entity.getZ()) - camPos.z;
+        double x = MathHelper.lerp(tickDelta, entity.prevX, entity.getX()) - camPos.x;
+        double y = MathHelper.lerp(tickDelta, entity.prevY, entity.getY()) - camPos.y;
+        double z = MathHelper.lerp(tickDelta, entity.prevZ, entity.getZ()) - camPos.z;
         matrices.translate(x, y, z);
 
         Box box = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
         VertexConsumer buffer = ctx.consumers().getBuffer(RenderLayer.getLines());
-        WorldRenderer.drawBox(matrices, buffer, box, r, g, b, a);
+        
+        // ИСПРАВЛЕНИЕ DRAWBOX: Передаем координаты напрямую, а не объект Box
+        WorldRenderer.drawBox(matrices, buffer, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, r, g, b, a);
         
         matrices.pop();
     }
@@ -161,6 +167,7 @@ public class ExampleMod implements ModInitializer {
     private void runTrigger(MinecraftClient c) {
         HitResult h = c.crosshairTarget;
         if (h != null && h.getType() == HitResult.Type.ENTITY) {
+            // ИСПРАВЛЕНИЕ Entity: Теперь класс импортирован, ошибка исчезнет
             Entity e = ((EntityHitResult) h).getEntity();
             if (e instanceof PlayerEntity && e.isAlive() && !friendsList.contains(e.getName().getString().toLowerCase())) {
                 if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
