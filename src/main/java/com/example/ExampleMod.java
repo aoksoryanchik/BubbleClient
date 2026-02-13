@@ -25,7 +25,6 @@ import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
@@ -62,6 +61,7 @@ public class ExampleMod implements ModInitializer {
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (autoRun && killaura && auraTarget != null && auraTarget.isAlive()) client.player.setSprinting(true);
+            
             if (killaura) runAura(client); else auraTarget = null;
             if (triggerbot) runTrigger(client);
             
@@ -173,8 +173,8 @@ public class ExampleMod implements ModInitializer {
         
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            // Рисуем простой полупрозрачный фон без блюра
-            ctx.fill(0, 0, width, height, 0x88000000); 
+            // Рисуем чисто черную заливку вместо renderBackground, чтобы избежать блюра
+            ctx.fill(0, 0, width, height, 0x90000000); 
             
             int cx = width / 2, cy = height / 2;
             ctx.fill(cx - 90, cy - 105, cx + 90, cy + 155, -16448251);
@@ -200,20 +200,20 @@ public class ExampleMod implements ModInitializer {
             for (int i = 0; i < 5; i++) {
                 int iy = cy - 70 + i * 25;
                 if (mx >= cx - 80 && mx <= cx + 80 && my >= iy && my <= iy + 20) {
-                    // Клик на >> или правый клик -> Настройки
+                    // Правый клик ИЛИ клик по >> -> Настройки
                     if (b == 1 || mx >= cx + 60) {
                         if (i == 0) { client.setScreen(new KillAuraSettings(this)); return true; }
                         if (i == 4) { client.setScreen(new WaypointSettings(this)); return true; }
-                        client.setScreen(new BindScreen(this, i));
-                        return true;
                     }
-                    // Левый клик -> Переключение ИЛИ Бинд (если нет настроек)
+                    // Обычный левый клик по тексту/кнопке
                     if (b == 0) {
                         if (i == 0) killaura = !killaura;
-                        else if (i == 1) triggerbot = !triggerbot;
-                        else if (i == 2) fullbright = !fullbright;
-                        else if (i == 3) autoTotem = !autoTotem;
                         else if (i == 4) waypointActive = !waypointActive;
+                        else {
+                            // Для остальных функций открываем окно бинда сразу
+                            client.setScreen(new BindScreen(this, i));
+                            return true;
+                        }
                         saveConfig();
                         return true;
                     }
@@ -236,14 +236,14 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x88000000);
+            ctx.fill(0, 0, width, height, 0x90000000); // Фон без блюра
             int x = width/2, y = height/2;
             ctx.fill(x-110, y-95, x+110, y+95, -16448251); ctx.drawBorder(x-110, y-95, 220, 190, -16733441);
             ctx.drawCenteredTextWithShadow(textRenderer, "KA SETTINGS", x, y-88, -1);
             ctx.drawText(textRenderer, "Range:", x-100, y-67, -1, true); ctx.drawText(textRenderer, "Walls:", x-100, y-47, -1, true);
             btn(ctx, x-100, y-25, 200, 14, "AutoRun: " + autoRun, mx, my);
             btn(ctx, x-100, y-5, 200, 14, "AntiVelocity: " + antiVelocity, mx, my);
-            btn(ctx, x-100, y+15, 200, 14, "Bind Key", mx, my);
+            btn(ctx, x-100, y+15, 200, 14, "BIND KEY", mx, my);
             ctx.drawCenteredTextWithShadow(textRenderer, "PRESETS", x, y+45, -1);
             btn(ctx, x-100, y+55, 200, 14, "MineBlaze", mx, my);
             btn(ctx, x-100, y+75, 200, 14, "AresMine", mx, my);
@@ -286,13 +286,14 @@ public class ExampleMod implements ModInitializer {
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0x88000000);
+            ctx.fill(0, 0, width, height, 0x90000000); // Фон без блюра
             int x = width/2, y = height/2;
             ctx.fill(x-115, y-90, x+115, y+90, -16448251); ctx.drawBorder(x-115, y-90, 230, 180, -16733441);
-            ctx.drawCenteredTextWithShadow(textRenderer, "COORDINATES", x, y-80, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "WAYPOINT", x, y-80, -1);
             ctx.drawText(textRenderer, "X:", x-100, y-41, -1, true); ctx.drawText(textRenderer, "Y:", x-100, y-16, -1, true); ctx.drawText(textRenderer, "Z:", x-100, y+9, -1, true);
+            
             ctx.fill(x-100, y+40, x+100, y+55, (mx>=x-100 && mx<=x+100 && my>=y+40 && my<=y+55) ? -14540254 : -15658735);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Bind Key", x, y+43, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "BIND KEY", x, y+43, -1);
             super.render(ctx, mx, my, d);
         }
         @Override
@@ -315,7 +316,7 @@ public class ExampleMod implements ModInitializer {
         public BindScreen(Screen p, int id) { super(Text.of("Bind")); this.p = p; this.id = id; }
         @Override
         public void render(DrawContext ctx, int mx, int my, float d) {
-            ctx.fill(0, 0, width, height, 0xAA000000);
+            ctx.fill(0, 0, width, height, 0xCC000000); // Темный фон без блюра
             ctx.drawCenteredTextWithShadow(textRenderer, "PRESS ANY KEY", width/2, height/2 - 10, -1);
             ctx.drawCenteredTextWithShadow(textRenderer, "ESC TO CLEAR", width/2, height/2 + 10, 0xFFFF5555);
         }
