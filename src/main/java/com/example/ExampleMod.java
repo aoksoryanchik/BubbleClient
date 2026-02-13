@@ -25,7 +25,6 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
-import org.joml.Matrix3f;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.FileWriter;
@@ -86,8 +85,8 @@ public class ExampleMod implements ModInitializer {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!esp || client.player == null) return;
         
-        // Исправлено получение tickDelta для новых версий
-        float tickDelta = context.tickDelta();
+        // Исправленное получение tickDelta для всех новых версий Fabric
+        float tickDelta = client.getRenderTickCounter().getTickDelta(true);
 
         for (PlayerEntity player : client.world.getPlayers()) {
             if (player == client.player || !player.isAlive() || player.isInvisible()) continue;
@@ -113,35 +112,33 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void drawOutlinedBox(MatrixStack matrices, VertexConsumer buffer, Box box, float r, float g, float b, float a) {
-        MatrixStack.Entry entry = matrices.peek();
-        Matrix4f posMat = entry.getPositionMatrix();
-        Matrix3f normMat = entry.getNormalMatrix(); // Исправлено получение матрицы нормалей
+        Matrix4f posMat = matrices.peek().getPositionMatrix();
 
         float x1 = (float)box.minX, y1 = (float)box.minY, z1 = (float)box.minZ;
         float x2 = (float)box.maxX, y2 = (float)box.maxY, z2 = (float)box.maxZ;
 
+        // Рисуем 12 линий бокса. Используем normal(0, 1, 0) напрямую, чтобы избежать ошибок типов Matrix3f
         // Нижний квадрат
-        drawLine(posMat, normMat, buffer, x1, y1, z1, x2, y1, z1, r, g, b, a);
-        drawLine(posMat, normMat, buffer, x2, y1, z1, x2, y1, z2, r, g, b, a);
-        drawLine(posMat, normMat, buffer, x2, y1, z2, x1, y1, z2, r, g, b, a);
-        drawLine(posMat, normMat, buffer, x1, y1, z2, x1, y1, z1, r, g, b, a);
-
+        drawLine(posMat, buffer, x1, y1, z1, x2, y1, z1, r, g, b, a);
+        drawLine(posMat, buffer, x2, y1, z1, x2, y1, z2, r, g, b, a);
+        drawLine(posMat, buffer, x2, y1, z2, x1, y1, z2, r, g, b, a);
+        drawLine(posMat, buffer, x1, y1, z2, x1, y1, z1, r, g, b, a);
         // Верхний квадрат
-        drawLine(posMat, normMat, buffer, x1, y2, z1, x2, y2, z1, r, g, b, a);
-        drawLine(posMat, normMat, buffer, x2, y2, z1, x2, y2, z2, r, g, b, a);
-        drawLine(posMat, normMat, buffer, x2, y2, z2, x1, y2, z2, r, g, b, a);
-        drawLine(posMat, normMat, buffer, x1, y2, z2, x1, y2, z1, r, g, b, a);
-
+        drawLine(posMat, buffer, x1, y2, z1, x2, y2, z1, r, g, b, a);
+        drawLine(posMat, buffer, x2, y2, z1, x2, y2, z2, r, g, b, a);
+        drawLine(posMat, buffer, x2, y2, z2, x1, y2, z2, r, g, b, a);
+        drawLine(posMat, buffer, x1, y2, z2, x1, y2, z1, r, g, b, a);
         // Стойки
-        drawLine(posMat, normMat, buffer, x1, y1, z1, x1, y2, z1, r, g, b, a);
-        drawLine(posMat, normMat, buffer, x2, y1, z1, x2, y2, z1, r, g, b, a);
-        drawLine(posMat, normMat, buffer, x2, y1, z2, x2, y2, z2, r, g, b, a);
-        drawLine(posMat, normMat, buffer, x1, y1, z2, x1, y2, z2, r, g, b, a);
+        drawLine(posMat, buffer, x1, y1, z1, x1, y2, z1, r, g, b, a);
+        drawLine(posMat, buffer, x2, y1, z1, x2, y2, z1, r, g, b, a);
+        drawLine(posMat, buffer, x2, y1, z2, x2, y2, z2, r, g, b, a);
+        drawLine(posMat, buffer, x1, y1, z2, x1, y2, z2, r, g, b, a);
     }
 
-    private void drawLine(Matrix4f posMat, Matrix3f normMat, VertexConsumer buffer, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float b, float a) {
-        buffer.vertex(posMat, x1, y1, z1).color(r, g, b, a).normal(normMat, 0, 1, 0).next();
-        buffer.vertex(posMat, x2, y2, z2).color(r, g, b, a).normal(normMat, 0, 1, 0).next();
+    private void drawLine(Matrix4f posMat, VertexConsumer buffer, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float b, float a) {
+        // Версия для Minecraft 1.20.6 / 1.21+
+        buffer.vertex(posMat, x1, y1, z1).color(r, g, b, a).normal(0, 1, 0).next();
+        buffer.vertex(posMat, x2, y2, z2).color(r, g, b, a).normal(0, 1, 0).next();
     }
 
     private void checkTotem(MinecraftClient c) {
