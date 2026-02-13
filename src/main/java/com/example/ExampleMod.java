@@ -31,7 +31,6 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    // Настройки
     public static boolean killaura = false, triggerbot = false, fullbright = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, kaLegit = false;
     public static double kaRange = 3.8D, kaWallsRange = 3.0D;
@@ -42,7 +41,6 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     
-    // Переменные для ротаций и задержек (как в Night DLC)
     private static long lastAttackTime = 0;
     private static long currentRandomDelay = 0;
     private final Random random = new Random();
@@ -54,12 +52,10 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // Открытие меню на '0'
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Бинды
             if (client.currentScreen == null) {
                 if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
                 if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
@@ -67,16 +63,17 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
             }
 
-            // Модули
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
             
-            // Legit AntiVelocity (0.4D не флагает на AresMine)
+            // Улучшенный AntiVelocity для MineBlaze (Dynamic Bypass)
             if (antiVelocity && client.player.hurtTime > 0) {
                 Vec3d v = client.player.getVelocity();
-                client.player.setVelocity(v.x * 0.4D, v.y, v.z * 0.4D);
+                // Рандомизируем множитель от 0.45 до 0.65, чтобы не было флагов на "заморозку"
+                double modifier = 0.45D + (random.nextDouble() * 0.2D);
+                client.player.setVelocity(v.x * modifier, v.y, v.z * modifier);
             }
         });
     }
@@ -112,23 +109,28 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
+            // Убираем визуальную тряску бега при наводке
+            c.options.getBobView().setValue(false);
+            
             if (autoRun) c.player.setSprinting(true);
 
-            // ПЛАВНЫЕ РОТАЦИИ (Интерполяция как в NurSultan/NightDLC)
-            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.75, 0).subtract(c.player.getEyePos());
+            // Ротации с рандомизацией точки на теле (грудь/живот)
+            double yOffset = target.getHeight() * (0.65 + (random.nextDouble() * 0.1));
+            Vec3d diff = target.getPos().add(0, yOffset, 0).subtract(c.player.getEyePos());
             double distXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, distXZ));
 
-            // speed: 0.2f - плавно, 0.5f - быстро.
-            float rotSpeed = kaLegit ? 0.22f : 0.45f;
+            // Плавность
+            float rotSpeed = kaLegit ? 0.20f : 0.48f;
             c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, rotSpeed));
             c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, rotSpeed));
 
-            // ЛОГИКА УДАРА
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
             boolean isFalling = c.player.getVelocity().y < -0.05 && !c.player.isOnGround();
-            boolean ready = kaLegit ? (isFalling && cooldown >= 0.92F) : (cooldown >= 0.95F);
+            
+            // Настройка удара: на MineBlaze/Ares бьем агрессивно
+            boolean ready = cooldown >= 0.93F;
 
             if (ready) {
                 long now = System.currentTimeMillis();
@@ -136,9 +138,12 @@ public class ExampleMod implements ModInitializer {
                     c.interactionManager.attackEntity(c.player, target);
                     c.player.swingHand(Hand.MAIN_HAND);
                     lastAttackTime = now;
-                    currentRandomDelay = random.nextInt(40); // задержка 0-40мс
+                    currentRandomDelay = random.nextInt(35); 
                 }
             }
+        } else {
+            // Возвращаем тряску, если цели нет (чтобы выглядело легитно)
+            c.options.getBobView().setValue(true);
         }
     }
 
@@ -200,11 +205,10 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI С ИСПРАВЛЕНИЕМ ОШИБОК ИЗ ЛОГОВ ---
+    // --- GUI ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
-        
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
@@ -219,7 +223,6 @@ public class ExampleMod implements ModInitializer {
                 ctx.drawText(textRenderer, n[i], cx - 75, iy + 6, s[i] ? 0xFF00FF00 : 0xFFFFFFFF, true);
             }
         }
-
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
@@ -243,9 +246,7 @@ public class ExampleMod implements ModInitializer {
     public static class KillAuraSettings extends Screen {
         private final Screen parent;
         private TextFieldWidget rangeField, wallsField, friendsField;
-
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
-
         @Override
         protected void init() {
             int x = width/2, y = height/2;
@@ -257,7 +258,6 @@ public class ExampleMod implements ModInitializer {
             friendsField.setText(friendsRaw.isEmpty() ? "Friends:" : friendsRaw);
             addDrawableChild(rangeField); addDrawableChild(wallsField); addDrawableChild(friendsField);
         }
-
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
@@ -270,31 +270,27 @@ public class ExampleMod implements ModInitializer {
             btn(ctx, x - 170, y + 50, 155, 14, "MineBlaze", mx, my);
             btn(ctx, x - 170, y + 70, 155, 14, "AresMine", mx, my);
         }
-
         private void drawBtn(DrawContext c, int x, int y, int w, int h, String t, boolean s, int mx, int my) {
             c.fill(x, y, x+w, y+h, (mx>=x && mx<=x+w && my>=y && my<=y+h) ? 0xFF2D2D2E : 0xFF232324);
             c.drawText(textRenderer, t + (s ? "§aON" : "§cOFF"), x+5, y+3, -1, true);
         }
-
         private void btn(DrawContext c, int x, int y, int w, int h, String t, int mx, int my) {
             c.fill(x, y, x+w, y+h, (mx>=x && mx<=x+w && my>=y && my<=y+h) ? 0xFF2D2D2E : 0xFF232324);
             c.drawCenteredTextWithShadow(textRenderer, t, x+w/2, y+3, -1);
         }
-
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
             if (mx >= x - 170 && mx <= x - 15) {
                 if (my >= y - 30 && my <= y - 16) autoRun = !autoRun;
                 if (my >= y - 10 && my <= y + 4) antiVelocity = !antiVelocity;
-                if (my >= y + 50 && my <= y + 64) { kaRange = 3.2; kaWallsRange = 0.0; kaLegit = true; rangeField.setText("3.2"); wallsField.setText("0.0"); }
+                // Теперь MineBlaze настройки такие же мощные, как у AresMine
+                if (my >= y + 50 && my <= y + 64) { kaRange = 3.6; kaWallsRange = 3.6; kaLegit = false; rangeField.setText("3.6"); wallsField.setText("3.6"); }
                 if (my >= y + 70 && my <= y + 84) { kaRange = 3.6; kaWallsRange = 3.6; kaLegit = false; rangeField.setText("3.6"); wallsField.setText("3.6"); }
             }
             return super.mouseClicked(mx, my, b);
         }
-
-        @Override
-        public void close() { 
+        @Override public void close() { 
             try { kaRange = Double.parseDouble(rangeField.getText()); kaWallsRange = Double.parseDouble(wallsField.getText()); } catch (Exception ignored) {}
             updateFriends(friendsField.getText()); saveConfig(); client.setScreen(parent); 
         }
@@ -303,13 +299,8 @@ public class ExampleMod implements ModInitializer {
     public static class BindScreen extends Screen {
         private final Screen parent; private final int id;
         public BindScreen(Screen parent, int id) { super(Text.literal("Bind")); this.parent = parent; this.id = id; }
-        @Override
-        public void render(DrawContext ctx, int mx, int my, float delta) { 
-            super.render(ctx, mx, my, delta); 
-            ctx.drawCenteredTextWithShadow(textRenderer, "PRESS ANY KEY", width/2, height/2, -1); 
-        }
-        @Override
-        public boolean keyPressed(int k, int s, int m) {
+        @Override public void render(DrawContext ctx, int mx, int my, float delta) { super.render(ctx, mx, my, delta); ctx.drawCenteredTextWithShadow(textRenderer, "PRESS ANY KEY", width/2, height/2, -1); }
+        @Override public boolean keyPressed(int k, int s, int m) {
             int v = (k == GLFW.GLFW_KEY_ESCAPE) ? -1 : k;
             if(id==0)keyKA=v; else if(id==1)keyTB=v; else if(id==2)keyFB=v; else if(id==3)keyAT=v;
             saveConfig(); client.setScreen(parent); return true;
