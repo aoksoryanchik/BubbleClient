@@ -23,6 +23,7 @@ import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
@@ -34,6 +35,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
@@ -45,6 +47,7 @@ public class ExampleMod implements ModInitializer {
     
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
+    private final Random random = new Random();
 
     @Override
     public void onInitialize() {
@@ -55,16 +58,12 @@ public class ExampleMod implements ModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
-            
-            // Отключение тряски FOV
             client.options.getFovEffectScale().setValue(0.0);
 
-            // Меню на клавишу 0
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Обработка биндов
             if (client.currentScreen == null) {
                 if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
                 if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
@@ -89,60 +88,53 @@ public class ExampleMod implements ModInitializer {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!esp || client.player == null) return;
         
-        // Исправлено получение tickDelta
         float tickDelta = client.getRenderTickCounter().getTickDelta(true);
 
         for (PlayerEntity player : client.world.getPlayers()) {
             if (player == client.player || !player.isAlive() || player.isInvisible()) continue;
-            drawEntityBox(context, player, tickDelta, 1.0f, 1.0f, 1.0f, 1.0f);
+            draw2DBox(context, player, tickDelta);
         }
     }
 
-    private void drawEntityBox(WorldRenderContext ctx, PlayerEntity entity, float tickDelta, float r, float g, float b, float a) {
+    // Новый метод ESP: Рисует 2D бокс, который всегда смотрит на камеру
+    private void draw2DBox(WorldRenderContext ctx, PlayerEntity entity, float tickDelta) {
         MatrixStack matrices = ctx.matrixStack();
         Vec3d camPos = ctx.camera().getPos();
         
-        matrices.push();
         double x = MathHelper.lerp(tickDelta, entity.prevX, entity.getX()) - camPos.x;
         double y = MathHelper.lerp(tickDelta, entity.prevY, entity.getY()) - camPos.y;
         double z = MathHelper.lerp(tickDelta, entity.prevZ, entity.getZ()) - camPos.z;
-        matrices.translate(x, y, z);
 
-        Box box = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
-        VertexConsumer buffer = ctx.consumers().getBuffer(RenderLayer.getLines());
+        matrices.push();
+        matrices.translate(x, y, z);
         
-        drawOutlinedBox(matrices, buffer, box, r, g, b, a);
+        // Заставляем бокс всегда быть повернутым к игроку (Billboarding)
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-ctx.camera().getYaw()));
+        
+        float w = entity.getWidth() / 1.5f;
+        float h = entity.getHeight();
+
+        VertexConsumer buffer = ctx.consumers().getBuffer(RenderLayer.getLines());
+        Matrix4f posMat = matrices.peek().getPositionMatrix();
+
+        // Рисуем прямоугольник (передняя панель), которая теперь всегда перед нами
+        drawRect(posMat, buffer, -w, 0, w, h, 1.0f, 1.0f, 1.0f, 1.0f);
+        
         matrices.pop();
     }
 
-    private void drawOutlinedBox(MatrixStack matrices, VertexConsumer buffer, Box box, float r, float g, float b, float a) {
-        Matrix4f posMat = matrices.peek().getPositionMatrix();
+    private void drawRect(Matrix4f mat, VertexConsumer b, float x1, float y1, float x2, float y2, float r, float g, float bl, float a) {
+        b.vertex(mat, x1, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(mat, x2, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
 
-        float x1 = (float)box.minX, y1 = (float)box.minY, z1 = (float)box.minZ;
-        float x2 = (float)box.maxX, y2 = (float)box.maxY, z2 = (float)box.maxZ;
+        b.vertex(mat, x2, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(mat, x2, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
 
-        // Рисуем грани (без вызова .next() для совместимости с 1.21+)
-        // Нижнее основание
-        drawLine(posMat, buffer, x1, y1, z1, x2, y1, z1, r, g, b, a);
-        drawLine(posMat, buffer, x2, y1, z1, x2, y1, z2, r, g, b, a);
-        drawLine(posMat, buffer, x2, y1, z2, x1, y1, z2, r, g, b, a);
-        drawLine(posMat, buffer, x1, y1, z2, x1, y1, z1, r, g, b, a);
-        // Верхнее основание
-        drawLine(posMat, buffer, x1, y2, z1, x2, y2, z1, r, g, b, a);
-        drawLine(posMat, buffer, x2, y2, z1, x2, y2, z2, r, g, b, a);
-        drawLine(posMat, buffer, x2, y2, z2, x1, y2, z2, r, g, b, a);
-        drawLine(posMat, buffer, x1, y2, z2, x1, y2, z1, r, g, b, a);
-        // Вертикальные линии
-        drawLine(posMat, buffer, x1, y1, z1, x1, y2, z1, r, g, b, a);
-        drawLine(posMat, buffer, x2, y1, z1, x2, y2, z1, r, g, b, a);
-        drawLine(posMat, buffer, x2, y1, z2, x2, y2, z2, r, g, b, a);
-        drawLine(posMat, buffer, x1, y1, z2, x1, y2, z2, r, g, b, a);
-    }
+        b.vertex(mat, x2, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(mat, x1, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
 
-    private void drawLine(Matrix4f posMat, VertexConsumer buffer, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float b, float a) {
-        // Формат для новых версий: позиция -> цвет -> нормаль
-        buffer.vertex(posMat, x1, y1, z1).color(r, g, b, a).normal(0, 1, 0);
-        buffer.vertex(posMat, x2, y2, z2).color(r, g, b, a).normal(0, 1, 0);
+        b.vertex(mat, x1, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(mat, x1, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
     }
 
     private void checkTotem(MinecraftClient c) {
@@ -170,14 +162,24 @@ public class ExampleMod implements ModInitializer {
         }
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
-            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.6, 0).subtract(c.player.getEyePos());
+            
+            // Легитные ротации: плавное наведение
+            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.5, 0).subtract(c.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.45f));
-            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.45f));
-            if (c.player.getAttackCooldownProgress(0.5f) >= 0.92F && Math.abs(MathHelper.wrapDegrees(c.player.getYaw() - targetYaw)) < 25.0F) {
-                c.interactionManager.attackEntity(c.player, target);
-                c.player.swingHand(Hand.MAIN_HAND);
+            
+            // Уменьшена скорость до 0.35f для беспалевности
+            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.35f));
+            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.35f));
+
+            // Рандомизация задержки удара (от 0.9 до 1.0 прогресса кд)
+            float readyThreshold = 0.90f + random.nextFloat() * 0.08f;
+            if (c.player.getAttackCooldownProgress(0.5f) >= readyThreshold) {
+                // Проверка, что прицел наведен на цель (легитность)
+                if (Math.abs(MathHelper.wrapDegrees(c.player.getYaw() - targetYaw)) < 20.0F) {
+                    c.interactionManager.attackEntity(c.player, target);
+                    c.player.swingHand(Hand.MAIN_HAND);
+                }
             }
         }
     }
@@ -239,7 +241,6 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // Класс меню
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
