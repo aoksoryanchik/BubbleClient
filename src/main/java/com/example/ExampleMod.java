@@ -40,7 +40,6 @@ public class ExampleMod implements ModInitializer {
     
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    private static long lastAttackTime = 0;
     private final Random random = new Random();
 
     @Override
@@ -61,12 +60,18 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
             }
 
-            // ИСПРАВЛЕННЫЙ HVH MOVE (Без лагов)
+            // HVH AIR CONTROL (Мобильность в прыжке без лагов)
             if (hvhMode && !client.player.isOnGround()) {
-                if (client.options.jumpKey.isPressed()) {
-                    client.player.setVelocity(client.player.getVelocity().x, 0.05, client.player.getVelocity().z);
-                    client.player.jump();
-                }
+                Vec3d vel = client.player.getVelocity();
+                // Позволяет резко менять направление в воздухе (Strafe)
+                float yaw = client.player.getYaw();
+                double speed = 0.025D; // Микро-буст для маневренности
+                
+                if (client.options.forwardKey.isPressed()) client.player.addVelocity(Math.sin(-Math.toRadians(yaw)) * speed, 0, Math.cos(Math.toRadians(yaw)) * speed);
+                if (client.options.backKey.isPressed()) client.player.addVelocity(Math.sin(Math.toRadians(yaw)) * speed, 0, -Math.cos(Math.toRadians(yaw)) * speed);
+                
+                // Fast Fall для быстрых критов
+                if (vel.y < 0) client.player.addVelocity(0, -0.015, 0);
             }
 
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
@@ -74,9 +79,9 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
             
-            // Стабильный AntiVelocity
+            // HvH AntiVelocity
             if (antiVelocity && client.player.hurtTime > 0) {
-                double factor = hvhMode ? 0.0D : 0.45D;
+                double factor = hvhMode ? 0.02D : 0.45D;
                 client.player.setVelocity(client.player.getVelocity().x * factor, client.player.getVelocity().y, client.player.getVelocity().z * factor);
             }
         });
@@ -104,7 +109,7 @@ public class ExampleMod implements ModInitializer {
             if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
             
             double d = c.player.distanceTo(p);
-            double currentRange = hvhMode ? 5.5D : kaRange;
+            double currentRange = hvhMode ? 5.2D : kaRange;
             if (d <= currentRange && d < bestDist) {
                 bestDist = d;
                 target = p;
@@ -114,11 +119,11 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
 
-            // МГНОВЕННЫЕ РОТАЦИИ ДЛЯ HVH
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.5, 0).subtract(c.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
+            // HvH Silent Rotations (только пакетно)
             if (hvhMode) {
                 c.player.setYaw(targetYaw);
                 c.player.setPitch(targetPitch);
@@ -128,7 +133,7 @@ public class ExampleMod implements ModInitializer {
             }
 
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
-            if (cooldown >= (hvhMode ? 0.90F : 0.93F)) {
+            if (cooldown >= (hvhMode ? 0.88F : 0.93F)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -291,3 +296,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
