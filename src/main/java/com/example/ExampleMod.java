@@ -40,6 +40,9 @@ public class ExampleMod implements ModInitializer {
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     public static PlayerEntity auraTarget = null;
+    
+    // Переменная для легитного антивелосити
+    private static boolean velocityHandled = false;
 
     @Override
     public void onInitialize() {
@@ -48,10 +51,12 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
+            // Открытие меню на '0'
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
+            // Бинды
             if (client.currentScreen == null) {
                 if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
                 if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
@@ -59,14 +64,29 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
             }
 
+            // FullBright
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
+            
+            // AutoTotem
             if (autoTotem) checkTotem(client);
             
+            // Модули боевки
             if (killaura) runAura(client); else auraTarget = null;
             if (triggerbot) runTrigger(client);
             
-            if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(0, client.player.getVelocity().y, 0);
+            // Legit AntiVelocity
+            if (antiVelocity) {
+                if (client.player.hurtTime > 0) {
+                    // Срабатывает только один раз за удар (обычно hurtTime начинается с 10)
+                    if ((client.player.hurtTime == 10 || client.player.hurtTime == 9) && !velocityHandled) {
+                        Vec3d v = client.player.getVelocity();
+                        // Гасим откидывание по X и Z на 70% (0.3). Это выглядит как пинг/лаг для античита.
+                        client.player.setVelocity(v.x * 0.3D, v.y, v.z * 0.3D);
+                        velocityHandled = true;
+                    }
+                } else {
+                    velocityHandled = false;
+                }
             }
         });
     }
@@ -100,32 +120,35 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (auraTarget != null) {
-            // Безопасный TargetAura (магнит к цели)
-            if (targetAura) {
+            // Legit TargetAura: Магнит работает ТОЛЬКО если ты сам зажал 'W' (forwardSpeed > 0)
+            if (targetAura && c.player.input.movementForward > 0) {
                 double dist = c.player.distanceTo(auraTarget);
+                // Начинаем притягивать, только если цель дальше 1.5 блоков
                 if (dist > 1.5D && dist <= kaRange) {
                     Vec3d dir = auraTarget.getPos().subtract(c.player.getPos()).normalize();
-                    double speed = c.player.isSprinting() ? 0.08 : 0.04;
-                    c.player.addVelocity(dir.x * speed, 0, dir.z * speed);
+                    // Очень мягкое добавление скорости, не ломающее прыжок по оси Y
+                    c.player.addVelocity(dir.x * 0.025, 0, dir.z * 0.025);
                 }
             }
             if (autoRun) c.player.setSprinting(true);
 
-            // Плавное наведение
+            // Плавное наведение камеры
             boolean isLookingAtTarget = rotate(c.player, auraTarget.getPos().add(0, auraTarget.getHeight() * 0.5, 0), kaLegit);
             
-            // Логика критов
+            // Логика критов и ударов
             float cooldown = c.player.getAttackCooldownProgress(0.5f);
             boolean isFalling = c.player.getVelocity().y < -0.01 && !c.player.isOnGround();
             
             boolean canStrike = false;
-            if (kaLegit) { // Строгая проверка для легита
+            if (kaLegit) { 
+                // Для майнблейза: ждем падения для крита, или 100% КД на земле
                 canStrike = isFalling ? (cooldown >= 0.9F) : (c.player.isOnGround() && cooldown >= 1.0F);
-            } else { // Агрессивная для AresMine
+            } else { 
+                // Для аресмайна: бьем агрессивнее
                 canStrike = cooldown >= 0.9F; 
             }
 
-            // Бьем ТОЛЬКО если смотрим на врага (убирает миссы и детекты)
+            // Удар проходит только когда прицел уже навелся
             if (canStrike && isLookingAtTarget) {
                 c.interactionManager.attackEntity(c.player, auraTarget);
                 c.player.swingHand(Hand.MAIN_HAND);
@@ -155,12 +178,12 @@ public class ExampleMod implements ModInitializer {
         float yawDiff = MathHelper.wrapDegrees(ty - p.getYaw());
         float pitchDiff = MathHelper.wrapDegrees(tp - p.getPitch());
         
-        // Лимитируем скорость поворота для обхода античитов
+        // Лимитируем скорость поворота: 15 градусов для легита, 45 для жесткого режима
         float maxSpeed = legit ? 15.0F : 45.0F;
         p.setYaw(p.getYaw() + MathHelper.clamp(yawDiff, -maxSpeed, maxSpeed));
         p.setPitch(p.getPitch() + MathHelper.clamp(pitchDiff, -maxSpeed, maxSpeed));
         
-        // Возвращаем true, если прицел близок к цели (угол < 35 градусов)
+        // Считаем, что мы смотрим на цель, если угол отклонения меньше 35 градусов
         return Math.abs(yawDiff) < 35.0F;
     }
 
