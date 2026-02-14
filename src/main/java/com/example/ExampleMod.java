@@ -55,8 +55,8 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Используем BEFORE_DEBUG_RENDER для стабильности, но с правильным слоем
-        WorldRenderEvents.BEFORE_DEBUG_RENDER.register(this::renderESP);
+        // Используем событие LAST - это гарантирует, что мы рисуем в самом конце кадра
+        WorldRenderEvents.LAST.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
@@ -81,14 +81,14 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // ПОЛНЫЙ АНТИОТКИД (0%)
+            // АНТИОТКИД (0%)
             if (antiVelocity && client.player.hurtTime > 0) {
                  client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
         });
     }
 
-    // --- ИСПРАВЛЕННЫЙ ESP: СКВОЗЬ СТЕНЫ + СТАТИЧНЫЙ ---
+    // --- ФИНАЛЬНЫЙ ESP: СКВОЗЬ СТЕНЫ + СТАТИЧНОСТЬ ---
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -97,61 +97,58 @@ public class ExampleMod implements ModInitializer {
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // КЛЮЧЕВАЯ НАСТРОЙКА: Отключаем тест глубины ПЕРЕД получением буфера
+        // ПОЛНОЕ ОТКЛЮЧЕНИЕ ГЛУБИНЫ ДЛЯ ВСЕХ ПОСЛЕДУЮЩИХ ОПЕРАЦИЙ
         RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.depthMask(false); 
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
 
-        // Берем специальный слой, который игнорирует стандартный пайплайн рендера
-        VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
-        VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder bufferBuilder = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
 
             ms.push();
-            // Позиция с интерполяцией (чтобы не дергалось)
+            // Интерполяция для плавности
             double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
 
             ms.translate(x, y, z);
+            // Привязка к камере для статичности
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
 
             float w = p.getWidth() / 2 + 0.05f;
             float h = p.getHeight() + 0.05f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Рисуем рамку малиновым цветом (1.0, 0.0, 0.6)
-            drawBox(buffer, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
+            // Рисуем малиновую рамку
+            drawBox(bufferBuilder, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
             
             ms.pop();
         }
 
-        // ВЫВОДИМ ВСЁ ПРЯМО СЕЙЧАС, пока DepthTest выключен
-        consumers.draw(RenderLayer.getLines());
+        BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
         
-        // Возвращаем настройки обратно, чтобы не сломать остальную игру
+        // Возвращаем настройки в дефолт
         RenderSystem.enableDepthTest();
         RenderSystem.depthMask(true);
-        RenderSystem.disableBlend();
     }
 
-    private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
-        // Отрисовка линий прямоугольника
-        line(b, m, -w, 0, 0, w, 0, 0, r, g, bl, a);
-        line(b, m, -w, h, 0, w, h, 0, r, g, bl, a);
-        line(b, m, -w, 0, 0, -w, h, 0, r, g, bl, a);
-        line(b, m, w, 0, 0, w, h, 0, r, g, bl, a);
+    private void drawBox(BufferBuilder b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
+        // Низ
+        b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, w, 0, 0).color(r, g, bl, a);
+        // Верх
+        b.vertex(m, -w, h, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
+        // Левая вертикаль
+        b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, -w, h, 0).color(r, g, bl, a);
+        // Правая вертикаль
+        b.vertex(m, w, 0, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
     }
 
-    private void line(VertexConsumer b, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float bl, float a) {
-        b.vertex(m, x1, y1, z1).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, x2, y2, z2).color(r, g, bl, a).normal(0, 1, 0);
-    }
-
-    // --- ОСТАЛЬНЫЕ МОДУЛИ (БЕЗ ИЗМЕНЕНИЙ) ---
+    // --- КИЛЛАУРА И ОСТАЛЬНОЕ (БЕЗ ИЗМЕНЕНИЙ) ---
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
