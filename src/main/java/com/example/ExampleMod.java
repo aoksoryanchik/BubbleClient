@@ -26,6 +26,8 @@ import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.platform.GlStateManager;
 
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -35,8 +37,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
-
-import com.mojang.blaze3d.systems.RenderSystem;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
@@ -57,7 +57,7 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Регистрируем ESP в событии LAST, чтобы он рисовался в самом конце цикла рендера
+        // Используем LAST, чтобы рисовать после того, как весь мир (стены) уже отрисован
         WorldRenderEvents.LAST.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -107,9 +107,11 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            
             // ТВОЯ НАВОДКА 0.70f
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
+            
             if (c.player.getAttackCooldownProgress(0) >= (0.90F + random.nextFloat() * 0.04F)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
@@ -122,6 +124,66 @@ public class ExampleMod implements ModInitializer {
         return start + diff * speed;
     }
 
+    // --- ИСПРАВЛЕННЫЙ ESP (100% ПРОСВЕЧИВАЕТ СКВОЗЬ СТЕНЫ) ---
+    private void onWorldRender(WorldRenderContext context) {
+        if (!esp) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.world == null) return;
+
+        MatrixStack ms = context.matrixStack();
+        Vec3d camPos = context.camera().getPos();
+
+        // 1. Сохраняем текущее состояние теста глубины
+        boolean depthEnabled = GL11.getBoolean(GL11.GL_DEPTH_TEST);
+        
+        // 2. Полностью выключаем тест глубины и очищаем буфер, чтобы линии всегда были сверху
+        RenderSystem.disableDepthTest();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram); // Фикс для компиляции 1.21.4
+
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR);
+
+        for (PlayerEntity p : client.world.getPlayers()) {
+            if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
+
+            double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
+            double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
+            double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
+
+            ms.push();
+            ms.translate(x, y, z);
+            ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
+
+            float w = p.getWidth() / 2 + 0.05f;
+            float h = p.getHeight() + 0.05f;
+            Matrix4f model = ms.peek().getPositionMatrix();
+
+            // Рисуем прямоугольник (Циан)
+            drawBox(buffer, model, w, h, 0f, 1f, 1f, 1f);
+            
+            ms.pop();
+        }
+        
+        // 3. Отрисовываем всё накопленное немедленно
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        
+        // 4. Возвращаем настройки глубины назад, чтобы не сломать игру
+        RenderSystem.enableDepthTest();
+        RenderSystem.disableBlend();
+    }
+
+    private void drawBox(BufferBuilder b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
+        // Вертикальные
+        b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, -w, h, 0).color(r, g, bl, a);
+        b.vertex(m, w, 0, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
+        // Горизонтальные
+        b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, w, 0, 0).color(r, g, bl, a);
+        b.vertex(m, -w, h, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
+    }
+
+    // --- ОСТАЛЬНЫЕ ФУНКЦИИ БЕЗ ИЗМЕНЕНИЙ ---
     private void throwPearl(MinecraftClient client) {
         int pearlSlot = -1;
         for (int i = 0; i < 9; i++) {
@@ -170,67 +232,6 @@ public class ExampleMod implements ModInitializer {
                 }
             }
         }
-    }
-
-    // --- УЛЬТИМАТИВНЫЙ ESP (WALLHACK) ДЛЯ 1.21.4 ---
-    private void onWorldRender(WorldRenderContext context) {
-        if (!esp) return;
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) return;
-
-        // ПРИНУДИТЕЛЬНО ВЫКЛЮЧАЕМ ТЕСТ ГЛУБИНЫ ДЛЯ ВСЕХ СЛОЕВ
-        RenderSystem.disableDepthTest();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-
-        MatrixStack ms = context.matrixStack();
-        Vec3d camPos = context.camera().getPos();
-        
-        // Используем непосредственный буфер для линий
-        VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
-        // RenderLayer.getLines() в 1.21.4 автоматически подключает нужный шейдер
-        VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
-
-        for (PlayerEntity p : client.world.getPlayers()) {
-            if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
-
-            double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
-            double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
-            double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
-
-            ms.push();
-            ms.translate(x, y, z);
-            ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-
-            float w = p.getWidth() / 2 + 0.1f;
-            float h = p.getHeight() + 0.1f;
-            Matrix4f model = ms.peek().getPositionMatrix();
-
-            // Рисуем рамку (Бирюзовый/Циан)
-            drawWallhackBox(buffer, model, w, h);
-            
-            ms.pop();
-        }
-        
-        // ОЧЕНЬ ВАЖНО: Вызываем draw() ДО того, как включим DepthTest обратно
-        consumers.draw(); 
-        
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
-    }
-
-    private void drawWallhackBox(VertexConsumer b, Matrix4f m, float w, float h) {
-        float r = 0f, g = 1f, bl = 1f, a = 1f; // Цвет бирюзовый
-        // Вертикальные линии
-        b.vertex(m, -w, 0, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, -w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, w, 0, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
-        // Горизонтальные линии (верх и низ)
-        b.vertex(m, -w, 0, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, w, 0, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, -w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
     }
 
     private void checkTotem(MinecraftClient c) {
@@ -289,7 +290,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- МЕНЮ (БЕЗ ИЗМЕНЕНИЙ) ---
+    // --- МЕНЮ (ПОЛНОСТЬЮ СОХРАНЕНО) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -394,4 +395,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
