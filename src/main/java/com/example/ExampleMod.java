@@ -91,15 +91,17 @@ public class ExampleMod implements ModInitializer {
         int slot = -1;
         ItemStack chest = client.player.getEquippedStack(EquipmentSlot.CHEST);
         boolean wearingElytra = (chest.getItem() == Items.ELYTRA);
+
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
+            Item item = stack.getItem();
             if (wearingElytra) {
-                if (stack.getItem() instanceof ArmorItem) {
-                    ArmorItem ai = (ArmorItem) stack.getItem();
-                    if (ai.getSlotType() == EquipmentSlot.CHEST) { slot = i; break; }
+                if (item instanceof ArmorItem) {
+                    // Исправленный вызов получения слота для твоей версии
+                    if (((ArmorItem)item).getSlotType() == EquipmentSlot.CHEST) { slot = i; break; }
                 }
             } else {
-                if (stack.getItem() == Items.ELYTRA) { slot = i; break; }
+                if (item == Items.ELYTRA) { slot = i; break; }
             }
         }
         if (slot != -1) {
@@ -117,7 +119,7 @@ public class ExampleMod implements ModInitializer {
         if (ps != -1) {
             int old = client.player.getInventory().selectedSlot;
             client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(ps));
-            // Исправленный конструктор для твоей версии (Hand, sequence)
+            // Исправленный конструктор пакета под твой лог (используем 0 как sequence)
             client.getNetworkHandler().sendPacket(new PlayerInteractItemC2SPacket(Hand.MAIN_HAND, 0));
             client.player.swingHand(Hand.MAIN_HAND);
             client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(old));
@@ -309,21 +311,21 @@ public class ExampleMod implements ModInitializer {
         @Override public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int x = width/2, y = height/2;
-            ctx.fill(x - 180, y - 100, x + 120, y + 90, 0xFF1A1A1B);
+            ctx.fill(x - 180, y - 100, x + 130, y + 90, 0xFF1A1A1B);
             ctx.drawText(textRenderer, "Range:", x - 170, y - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", x - 170, y - 52, -1, true);
             drawCfgBtn(ctx, x - 170, y, "Ares", mx, my);
             drawCfgBtn(ctx, x - 90, y, "Blaze", mx, my);
         }
         private void drawCfgBtn(DrawContext ctx, int x, int y, String name, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 70 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 70, y + 15, h ? 0xFF444445 : 0xFF232324);
-            ctx.drawCenteredTextWithShadow(textRenderer, "CFG: " + name, x + 35, y + 4, -1);
+            boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
+            ctx.fill(x, y, x + 75, y + 15, h ? 0xFF444445 : 0xFF232324);
+            ctx.drawCenteredTextWithShadow(textRenderer, "CFG: " + name, x + 37, y + 4, -1);
         }
         @Override public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
-            if (mx >= x - 170 && mx <= x - 100 && my >= y && my <= y + 15) { rF.setText("3.8"); wF.setText("3.1"); return true; }
-            if (mx >= x - 90 && mx <= x - 20 && my >= y && my <= y + 15) { rF.setText("4.0"); wF.setText("3.3"); return true; }
+            if (mx >= x - 170 && mx <= x - 95 && my >= y && my <= y + 15) { rF.setText("3.8"); wF.setText("3.1"); return true; }
+            if (mx >= x - 90 && mx <= x - 15 && my >= y && my <= y + 15) { rF.setText("4.0"); wF.setText("3.3"); return true; }
             return super.mouseClicked(mx, my, b);
         }
         @Override public void close() { try { kaRange = Double.parseDouble(rF.getText()); kaWallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {} updateFriends(fF.getText()); saveConfig(); client.setScreen(parent); }
