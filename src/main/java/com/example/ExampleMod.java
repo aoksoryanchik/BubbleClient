@@ -56,13 +56,15 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
-        WorldRenderEvents.AFTER_ENTITIES.register(this::onWorldRender);
+        
+        // Регистрация ESP
+        WorldRenderEvents.LAST.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // ОТКРЫТИЕ МЕНЮ НА КЛАВИШУ 0 (ЦИФРА НОЛЬ)
+            // ОТКРЫТИЕ МЕНЮ НА ЦИФРУ 0
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -171,21 +173,22 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- ПРАВИЛЬНЫЙ ESP ДЛЯ 1.21.4 (БЕЗ ОШИБОК И СКВОЗЬ СТЕНЫ) ---
+    // --- ФИНАЛЬНЫЙ ESP: ПОВЕРХ ВСЕГО (WALLHACK) ---
     private void onWorldRender(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
-        // Отключаем тест глубины и смещаем отрисовку вперед, чтобы видеть сквозь блоки
+        // Настройка рендера поверх блоков
         RenderSystem.disableDepthTest();
-        RenderSystem.enablePolygonOffset();
-        RenderSystem.polygonOffset(-1.0f, -1.0f);
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
-        // Используем универсальный буфер линий, который не требует getPositionColorShader
-        VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
+        
+        // Используем LAST событие и немедленный провайдер для отрисовки поверх всего
+        VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
+        VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
@@ -202,17 +205,18 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.1f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Рисуем рамку (Циан)
+            // Рисуем прямоугольник (Циан)
             drawBox(buffer, model, w, h);
+            
             ms.pop();
         }
-
-        RenderSystem.disablePolygonOffset();
+        
+        // ПРИНУДИТЕЛЬНЫЙ ВЫЗОВ: Рисуем линии прямо сейчас, пока тест глубины отключен
+        consumers.draw(RenderLayer.getLines());
         RenderSystem.enableDepthTest();
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h) {
-        // Линии бокса
         b.vertex(m, -w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
         b.vertex(m, w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
         b.vertex(m, -w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
@@ -279,7 +283,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- ГРАФИЧЕСКОЕ МЕНЮ (0) ---
+    // --- GUI (0) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
