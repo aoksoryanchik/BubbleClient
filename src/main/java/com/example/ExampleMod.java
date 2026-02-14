@@ -56,7 +56,6 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Регистрация рендера ESP
         WorldRenderEvents.LAST.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -91,19 +90,17 @@ public class ExampleMod implements ModInitializer {
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
-        // Фикс NullPointerException: проверяем ms и мир
         if (client.player == null || client.world == null || context.matrixStack() == null) return;
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Исправлено: RenderSystem.clear в 1.21.4 принимает только маску
+        // Исправлено под 1.21.4 (один аргумент в clear и новое имя шейдера)
         RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT);
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        // Исправлено: название метода в 1.21.4 изменено на getPositionColorProgram
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
 
         Tessellator tessellator = Tessellator.getInstance();
@@ -129,7 +126,6 @@ public class ExampleMod implements ModInitializer {
         }
 
         BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
-        
         RenderSystem.enableDepthTest();
         RenderSystem.depthMask(true);
     }
