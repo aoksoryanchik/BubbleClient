@@ -61,7 +61,8 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            if (isPressed(win, GLFW.GLFW_KEY_G) && client.currentScreen == null) {
+            // Исправлено: теперь открытие меню строго на клавишу 0 (над буквами)
+            if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
@@ -103,7 +104,7 @@ public class ExampleMod implements ModInitializer {
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
-            // ПРАВКА ТУТ: Убрано p.isInvisible(), теперь ESP видит невидимок
+            // Сохранено: ESP видит невидимок
             if (p == client.player || !p.isAlive()) continue;
 
             ms.push();
@@ -376,4 +377,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
