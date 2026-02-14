@@ -54,7 +54,6 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
-        // Используем LAST для ESP, чтобы он был поверх всего и не дергался
         WorldRenderEvents.LAST.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -89,7 +88,7 @@ public class ExampleMod implements ModInitializer {
     private void onWorldRender(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) return;
+        if (client.player == null) return;
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
@@ -98,7 +97,8 @@ public class ExampleMod implements ModInitializer {
         RenderSystem.disableDepthTest();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.setShader(GameRenderer::getPositionColorShader); // Исправлено для 1.21.4
+        // Исправлено: корректный вызов шейдера для 1.21.4
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
@@ -125,11 +125,11 @@ public class ExampleMod implements ModInitializer {
             buffer.vertex(mat, -w, h, 0).color(r, g, b, a);
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
 
-            BufferRenderer.drawWithGlobalProgram(buffer.end()); // Исправлено для 1.21.4
+            // Исправлено: новый метод отрисовки буфера
+            BufferRenderer.drawWithGlobalProgram(buffer.end());
             ms.pop();
         }
         RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
     }
 
     private void runAura(MinecraftClient c) {
@@ -149,7 +149,7 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f)); // Твоя наводка 0.70
+            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
             if (c.player.getAttackCooldownProgress(0) >= (0.90f + random.nextFloat() * 0.04f)) {
                 c.interactionManager.attackEntity(c.player, target);
@@ -197,10 +197,13 @@ public class ExampleMod implements ModInitializer {
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (stack.isEmpty()) continue;
+            // Исправлено: безопасная проверка типа брони для 1.21.4
             if (wearingElytra) {
-                if (stack.getItem() instanceof ArmorItem ai && ai.getSlotType() == EquipmentSlot.CHEST) { slot = i; break; }
-            } else {
-                if (stack.isOf(Items.ELYTRA)) { slot = i; break; }
+                if (stack.getItem() instanceof ArmorItem armor && armor.getSlotType() == EquipmentSlot.CHEST) {
+                    slot = i; break;
+                }
+            } else if (stack.isOf(Items.ELYTRA)) {
+                slot = i; break;
             }
         }
         if (slot != -1) {
@@ -265,7 +268,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- МЕНЮ ---
+    // --- GUI ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -365,3 +368,4 @@ public class ExampleMod implements ModInitializer {
         @Override public void render(DrawContext ctx, int mx, int my, float d) { super.render(ctx, mx, my, d); ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width/2, height/2, 0x00CCFF); }
     }
 }
+
