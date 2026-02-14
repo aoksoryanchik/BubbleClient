@@ -54,7 +54,6 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
-        
         WorldRenderEvents.AFTER_ENTITIES.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -69,7 +68,6 @@ public class ExampleMod implements ModInitializer {
             if (client.currentScreen == null) {
                 if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
                 if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
-                
                 if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
                 if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
                 if (isPressed(win, keyFB)) { fullbright = !fullbright; notify(client, "FullBright", fullbright); }
@@ -92,94 +90,77 @@ public class ExampleMod implements ModInitializer {
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
         ItemStack chest = client.player.getEquippedStack(EquipmentSlot.CHEST);
-        boolean isWearingElytra = chest.getItem() == Items.ELYTRA;
-
+        boolean wearingElytra = chest.isOf(Items.ELYTRA);
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
-            if (isWearingElytra) {
-                if (stack.getItem() instanceof ArmorItem && ((ArmorItem) stack.getItem()).getSlotType() == EquipmentSlot.CHEST) {
-                    slot = i; break;
-                }
+            if (wearingElytra) {
+                if (stack.getItem() instanceof ArmorItem ai && ai.getSlotType() == EquipmentSlot.CHEST) { slot = i; break; }
             } else {
-                if (stack.getItem() == Items.ELYTRA) {
-                    slot = i; break;
-                }
+                if (stack.isOf(Items.ELYTRA)) { slot = i; break; }
             }
         }
         if (slot != -1) {
-            int syncId = client.player.playerScreenHandler.syncId;
-            int serverSlot = slot < 9 ? slot + 36 : slot;
-            client.interactionManager.clickSlot(syncId, serverSlot, 0, SlotActionType.PICKUP, client.player);
-            client.interactionManager.clickSlot(syncId, 6, 0, SlotActionType.PICKUP, client.player);
-            client.interactionManager.clickSlot(syncId, serverSlot, 0, SlotActionType.PICKUP, client.player);
+            int sid = client.player.playerScreenHandler.syncId;
+            int cs = slot < 9 ? slot + 36 : slot;
+            client.interactionManager.clickSlot(sid, cs, 0, SlotActionType.PICKUP, client.player);
+            client.interactionManager.clickSlot(sid, 6, 0, SlotActionType.PICKUP, client.player);
+            client.interactionManager.clickSlot(sid, cs, 0, SlotActionType.PICKUP, client.player);
         }
     }
 
     private void throwPearl(MinecraftClient client) {
-        int pearlSlot = -1;
-        for (int i = 0; i < 9; i++) {
-            if (client.player.getInventory().getStack(i).getItem() == Items.ENDER_PEARL) {
-                pearlSlot = i; break;
-            }
-        }
-        if (pearlSlot != -1) {
-            int oldSlot = client.player.getInventory().selectedSlot;
-            client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(pearlSlot));
+        int ps = -1;
+        for (int i = 0; i < 9; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; } }
+        if (ps != -1) {
+            int old = client.player.getInventory().selectedSlot;
+            client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(ps));
             client.getNetworkHandler().sendPacket(new PlayerInteractItemC2SPacket(Hand.MAIN_HAND, 0));
             client.player.swingHand(Hand.MAIN_HAND);
-            client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(oldSlot));
+            client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(old));
         }
     }
 
     private void onWorldRender(WorldRenderContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!esp || client.player == null) return;
-        
-        float tickDelta = client.getRenderTickCounter().getTickDelta(true);
-        Vec3d camPos = context.camera().getPos();
-        MatrixStack matrices = context.matrixStack();
-
-        for (PlayerEntity player : client.world.getPlayers()) {
-            if (player == client.player || !player.isAlive() || player.isInvisible()) continue;
-            
-            double x = MathHelper.lerp(tickDelta, player.prevX, player.getX()) - camPos.x;
-            double y = MathHelper.lerp(tickDelta, player.prevY, player.getY()) - camPos.y;
-            double z = MathHelper.lerp(tickDelta, player.prevZ, player.getZ()) - camPos.z;
-
-            matrices.push();
-            matrices.translate(x, y, z);
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(context.camera().getPitch()));
-            
-            float w = player.getWidth();
-            float h = player.getHeight();
-
-            VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
-            Matrix4f posMat = matrices.peek().getPositionMatrix();
-
-            drawRect(posMat, buffer, -w/2, 0, w/2, h, 1.0f, 1.0f, 1.0f, 1.0f);
-            matrices.pop();
+        float d = client.getRenderTickCounter().getTickDelta(true);
+        Vec3d cp = context.camera().getPos();
+        MatrixStack ms = context.matrixStack();
+        for (PlayerEntity p : client.world.getPlayers()) {
+            if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
+            double x = MathHelper.lerp(d, p.prevX, p.getX()) - cp.x;
+            double y = MathHelper.lerp(d, p.prevY, p.getY()) - cp.y;
+            double z = MathHelper.lerp(d, p.prevZ, p.getZ()) - cp.z;
+            ms.push();
+            ms.translate(x, y, z);
+            ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
+            float w = p.getWidth(); float h = p.getHeight();
+            VertexConsumer b = context.consumers().getBuffer(RenderLayer.getLines());
+            Matrix4f m = ms.peek().getPositionMatrix();
+            drawRect(m, b, -w/2, 0, w/2, h, 1.0f, 1.0f, 1.0f, 1.0f);
+            ms.pop();
         }
     }
 
-    private void drawRect(Matrix4f mat, VertexConsumer b, float x1, float y1, float x2, float y2, float r, float g, float bl, float a) {
-        b.vertex(mat, x1, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(mat, x2, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(mat, x2, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(mat, x2, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(mat, x2, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(mat, x1, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(mat, x1, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(mat, x1, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
+    private void drawRect(Matrix4f m, VertexConsumer b, float x1, float y1, float x2, float y2, float r, float g, float bl, float a) {
+        b.vertex(m, x1, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, x2, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, x2, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, x2, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, x2, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, x1, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, x1, y2, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, x1, y1, 0).color(r, g, bl, a).normal(0, 1, 0);
     }
 
     private void checkTotem(MinecraftClient c) {
-        if (c.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
+        if (!c.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
             for (int i = 0; i < 45; i++) {
-                if (c.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
-                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, (i < 9) ? (i + 36) : i, 0, SlotActionType.PICKUP, c.player);
+                if (c.player.getInventory().getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
+                    int sl = (i < 9) ? (i + 36) : i;
+                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, sl, 0, SlotActionType.PICKUP, c.player);
                     c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, 45, 0, SlotActionType.PICKUP, c.player);
-                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, (i < 9) ? (i + 36) : i, 0, SlotActionType.PICKUP, c.player);
+                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, sl, 0, SlotActionType.PICKUP, c.player);
                     break;
                 }
             }
@@ -187,25 +168,22 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient c) {
-        PlayerEntity target = null; double bestDist = Double.MAX_VALUE;
+        PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
             if (p == c.player || !p.isAlive() || p.isSpectator()) continue;
             if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = c.player.distanceTo(p);
-            if (d <= kaRange && d < bestDist) {
-                if (c.player.canSee(p) || d <= kaWallsRange) { bestDist = d; target = p; }
-            }
+            if (d <= kaRange && d < dist) { if (c.player.canSee(p) || d <= kaWallsRange) { dist = d; target = p; } }
         }
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.5, 0).subtract(c.player.getEyePos());
-            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
-            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            c.player.setYaw(lerpAngle(c.player.getYaw(), targetYaw, 0.35f));
-            c.player.setPitch(lerpAngle(c.player.getPitch(), targetPitch, 0.35f));
-            float readyThreshold = 0.93f + random.nextFloat() * 0.05f;
-            if (c.player.getAttackCooldownProgress(0.5f) >= readyThreshold) {
-                if (Math.abs(MathHelper.wrapDegrees(c.player.getYaw() - targetYaw)) < 18.0F) {
+            float ty = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
+            float tp = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            c.player.setYaw(lerpAngle(c.player.getYaw(), ty, 0.35f));
+            c.player.setPitch(lerpAngle(c.player.getPitch(), tp, 0.35f));
+            if (c.player.getAttackCooldownProgress(0.5f) >= (0.93f + random.nextFloat() * 0.05f)) {
+                if (Math.abs(MathHelper.wrapDegrees(c.player.getYaw() - ty)) < 18.0F) {
                     c.interactionManager.attackEntity(c.player, target);
                     c.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -213,18 +191,16 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private float lerpAngle(float start, float end, float speed) {
-        float diff = MathHelper.wrapDegrees(end - start);
-        return start + diff * speed;
+    private float lerpAngle(float s, float e, float sp) {
+        float d = MathHelper.wrapDegrees(e - s); return s + d * sp;
     }
 
     private void runTrigger(MinecraftClient c) {
-        HitResult h = c.crosshairTarget;
-        if (h != null && h.getType() == HitResult.Type.ENTITY) {
-            Entity e = ((EntityHitResult) h).getEntity();
-            if (e instanceof PlayerEntity && e.isAlive() && !friendsList.contains(e.getName().getString().toLowerCase())) {
+        HitResult r = c.crosshairTarget;
+        if (r instanceof EntityHitResult ehr && ehr.getEntity() instanceof PlayerEntity p) {
+            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase())) {
                 if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
-                    c.interactionManager.attackEntity(c.player, e);
+                    c.interactionManager.attackEntity(c.player, p);
                     c.player.swingHand(Hand.MAIN_HAND);
                 }
             }
@@ -239,15 +215,13 @@ public class ExampleMod implements ModInitializer {
         if (k == -1) return false;
         boolean p = InputUtil.isKeyPressed(h, k);
         if (p && !keyStates[k]) { keyStates[k] = true; return true; }
-        if (!p) keyStates[k] = false;
-        return false;
+        if (!p) keyStates[k] = false; return false;
     }
 
     public static void updateFriends(String raw) {
+        if (raw == null || raw.equals("Friends:") || raw.isEmpty()) { friendsRaw = ""; friendsList.clear(); return; }
         friendsRaw = raw; friendsList.clear();
-        if (!raw.isEmpty() && !raw.equals("Friends:")) {
-            Arrays.stream(raw.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
-        }
+        Arrays.stream(raw.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
     }
 
     public static void saveConfig() {
@@ -311,26 +285,41 @@ public class ExampleMod implements ModInitializer {
     }
 
     public static class KillAuraSettings extends Screen {
-        private final Screen parent; private TextFieldWidget rangeField, wallsField, friendsField;
+        private final Screen parent; private TextFieldWidget rF, wF, fF;
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
         @Override protected void init() {
             int x = width/2, y = height/2;
-            rangeField = new TextFieldWidget(textRenderer, x - 100, y - 75, 80, 14, Text.literal(""));
-            rangeField.setText(String.valueOf(kaRange));
-            wallsField = new TextFieldWidget(textRenderer, x - 100, y - 55, 80, 14, Text.literal(""));
-            wallsField.setText(String.valueOf(kaWallsRange));
-            friendsField = new TextFieldWidget(textRenderer, x + 15, y - 75, 100, 14, Text.literal("Friends:"));
-            friendsField.setText(friendsRaw.isEmpty() ? "Friends:" : friendsRaw);
-            addDrawableChild(rangeField); addDrawableChild(wallsField); addDrawableChild(friendsField);
+            rF = new TextFieldWidget(textRenderer, x - 100, y - 75, 80, 14, Text.literal(""));
+            rF.setText(String.valueOf(kaRange));
+            wF = new TextFieldWidget(textRenderer, x - 100, y - 55, 80, 14, Text.literal(""));
+            wF.setText(String.valueOf(kaWallsRange));
+            fF = new TextFieldWidget(textRenderer, x + 15, y - 75, 100, 14, Text.literal(""));
+            fF.setPlaceholder(Text.literal("Friends:"));
+            if (!friendsRaw.isEmpty()) fF.setText(friendsRaw);
+            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
         }
         @Override public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int x = width/2, y = height/2;
-            ctx.fill(x - 180, y - 100, x - 5, y + 90, 0xFF1A1A1B);
+            ctx.fill(x - 180, y - 100, x + 120, y + 90, 0xFF1A1A1B);
             ctx.drawText(textRenderer, "Range:", x - 170, y - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", x - 170, y - 52, -1, true);
+            // Кнопки пресетов
+            drawCfgBtn(ctx, x - 170, y, "Ares", mx, my);
+            drawCfgBtn(ctx, x - 90, y, "Blaze", mx, my);
         }
-        @Override public void close() { try { kaRange = Double.parseDouble(rangeField.getText()); kaWallsRange = Double.parseDouble(wallsField.getText()); } catch (Exception ignored) {} updateFriends(friendsField.getText()); saveConfig(); client.setScreen(parent); }
+        private void drawCfgBtn(DrawContext ctx, int x, int y, String name, int mx, int my) {
+            boolean h = mx >= x && mx <= x + 70 && my >= y && my <= y + 15;
+            ctx.fill(x, y, x + 70, y + 15, h ? 0xFF444445 : 0xFF232324);
+            ctx.drawCenteredTextWithShadow(textRenderer, "CFG: " + name, x + 35, y + 4, -1);
+        }
+        @Override public boolean mouseClicked(double mx, double my, int b) {
+            int x = width/2, y = height/2;
+            if (mx >= x - 170 && mx <= x - 100 && my >= y && my <= y + 15) { rF.setText("3.8"); wF.setText("3.1"); return true; } // Ares
+            if (mx >= x - 90 && mx <= x - 20 && my >= y && my <= y + 15) { rF.setText("4.0"); wF.setText("3.3"); return true; } // Blaze
+            return super.mouseClicked(mx, my, b);
+        }
+        @Override public void close() { try { kaRange = Double.parseDouble(rF.getText()); kaWallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {} updateFriends(fF.getText()); saveConfig(); client.setScreen(parent); }
     }
 
     public static class BindScreen extends Screen {
@@ -338,10 +327,12 @@ public class ExampleMod implements ModInitializer {
         public BindScreen(Screen parent, int id) { super(Text.literal("Bind")); this.parent = parent; this.id = id; }
         @Override public boolean keyPressed(int k, int s, int m) {
             int v = (k == GLFW.GLFW_KEY_ESCAPE) ? -1 : k;
-            if(id==0)keyKA=v; else if(id==1)keyTB=v; else if(id==2)keyFB=v; else if(id==3)keyAT=v; else if(id==4)keyESP=v; else if(id==5)keyFP=v; else if(id==6)keyES=v;
+            switch(id) {
+                case 0 -> keyKA = v; case 1 -> keyTB = v; case 2 -> keyFB = v; case 3 -> keyAT = v; case 4 -> keyESP = v; case 5 -> keyFP = v; case 6 -> keyES = v;
+            }
             saveConfig(); client.setScreen(parent); return true;
         }
-        @Override public void render(DrawContext ctx, int mx, int my, float delta) { super.render(ctx, mx, my, delta); ctx.drawCenteredTextWithShadow(textRenderer, "PRESS ANY KEY", width/2, height/2, -1); }
+        @Override public void render(DrawContext ctx, int mx, int my, float d) { super.render(ctx, mx, my, d); ctx.drawCenteredTextWithShadow(textRenderer, "PRESS ANY KEY", width/2, height/2, -1); }
     }
 }
 
