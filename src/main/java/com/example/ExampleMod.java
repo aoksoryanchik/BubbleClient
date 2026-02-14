@@ -85,8 +85,8 @@ public class ExampleMod implements ModInitializer {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         
-        // ИСПРАВЛЕНО ДЛЯ 1.21.4: Используем CoreShaders напрямую
-        RenderSystem.setShader(net.minecraft.client.render.CoreShaders::POSITION_COLOR);
+        // ИСПРАВЛЕНИЕ 1.21.4: Используем CoreShaders вместо GameRenderer
+        RenderSystem.setShader(CoreShaders.POSITION_COLOR);
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
@@ -102,6 +102,7 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.05f;
 
             Tessellator tessellator = Tessellator.getInstance();
+            // Начинаем отрисовку через новый формат
             BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINE_STRIP, VertexFormats.POSITION_COLOR);
             int r = 0, g = 204, b = 255, a = 255;
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
@@ -110,7 +111,7 @@ public class ExampleMod implements ModInitializer {
             buffer.vertex(mat, -w, h, 0).color(r, g, b, a);
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
 
-            // ИСПРАВЛЕНО ДЛЯ 1.21.4: BufferRenderer вместо tessellator.draw()
+            // ИСПРАВЛЕНИЕ 1.21.4: Используем BufferRenderer вместо tessellator.draw()
             BufferRenderer.drawWithGlobalProgram(buffer.end());
             ms.pop();
         }
@@ -133,7 +134,7 @@ public class ExampleMod implements ModInitializer {
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
             
-            // ТВОЯ НАВОДКА 0.70f (не трогал)
+            // Твоя настройка сглаживания 0.70f для обхода
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
             
@@ -165,20 +166,14 @@ public class ExampleMod implements ModInitializer {
 
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
-        ItemStack currentChest = client.player.getEquippedStack(EquipmentSlot.CHEST);
-        boolean wearingElytra = currentChest.isOf(Items.ELYTRA);
-        
+        ItemStack chest = client.player.getEquippedStack(EquipmentSlot.CHEST);
+        boolean wearingElytra = chest.isOf(Items.ELYTRA);
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
-            if (stack.isEmpty()) continue;
-            
-            // ИСПРАВЛЕНО ДЛЯ 1.21.4: Вместо getSlotType() проверяем принадлежность к броне-нагруднику
             if (wearingElytra) {
-                if (stack.getItem() instanceof ArmorItem armor) {
-                    // В 1.21.4 проще всего проверить, является ли предмет нагрудником через проверку ID или компонентов
-                    if (stack.getItem().toString().contains("chestplate")) {
-                        slot = i; break;
-                    }
+                // ИСПРАВЛЕНИЕ 1.21.4: Проверка через getType().getEquipmentSlot()
+                if (stack.getItem() instanceof ArmorItem armor && armor.getType().getEquipmentSlot() == EquipmentSlot.CHEST) {
+                    slot = i; break;
                 }
             } else if (stack.isOf(Items.ELYTRA)) {
                 slot = i; break;
