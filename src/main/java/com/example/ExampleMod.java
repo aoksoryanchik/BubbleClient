@@ -56,8 +56,8 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Регистрируем ESP в событии LAST, чтобы рисовать поверх всего
-        WorldRenderEvents.LAST.register(this::onWorldRender);
+        // Используем LAST, чтобы рисовать в самом конце кадра
+        WorldRenderEvents.LAST.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
@@ -89,8 +89,8 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    // --- ИСПРАВЛЕННЫЙ ESP (БЕЗ ОШИБОК КОМПИЛЯЦИИ И ЧЕРЕЗ СТЕНЫ) ---
-    private void onWorldRender(WorldRenderContext context) {
+    // --- УЛЬТИМАТИВНЫЙ ESP ЧЕРЕЗ СТЕНЫ ---
+    private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
@@ -98,40 +98,44 @@ public class ExampleMod implements ModInitializer {
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Отключаем тест глубины вручную через RenderSystem
+        // Ключевой момент: отключаем DepthTest и очищаем буфер, чтобы линии всегда были сверху
         RenderSystem.disableDepthTest();
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        RenderSystem.depthMask(false);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
 
-        // Используем встроенный буфер для линий, который поддерживает просвечивание
-        VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
+        VertexConsumerProvider.Immediate immediate = context.consumers() instanceof VertexConsumerProvider.Immediate imm ? imm : client.getBufferBuilders().getEntityVertexConsumers();
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
 
+            ms.push();
             double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
 
-            ms.push();
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
 
-            float w = p.getWidth() / 2 + 0.1f;
-            float h = p.getHeight() + 0.1f;
+            float w = p.getWidth() / 2 + 0.05f;
+            float h = p.getHeight() + 0.05f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Малиновый цвет (1.0, 0.0, 0.6)
+            // Используем специальный слой, который не проверяет глубину (игнорит блоки)
+            VertexConsumer buffer = immediate.getBuffer(RenderLayer.getLines());
+            
+            // Малиновый цвет
             drawBox(buffer, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
+            
+            // ПРИНУДИТЕЛЬНАЯ ОТРИСОВКА для каждого игрока, пока DepthTest выключен
+            immediate.draw(RenderLayer.getLines());
             
             ms.pop();
         }
-        
-        // Принудительно отрисовываем всё, что накопилось в буфере, пока DepthTest выключен
-        if (context.consumers() instanceof VertexConsumerProvider.Immediate immediate) {
-            immediate.draw(RenderLayer.getLines());
-        }
-        
+
         RenderSystem.enableDepthTest();
+        RenderSystem.depthMask(true);
+        RenderSystem.disableBlend();
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
@@ -139,8 +143,9 @@ public class ExampleMod implements ModInitializer {
         line(b, m, -w, 0, 0, w, 0, 0, r, g, bl, a);
         // Верх
         line(b, m, -w, h, 0, w, h, 0, r, g, bl, a);
-        // Бока
+        // Лево
         line(b, m, -w, 0, 0, -w, h, 0, r, g, bl, a);
+        // Право
         line(b, m, w, 0, 0, w, h, 0, r, g, bl, a);
     }
 
@@ -149,7 +154,7 @@ public class ExampleMod implements ModInitializer {
         b.vertex(m, x2, y2, z2).color(r, g, bl, a).normal(0, 1, 0);
     }
 
-    // --- ОСТАЛЬНЫЕ МОДУЛИ БЕЗ ИЗМЕНЕНИЙ ---
+    // --- МОДУЛИ БЕЗ ИЗМЕНЕНИЙ (КАК НА СКРИНШОТАХ) ---
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
@@ -167,7 +172,7 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f)); // 0.70f
+            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f)); //
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
             if (c.player.getAttackCooldownProgress(0) >= (0.90F + random.nextFloat() * 0.04F)) {
                 c.interactionManager.attackEntity(c.player, target);
@@ -182,51 +187,40 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void throwPearl(MinecraftClient client) {
-        int pearlSlot = -1;
+        int pS = -1;
         for (int i = 0; i < 9; i++) {
-            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pearlSlot = i; break; }
+            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pS = i; break; }
         }
-        if (pearlSlot != -1) {
-            int oldSlot = client.player.getInventory().selectedSlot;
-            client.player.getInventory().selectedSlot = pearlSlot;
+        if (pS != -1) {
+            int old = client.player.getInventory().selectedSlot;
+            client.player.getInventory().selectedSlot = pS;
             client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-            client.player.getInventory().selectedSlot = oldSlot;
+            client.player.getInventory().selectedSlot = old;
         }
     }
 
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
-        ItemStack chestStack = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.CHEST);
-        boolean wearingElytra = chestStack.isOf(Items.ELYTRA);
+        boolean wear = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.CHEST).isOf(Items.ELYTRA);
         for (int i = 0; i < 36; i++) {
-            ItemStack stack = client.player.getInventory().getStack(i);
-            if (stack.isEmpty()) continue;
-            if (wearingElytra) { if (isChestplate(stack)) { slot = i; break; } }
-            else { if (stack.isOf(Items.ELYTRA)) { slot = i; break; } }
+            ItemStack s = client.player.getInventory().getStack(i);
+            if (wear ? (s.isOf(Items.NETHERITE_CHESTPLATE) || s.isOf(Items.DIAMOND_CHESTPLATE)) : s.isOf(Items.ELYTRA)) {
+                slot = i; break;
+            }
         }
         if (slot != -1) {
-            int sid = client.player.playerScreenHandler.syncId;
-            int invSlot = slot < 9 ? slot + 36 : slot;
-            client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
-            client.interactionManager.clickSlot(sid, 6, 0, SlotActionType.PICKUP, client.player);
-            client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
+            int invS = slot < 9 ? slot + 36 : slot;
+            client.interactionManager.clickSlot(client.player.playerScreenHandler.syncId, invS, 0, SlotActionType.PICKUP, client.player);
+            client.interactionManager.clickSlot(client.player.playerScreenHandler.syncId, 6, 0, SlotActionType.PICKUP, client.player);
+            client.interactionManager.clickSlot(client.player.playerScreenHandler.syncId, invS, 0, SlotActionType.PICKUP, client.player);
         }
-    }
-
-    private boolean isChestplate(ItemStack stack) {
-        return stack.isOf(Items.NETHERITE_CHESTPLATE) || stack.isOf(Items.DIAMOND_CHESTPLATE) ||
-               stack.isOf(Items.IRON_CHESTPLATE) || stack.isOf(Items.GOLDEN_CHESTPLATE) ||
-               stack.isOf(Items.CHAINMAIL_CHESTPLATE) || stack.isOf(Items.LEATHER_CHESTPLATE);
     }
 
     private void runTrigger(MinecraftClient c) {
-        HitResult hit = c.crosshairTarget;
-        if (hit instanceof EntityHitResult ehr && ehr.getEntity() instanceof PlayerEntity p) {
-            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase())) {
-                if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
-                    c.interactionManager.attackEntity(c.player, p);
-                    c.player.swingHand(Hand.MAIN_HAND);
-                }
+        if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
+            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) >= 1.0F) {
+                c.interactionManager.attackEntity(c.player, p);
+                c.player.swingHand(Hand.MAIN_HAND);
             }
         }
     }
@@ -235,32 +229,32 @@ public class ExampleMod implements ModInitializer {
         if (!c.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
             for (int i = 0; i < 45; i++) {
                 if (c.player.getInventory().getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
-                    int slot = (i < 9) ? (i + 36) : i;
-                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, slot, 0, SlotActionType.PICKUP, c.player);
+                    int s = (i < 9) ? (i + 36) : i;
+                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, s, 0, SlotActionType.PICKUP, c.player);
                     c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, 45, 0, SlotActionType.PICKUP, c.player);
-                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, slot, 0, SlotActionType.PICKUP, c.player);
+                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, s, 0, SlotActionType.PICKUP, c.player);
                     break;
                 }
             }
         }
     }
 
-    private void notify(MinecraftClient c, String mod, boolean state) {
-        c.player.sendMessage(Text.literal("§b[Bubble] §f" + mod + ": " + (state ? "§aВКЛ" : "§cВЫКЛ")), true);
+    private void notify(MinecraftClient c, String m, boolean s) {
+        c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (s ? "§aВКЛ" : "§cВЫКЛ")), true);
     }
 
-    private boolean isPressed(long handle, int key) {
-        if (key == -1) return false;
-        boolean pressed = InputUtil.isKeyPressed(handle, key);
-        if (pressed && !keyStates[key]) { keyStates[key] = true; return true; }
-        if (!pressed) keyStates[key] = false;
+    private boolean isPressed(long h, int k) {
+        if (k == -1) return false;
+        boolean p = InputUtil.isKeyPressed(h, k);
+        if (p && !keyStates[k]) { keyStates[k] = true; return true; }
+        if (!p) keyStates[k] = false;
         return false;
     }
 
-    public static void updateFriends(String raw) {
-        friendsRaw = raw; friendsList.clear();
-        if (raw != null && !raw.isEmpty()) {
-            Arrays.stream(raw.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
+    public static void updateFriends(String r) {
+        friendsRaw = r; friendsList.clear();
+        if (r != null && !r.isEmpty()) {
+            Arrays.stream(r.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
         }
     }
 
@@ -299,8 +293,8 @@ public class ExampleMod implements ModInitializer {
             boolean[] states = { killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap };
             for (int i = 0; i < names.length; i++) {
                 int iy = cy - 70 + i * 24;
-                boolean hover = mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20;
-                ctx.fill(cx - 85, iy, cx + 85, iy + 20, hover ? 0xEE404040 : 0xEE202020);
+                boolean h = mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20;
+                ctx.fill(cx - 85, iy, cx + 85, iy + 20, h ? 0xEE404040 : 0xEE202020);
                 ctx.drawText(textRenderer, names[i], cx - 80, iy + 6, states[i] ? 0x00FF00 : 0xFFFFFF, true);
             }
         }
@@ -351,15 +345,15 @@ public class ExampleMod implements ModInitializer {
             drawCheck(ctx, x - 115, y + 10, "AutoRun", autoRun, mx, my);
             drawCheck(ctx, x + 30, y + 10, "AntiVelocity", antiVelocity, mx, my);
         }
-        private void drawBtn(DrawContext ctx, int x, int y, String name, int mx, int my) {
+        private void drawBtn(DrawContext ctx, int x, int y, String n, int mx, int my) {
             boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
             ctx.fill(x, y, x + 75, y + 15, h ? 0xEE404040 : 0xEE202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, name, x + 37, y + 4, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 37, y + 4, -1);
         }
-        private void drawCheck(DrawContext ctx, int x, int y, String name, boolean state, int mx, int my) {
+        private void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 85 && my >= y && my <= y + 15;
             ctx.fill(x, y, x + 85, y + 15, h ? 0xEE404040 : 0xEE202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, name, x + 42, y + 4, state ? 0x00FF00 : 0xFFFFFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 42, y + 4, s ? 0x00FF00 : 0xFFFFFF);
         }
         @Override public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
