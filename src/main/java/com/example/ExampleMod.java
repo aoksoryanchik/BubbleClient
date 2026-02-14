@@ -81,13 +81,13 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // ОБНОВЛЕННЫЙ ANTIVELOCITY (Легитный для серверов)
-            if (antiVelocity && client.player.hurtTime > 0 && !client.player.isDead()) {
-                // Вместо полной остановки (0), мы умножаем скорость на 0.4
-                // Это снижает откидывание на 60%, что выглядит естественно для античита
-                double reduction = 0.4;
+            // ИСПРАВЛЕННЫЙ ANTIVELOCITY
+            // Срабатывает только если включен.
+            // Срабатывает только ОДИН раз за удар (когда hurtTime == 9), чтобы не конфликтовать с сервером.
+            if (antiVelocity && client.player.hurtTime == 9 && !client.player.isDead()) {
                 Vec3d velocity = client.player.getVelocity();
-                client.player.setVelocity(velocity.x * reduction, velocity.y, velocity.z * reduction);
+                // Множитель 0.6 = сохраняем 60% откидывания. Это легитно и не тепает.
+                client.player.setVelocity(velocity.x * 0.6, velocity.y, velocity.z * 0.6);
             }
         });
     }
@@ -109,8 +109,7 @@ public class ExampleMod implements ModInitializer {
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
-            // ESP показывает невидимок
-            if (p == client.player || !p.isAlive()) continue;
+            if (p == client.player || !p.isAlive()) continue; // ESP показывает невидимок
 
             ms.push();
             double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
@@ -165,7 +164,20 @@ public class ExampleMod implements ModInitializer {
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
-            if (c.player.getAttackCooldownProgress(0) >= (0.90f + random.nextFloat() * 0.04f)) {
+
+            // УМНАЯ ЛОГИКА АТАКИ (CRIT WAIT)
+            // Проверяем, летим ли мы вверх (прыжок)
+            boolean isRising = !c.player.isOnGround() && c.player.getVelocity().y > 0.05;
+            // Проверяем кулдаун
+            boolean ready = c.player.getAttackCooldownProgress(0) >= (0.92f + random.nextFloat() * 0.03f);
+
+            // Если удар готов, НО мы летим вверх (неудачный момент для крита) -> ждем
+            // Но если враг далеко (> 3.5 блоков), бьем всё равно, чтобы не упустить
+            if (isRising && dist < 3.5) {
+                return; // Пропуск тика, ждем падения для крита
+            }
+
+            if (ready) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -340,11 +352,7 @@ public class ExampleMod implements ModInitializer {
             ctx.drawText(textRenderer, "Walls:", cx - 115, cy - 52, -1, true);
             drawBtn(ctx, cx - 115, cy - 20, "AresMine", mx, my);
             drawBtn(ctx, cx - 30, cy - 20, "MainBlaze", mx, my);
-
-            // ИСПРАВЛЕННЫЕ КООРДИНАТЫ КНОПОК
-            // AutoRun (Слева)
             drawCheck(ctx, cx - 95, cy + 10, "AutoRun", autoRun, mx, my);
-            // AntiVelocity (Справа, ближе к центру)
             drawCheck(ctx, cx + 10, cy + 10, "AntiVelocity", antiVelocity, mx, my);
         }
         private void drawBtn(DrawContext ctx, int x, int y, String n, int mx, int my) {
@@ -362,13 +370,8 @@ public class ExampleMod implements ModInitializer {
             int cx = width / 2, cy = height / 2;
             if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { rF.setText("3.8"); wF.setText("3.1"); return true; }
             if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { rF.setText("4.0"); wF.setText("3.3"); return true; }
-
-            // ОБНОВЛЕННЫЕ КООРДИНАТЫ НАЖАТИЯ (Совпадают с отрисовкой)
-            // AutoRun (cx-95 to cx-10)
             if (mx >= cx - 95 && mx <= cx - 10 && my >= cy + 10 && my <= cy + 25) { autoRun = !autoRun; return true; }
-            // AntiVelocity (cx+10 to cx+95)
             if (mx >= cx + 10 && mx <= cx + 95 && my >= cy + 10 && my <= cy + 25) { antiVelocity = !antiVelocity; return true; }
-
             return super.mouseClicked(mx, my, b);
         }
         @Override
