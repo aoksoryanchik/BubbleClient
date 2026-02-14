@@ -11,7 +11,6 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
@@ -38,8 +37,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
-// ВАЖНЫЙ ИМПОРТ ДЛЯ РАБОТЫ СКВОЗЬ СТЕНЫ
+// ИМПОРТЫ ДЛЯ РЕНДЕРА
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.gl.ShaderProgramKeys;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
@@ -65,7 +65,8 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            if (isPressed(win, GLFW.GLFW_KEY_O) && client.currentScreen == null) {
+            // ИСПРАВЛЕНО: Теперь открывается на цифру 0 (ноль)
+            if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
@@ -88,7 +89,6 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot) runTrigger(client);
 
             if (antiVelocity && client.player.hurtTime > 0) {
-                 // Твой код на 0% антиоткид (Green lines from diff)
                  client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
         });
@@ -111,16 +111,13 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
 
-            // Твоя жесткая наводка (0.70f)
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Твоя скорость наводки (0.70f)
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
 
-            // Твой улучшенный кулдаун (0.90f)
             if (c.player.getAttackCooldownProgress(0) >= (0.90F + random.nextFloat() * 0.04F)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
@@ -187,21 +184,26 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- ИСПРАВЛЕННЫЙ ESP ---
+    // --- ИСПРАВЛЕННЫЙ ESP (Прямая отрисовка для просвечивания) ---
     private void onWorldRender(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
-        // ВКЛЮЧАЕМ ПРОСВЕЧИВАНИЕ СКВОЗЬ СТЕНЫ
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
+        // Подготовка рендера
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        RenderSystem.disableDepthTest(); // Отключаем тест глубины (просвечивание)
+        RenderSystem.depthMask(false);
+        RenderSystem.lineWidth(2.0F); // Толщина линий
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
-        VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
+
+        // Используем прямой Tessellator для немедленной отрисовки
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
@@ -213,38 +215,35 @@ public class ExampleMod implements ModInitializer {
             ms.push();
             ms.translate(x, y, z);
             
-            // Поворачиваем прямоугольник к камере, чтобы он был плоским 2D, как ты хотел
+            // Поворот "биллборда" (статичный 2D вид)
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
 
             float w = p.getWidth() + 0.1f; 
             float h = p.getHeight() + 0.1f;
 
             Matrix4f pos = ms.peek().getPositionMatrix();
-            
-            // Цвет (Циан)
-            float r = 0f, g = 1f, b = 1f, a = 1f;
+            float r = 0f, g = 1f, b = 1f, a = 1f; // Цвет (Циан)
 
-            // Рисуем ровный прямоугольник
-            // Левая грань
-            buffer.vertex(pos, -w/2, 0, 0).color(r,g,b,a).normal(0, 1, 0);
-            buffer.vertex(pos, -w/2, h, 0).color(r,g,b,a).normal(0, 1, 0);
+            // Вершины коробки
+            buffer.vertex(pos, -w/2, 0, 0).color(r,g,b,a);
+            buffer.vertex(pos, -w/2, h, 0).color(r,g,b,a);
 
-            // Правая грань
-            buffer.vertex(pos, w/2, 0, 0).color(r,g,b,a).normal(0, 1, 0);
-            buffer.vertex(pos, w/2, h, 0).color(r,g,b,a).normal(0, 1, 0);
+            buffer.vertex(pos, w/2, 0, 0).color(r,g,b,a);
+            buffer.vertex(pos, w/2, h, 0).color(r,g,b,a);
 
-            // Верхняя грань
-            buffer.vertex(pos, -w/2, h, 0).color(r,g,b,a).normal(0, 1, 0);
-            buffer.vertex(pos, w/2, h, 0).color(r,g,b,a).normal(0, 1, 0);
+            buffer.vertex(pos, -w/2, h, 0).color(r,g,b,a);
+            buffer.vertex(pos, w/2, h, 0).color(r,g,b,a);
 
-            // Нижняя грань
-            buffer.vertex(pos, -w/2, 0, 0).color(r,g,b,a).normal(0, 1, 0);
-            buffer.vertex(pos, w/2, 0, 0).color(r,g,b,a).normal(0, 1, 0);
+            buffer.vertex(pos, -w/2, 0, 0).color(r,g,b,a);
+            buffer.vertex(pos, w/2, 0, 0).color(r,g,b,a);
 
             ms.pop();
         }
 
-        // ВОЗВРАЩАЕМ НАСТРОЙКИ РЕНДЕРА
+        // Отрисовка буфера сразу
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
+
+        // Возврат настроек
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
@@ -385,7 +384,6 @@ public class ExampleMod implements ModInitializer {
         }
         @Override public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
-            // Presets buttons (Just visual helpers/shortcuts)
             if (mx >= x - 115 && mx <= x - 40 && my >= y - 20 && my <= y - 5) { rF.setText("3.8"); wF.setText("3.1"); return true; }
             if (mx >= x - 30 && mx <= x + 45 && my >= y - 20 && my <= y - 5) { rF.setText("4.0"); wF.setText("3.3"); return true; }
             
