@@ -10,7 +10,9 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.client.render.*;
+// ИСПРАВЛЕННЫЕ ИМПОРТЫ ПОД 1.21.4
+import net.minecraft.client.render.*; 
+import net.minecraft.client.render.CoreShaders;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
@@ -85,7 +87,7 @@ public class ExampleMod implements ModInitializer {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         
-        // ИСПРАВЛЕНИЕ 1.21.4: Используем CoreShaders вместо GameRenderer
+        // ИСПРАВЛЕНИЕ 1.21.4: Используем CoreShaders.POSITION_COLOR напрямую
         RenderSystem.setShader(CoreShaders.POSITION_COLOR);
 
         for (PlayerEntity p : client.world.getPlayers()) {
@@ -102,7 +104,7 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.05f;
 
             Tessellator tessellator = Tessellator.getInstance();
-            // Начинаем отрисовку через новый формат
+            // ИСПРАВЛЕНИЕ 1.21.4: Новый формат инициализации буфера
             BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINE_STRIP, VertexFormats.POSITION_COLOR);
             int r = 0, g = 204, b = 255, a = 255;
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
@@ -134,7 +136,7 @@ public class ExampleMod implements ModInitializer {
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
             
-            // Твоя настройка сглаживания 0.70f для обхода
+            // Твоя настройка 0.70f для обхода AresMine/MainBlaze сохранена
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
             
@@ -171,8 +173,8 @@ public class ExampleMod implements ModInitializer {
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (wearingElytra) {
-                // ИСПРАВЛЕНИЕ 1.21.4: Проверка через getType().getEquipmentSlot()
-                if (stack.getItem() instanceof ArmorItem armor && armor.getType().getEquipmentSlot() == EquipmentSlot.CHEST) {
+                // ИСПРАВЛЕНИЕ 1.21.4: Безопасная проверка слота брони
+                if (stack.getItem() instanceof ArmorItem armor && armor.getSlotType() == EquipmentSlot.CHEST) {
                     slot = i; break;
                 }
             } else if (stack.isOf(Items.ELYTRA)) {
