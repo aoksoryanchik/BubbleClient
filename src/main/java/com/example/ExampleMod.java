@@ -79,9 +79,61 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot) runTrigger(client);
             
             if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(client.player.getVelocity().multiply(0.0D, 1.0D, 0.0D));
+                // Плавный анти-откид (оставляем 10% для обхода проверки на "0 velocity")
+                client.player.setVelocity(client.player.getVelocity().multiply(0.1D, 1.0D, 0.1D));
             }
         });
+    }
+
+    private void runAura(MinecraftClient c) {
+        PlayerEntity target = null; double dist = Double.MAX_VALUE;
+        for (PlayerEntity p : c.world.getPlayers()) {
+            if (p == c.player || !p.isAlive() || p.isSpectator() || p.isInvisible() || p.getAbilities().invulnerable) continue;
+            if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
+            double d = c.player.distanceTo(p);
+            if (d <= kaRange) {
+                if (c.player.canSee(p) || d <= kaWallsRange) {
+                    if (d < dist) { dist = d; target = p; }
+                }
+            }
+        }
+
+        if (target != null) {
+            if (autoRun) c.player.setSprinting(true);
+            
+            // Плавная, но уверенная наводка
+            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.6, 0).subtract(c.player.getEyePos());
+            float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
+            float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            
+            // Speed 0.18f - быстро, но не моментально (легитно для античита)
+            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.18f));
+            c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.15f));
+
+            // Умное КД удара
+            if (c.player.getAttackCooldownProgress(0) >= (0.91f + random.nextFloat() * 0.06f)) {
+                c.interactionManager.attackEntity(c.player, target);
+                c.player.swingHand(Hand.MAIN_HAND);
+            }
+        }
+    }
+
+    private float lerpAngle(float start, float end, float speed) {
+        float diff = MathHelper.wrapDegrees(end - start);
+        return start + diff * speed;
+    }
+
+    private void throwPearl(MinecraftClient client) {
+        int pearlSlot = -1;
+        for (int i = 0; i < 9; i++) {
+            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pearlSlot = i; break; }
+        }
+        if (pearlSlot != -1) {
+            int oldSlot = client.player.getInventory().selectedSlot;
+            client.player.getInventory().selectedSlot = pearlSlot;
+            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+            client.player.getInventory().selectedSlot = oldSlot;
+        }
     }
 
     private void swapElytra(MinecraftClient client) {
@@ -112,16 +164,15 @@ public class ExampleMod implements ModInitializer {
                stack.isOf(Items.CHAINMAIL_CHESTPLATE) || stack.isOf(Items.LEATHER_CHESTPLATE);
     }
 
-    private void throwPearl(MinecraftClient client) {
-        int pearlSlot = -1;
-        for (int i = 0; i < 9; i++) {
-            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pearlSlot = i; break; }
-        }
-        if (pearlSlot != -1) {
-            int oldSlot = client.player.getInventory().selectedSlot;
-            client.player.getInventory().selectedSlot = pearlSlot;
-            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-            client.player.getInventory().selectedSlot = oldSlot;
+    private void runTrigger(MinecraftClient c) {
+        HitResult hit = c.crosshairTarget;
+        if (hit instanceof EntityHitResult ehr && ehr.getEntity() instanceof PlayerEntity p) {
+            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase())) {
+                if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
+                    c.interactionManager.attackEntity(c.player, p);
+                    c.player.swingHand(Hand.MAIN_HAND);
+                }
+            }
         }
     }
 
@@ -160,45 +211,6 @@ public class ExampleMod implements ModInitializer {
                     c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, 45, 0, SlotActionType.PICKUP, c.player);
                     c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, slot, 0, SlotActionType.PICKUP, c.player);
                     break;
-                }
-            }
-        }
-    }
-
-    private void runAura(MinecraftClient c) {
-        PlayerEntity target = null; double dist = Double.MAX_VALUE;
-        for (PlayerEntity p : c.world.getPlayers()) {
-            if (p == c.player || !p.isAlive() || p.isSpectator()) continue;
-            if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
-            double d = c.player.distanceTo(p);
-            if (d <= kaRange && d < dist) { if (c.player.canSee(p) || d <= kaWallsRange) { dist = d; target = p; } }
-        }
-        if (target != null) {
-            if (autoRun) c.player.setSprinting(true);
-            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.5, 0).subtract(c.player.getEyePos());
-            float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
-            float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.4f));
-            c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.4f));
-            if (c.player.getAttackCooldownProgress(0.5f) >= (0.93f + random.nextFloat() * 0.05f)) {
-                c.interactionManager.attackEntity(c.player, target);
-                c.player.swingHand(Hand.MAIN_HAND);
-            }
-        }
-    }
-
-    private float lerpAngle(float start, float end, float speed) {
-        float diff = MathHelper.wrapDegrees(end - start);
-        return start + diff * speed;
-    }
-
-    private void runTrigger(MinecraftClient c) {
-        HitResult hit = c.crosshairTarget;
-        if (hit instanceof EntityHitResult ehr && ehr.getEntity() instanceof PlayerEntity p) {
-            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase())) {
-                if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
-                    c.interactionManager.attackEntity(c.player, p);
-                    c.player.swingHand(Hand.MAIN_HAND);
                 }
             }
         }
@@ -245,6 +257,8 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // --- ИНТЕРФЕЙС ---
+
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -290,10 +304,9 @@ public class ExampleMod implements ModInitializer {
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
         @Override protected void init() {
             int x = width/2, y = height/2;
-            // Смещено вправо, чтобы не перекрывать текст
-            rF = new TextFieldWidget(textRenderer, x - 50, y - 75, 50, 14, Text.literal(""));
+            rF = new TextFieldWidget(textRenderer, x - 40, y - 75, 40, 14, Text.literal(""));
             rF.setText(String.valueOf(kaRange));
-            wF = new TextFieldWidget(textRenderer, x - 50, y - 55, 50, 14, Text.literal(""));
+            wF = new TextFieldWidget(textRenderer, x - 40, y - 55, 40, 14, Text.literal(""));
             wF.setText(String.valueOf(kaWallsRange));
             fF = new TextFieldWidget(textRenderer, x + 15, y - 75, 100, 14, Text.literal("Friends"));
             fF.setText(friendsRaw);
@@ -302,15 +315,13 @@ public class ExampleMod implements ModInitializer {
         @Override public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int x = width/2, y = height/2;
-            ctx.fill(x - 120, y - 90, x + 130, y + 60, 0xDD101010);
+            ctx.fill(x - 120, y - 90, x + 130, y + 65, 0xDD101010);
             ctx.drawText(textRenderer, "Range:", x - 115, y - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", x - 115, y - 52, -1, true);
-            
             drawBtn(ctx, x - 115, y - 20, "AresMine", mx, my);
             drawBtn(ctx, x - 30, y - 20, "MainBlaze", mx, my);
-            
-            drawCheck(ctx, x - 115, y + 5, "AutoRun", autoRun, mx, my);
-            drawCheck(ctx, x - 30, y + 5, "AntiVelocity", antiVelocity, mx, my);
+            drawCheck(ctx, x - 115, y + 10, "AutoRun", autoRun, mx, my);
+            drawCheck(ctx, x - 30, y + 10, "AntiVelocity", antiVelocity, mx, my);
         }
         private void drawBtn(DrawContext ctx, int x, int y, String name, int mx, int my) {
             boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
@@ -326,8 +337,8 @@ public class ExampleMod implements ModInitializer {
             int x = width/2, y = height/2;
             if (mx >= x - 115 && mx <= x - 40 && my >= y - 20 && my <= y - 5) { rF.setText("3.8"); wF.setText("3.1"); return true; }
             if (mx >= x - 30 && mx <= x + 45 && my >= y - 20 && my <= y - 5) { rF.setText("4.0"); wF.setText("3.3"); return true; }
-            if (mx >= x - 115 && mx <= x - 30 && my >= y + 5 && my <= y + 20) { autoRun = !autoRun; return true; }
-            if (mx >= x - 30 && mx <= x + 55 && my >= y + 5 && my <= y + 20) { antiVelocity = !antiVelocity; return true; }
+            if (mx >= x - 115 && mx <= x - 30 && my >= y + 10 && my <= y + 25) { autoRun = !autoRun; return true; }
+            if (mx >= x - 30 && mx <= x + 55 && my >= y + 10 && my <= y + 25) { antiVelocity = !antiVelocity; return true; }
             return super.mouseClicked(mx, my, b);
         }
         @Override public void close() { 
