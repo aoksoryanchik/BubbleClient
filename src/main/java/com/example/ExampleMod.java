@@ -10,8 +10,8 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.InputUtil;
-// ИСПРАВЛЕННЫЕ ИМПОРТЫ ПОД 1.21.4
-import net.minecraft.client.render.*; 
+import net.minecraft.client.render.*;
+// ВАЖНО: В 1.21.4 CoreShaders находится тут
 import net.minecraft.client.render.CoreShaders;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.EquipmentSlot;
@@ -78,20 +78,21 @@ public class ExampleMod implements ModInitializer {
     private void onWorldRender(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null) return;
+        if (client.player == null || client.world == null) return;
+
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         float tickDelta = context.tickCounter().getTickDelta(true);
 
+        // Настройка рендера для работы СКВОЗЬ СТЕНЫ
         RenderSystem.disableDepthTest();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        
-        // ИСПРАВЛЕНИЕ 1.21.4: Используем CoreShaders.POSITION_COLOR напрямую
-        RenderSystem.setShader(CoreShaders.POSITION_COLOR);
+        RenderSystem.setShader(CoreShaders.POSITION_COLOR); // 1.21.4 фикс
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
+
             double x = MathHelper.lerp(tickDelta, p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(tickDelta, p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(tickDelta, p.prevZ, p.getZ()) - camPos.z;
@@ -99,25 +100,31 @@ public class ExampleMod implements ModInitializer {
             ms.push();
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
+            
             Matrix4f mat = ms.peek().getPositionMatrix();
-            float w = p.getWidth() / 2f + 0.05f;
-            float h = p.getHeight() + 0.05f;
+            float w = p.getWidth() / 2f + 0.1f;
+            float h = p.getHeight() + 0.1f;
 
             Tessellator tessellator = Tessellator.getInstance();
-            // ИСПРАВЛЕНИЕ 1.21.4: Новый формат инициализации буфера
+            // В 1.21.4 нужно явно указывать VertexFormat
             BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINE_STRIP, VertexFormats.POSITION_COLOR);
-            int r = 0, g = 204, b = 255, a = 255;
+            
+            int r = 0, g = 255, b = 255, a = 255; // Бирюзовый цвет ESP
+            if (friendsList.contains(p.getName().getString().toLowerCase())) { g = 255; r = 0; b = 0; } // Друзья зеленые
+
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
             buffer.vertex(mat, w, 0, 0).color(r, g, b, a);
             buffer.vertex(mat, w, h, 0).color(r, g, b, a);
             buffer.vertex(mat, -w, h, 0).color(r, g, b, a);
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
 
-            // ИСПРАВЛЕНИЕ 1.21.4: Используем BufferRenderer вместо tessellator.draw()
+            // Финальный штрих отрисовки в 1.21.4
             BufferRenderer.drawWithGlobalProgram(buffer.end());
+            
             ms.pop();
         }
         RenderSystem.enableDepthTest();
+        RenderSystem.disableBlend();
     }
 
     private void runAura(MinecraftClient c) {
@@ -136,7 +143,7 @@ public class ExampleMod implements ModInitializer {
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
             
-            // Твоя настройка 0.70f для обхода AresMine/MainBlaze сохранена
+            // Твои настройки под обход AresMine/MainBlaze (0.70f)
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
             
@@ -173,8 +180,8 @@ public class ExampleMod implements ModInitializer {
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (wearingElytra) {
-                // ИСПРАВЛЕНИЕ 1.21.4: Безопасная проверка слота брони
-                if (stack.getItem() instanceof ArmorItem armor && armor.getSlotType() == EquipmentSlot.CHEST) {
+                // ФИКС 1.21.4: getType().getEquipmentSlot()
+                if (stack.getItem() instanceof ArmorItem armor && armor.getType().getEquipmentSlot() == EquipmentSlot.CHEST) {
                     slot = i; break;
                 }
             } else if (stack.isOf(Items.ELYTRA)) {
