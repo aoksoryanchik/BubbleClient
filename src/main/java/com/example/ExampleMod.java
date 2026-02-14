@@ -56,8 +56,8 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Используем AFTER_TRANSLUCENT - это самая стабильная точка для кастомного рендера
-        WorldRenderEvents.AFTER_TRANSLUCENT.register(this::renderESP);
+        // BEFORE_DEBUG_RENDER - позволяет рисовать поверх всего мира без краша буферов
+        WorldRenderEvents.BEFORE_DEBUG_RENDER.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
@@ -89,7 +89,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    // --- БЕЗОПАСНЫЙ И ПРОСВЕЧИВАЮЩИЙ ESP (БЕЗ КРАШЕЙ) ---
+    // --- ИДЕАЛЬНЫЙ ESP: СКВОЗЬ БЛОКИ, БЕЗ ТРЯСКИ, БЕЗ КРАШЕЙ ---
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -98,19 +98,21 @@ public class ExampleMod implements ModInitializer {
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Отключаем проверку глубины (Z-буфер), чтобы видеть через стены
+        // Магия просвечивания: отключаем DepthTest и заставляем рендер игнорировать Z-Buffer
         RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
 
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder bufferBuilder = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+        // Используем встроенные буферы игры для стабильности
+        VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
+        VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
 
             ms.push();
+            // Плавная интерполяция позиции
             double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
@@ -122,31 +124,34 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.05f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Малиновый цвет (1.0f, 0.0f, 0.6f)
-            drawBox(bufferBuilder, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
+            // Малиновая рамка (1.0, 0.0, 0.6)
+            drawBox(buffer, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
             
             ms.pop();
         }
 
-        // Отрисовка
-        BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
+        // Принудительно выводим линии на экран, пока DepthTest выключен
+        consumers.draw(RenderLayer.getLines());
         
         RenderSystem.enableDepthTest();
+        RenderSystem.depthMask(true);
         RenderSystem.disableBlend();
     }
 
-    private void drawBox(BufferBuilder b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
-        // Низ
-        b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, w, 0, 0).color(r, g, bl, a);
-        // Верх
-        b.vertex(m, -w, h, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
-        // Лево
-        b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, -w, h, 0).color(r, g, bl, a);
-        // Право
-        b.vertex(m, w, 0, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
+    private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
+        // Рисуем 4 вертикальные линии и 2 горизонтальные для создания прямоугольника
+        line(b, m, -w, 0, 0, w, 0, 0, r, g, bl, a);
+        line(b, m, -w, h, 0, w, h, 0, r, g, bl, a);
+        line(b, m, -w, 0, 0, -w, h, 0, r, g, bl, a);
+        line(b, m, w, 0, 0, w, h, 0, r, g, bl, a);
     }
 
-    // --- ФУНКЦИИ КИЛЛАУРЫ И ПРОЧЕГО (БЕЗ ИЗМЕНЕНИЙ) ---
+    private void line(VertexConsumer b, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float bl, float a) {
+        b.vertex(m, x1, y1, z1).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, x2, y2, z2).color(r, g, bl, a).normal(0, 1, 0);
+    }
+
+    // --- ОСТАЛЬНЫЕ ФУНКЦИИ (БЕЗ ИЗМЕНЕНИЙ) ---
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
@@ -377,3 +382,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
