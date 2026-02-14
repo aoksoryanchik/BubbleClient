@@ -57,14 +57,13 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Регистрация ESP
+        // Регистрируем ESP в событии LAST, чтобы рисовать поверх всего
         WorldRenderEvents.LAST.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // ОТКРЫТИЕ МЕНЮ НА ЦИФРУ 0
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -84,7 +83,6 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // ТВОЙ ПОЛНЫЙ АНТИОТКИД (0%)
             if (antiVelocity && client.player.hurtTime > 0) {
                  client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
@@ -105,7 +103,6 @@ public class ExampleMod implements ModInitializer {
         }
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
-            // ТВОЯ НАВОДКА 0.70f
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
@@ -173,21 +170,21 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- ФИНАЛЬНЫЙ ESP: ПОВЕРХ ВСЕГО (WALLHACK) ---
+    // --- ИСПРАВЛЕННЫЙ ESP ДЛЯ 1.21.4 ---
     private void onWorldRender(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
-        // Настройка рендера поверх блоков
+        // Отключаем тест глубины, чтобы видеть сквозь блоки
         RenderSystem.disableDepthTest();
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Используем LAST событие и немедленный провайдер для отрисовки поверх всего
+        // Используем встроенный провайдер буферов
         VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
+        // Слой Lines автоматически использует правильный шейдер в 1.21.4
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
@@ -205,18 +202,19 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.1f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Рисуем прямоугольник (Циан)
+            // Рисуем рамку
             drawBox(buffer, model, w, h);
             
             ms.pop();
         }
         
-        // ПРИНУДИТЕЛЬНЫЙ ВЫЗОВ: Рисуем линии прямо сейчас, пока тест глубины отключен
+        // ВАЖНО: Рисуем содержимое буфера прямо сейчас, пока DepthTest отключен
         consumers.draw(RenderLayer.getLines());
         RenderSystem.enableDepthTest();
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h) {
+        // Линии прямоугольника
         b.vertex(m, -w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
         b.vertex(m, w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
         b.vertex(m, -w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
@@ -283,7 +281,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI (0) ---
+    // --- GUI ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
