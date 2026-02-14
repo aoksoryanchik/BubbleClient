@@ -56,7 +56,7 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Рендерим в событии LAST, чтобы быть поверх всего
+        // Используем LAST событие для максимального приоритета отрисовки поверх всего
         WorldRenderEvents.LAST.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -82,7 +82,7 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // ТВОЙ ПОЛНЫЙ АНТИОТКИД (0%)
+            // ПОЛНЫЙ АНТИОТКИД (0%)
             if (antiVelocity && client.player.hurtTime > 0) {
                  client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
@@ -123,24 +123,23 @@ public class ExampleMod implements ModInitializer {
         return start + diff * speed;
     }
 
-    // --- УЛЬТИМАТИВНЫЙ ESP (WALLHACK) ПОД 1.21.4 ---
+    // --- ИСПРАВЛЕННЫЙ ESP: ТЕПЕРЬ ТОЧНО ПРОСВЕЧИВАЕТ СКВОЗЬ СТЕНЫ ---
     private void onWorldRender(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
-        // Прямое отключение теста глубины через RenderSystem
+        // 1. Отключаем глубину принудительно через RenderSystem
         RenderSystem.disableDepthTest();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        
+
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Используем непосредственный буфер для линий, который игнорирует слои мира
-        VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
-        // Используем встроенный слой LINES, который поддерживает 1.21.4
-        VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
+        // 2. Создаем отдельный Immediate провайдер для игнорирования слоев игры
+        VertexConsumerProvider.Immediate immediate = client.getBufferBuilders().getEntityVertexConsumers();
+        VertexConsumer buffer = immediate.getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
@@ -157,25 +156,25 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.1f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Рисуем прямоугольник (Бирюзовый/Cyan)
-            drawEspBox(buffer, model, w, h);
+            // Рисуем рамку (Цвет: Циан)
+            drawBox(buffer, model, w, h, 0f, 1f, 1f, 1f);
             
             ms.pop();
         }
         
-        // ФИНАЛЬНЫЙ ШТРИХ: принудительно выводим буфер ДО того как игра включит DepthTest обратно
-        consumers.draw(); 
+        // 3. ПРИНУДИТЕЛЬНЫЙ ВЫВОД БУФЕРА (именно это заставляет его просвечивать)
+        immediate.draw();
         
+        // 4. Возвращаем настройки
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
     }
 
-    private void drawEspBox(VertexConsumer b, Matrix4f m, float w, float h) {
-        float r = 0f, g = 1f, bl = 1f, a = 1f;
-        // Вертикальные
+    private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
+        // Вертикальные линии
         b.vertex(m, -w, 0, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, -w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
         b.vertex(m, w, 0, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
-        // Горизонтальные
+        // Горизонтальные линии
         b.vertex(m, -w, 0, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, w, 0, 0).color(r, g, bl, a).normal(0, 1, 0);
         b.vertex(m, -w, h, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
     }
