@@ -39,11 +39,9 @@ import java.util.Random;
 import com.mojang.blaze3d.systems.RenderSystem;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния функций
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
 
-    // Настройки Киллауры (твои конфиги под Арес и Майнблейз)
     public static double kaRange = 3.8D, kawallsRange = 3.0D;
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_G, keyES = GLFW.GLFW_KEY_C;
@@ -58,15 +56,13 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
-        
-        // Регистрация ESP
         WorldRenderEvents.AFTER_ENTITIES.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // МЕНЮ НА ЦИФРУ 0 (Верхний ряд клавиатуры)
+            // ОТКРЫТИЕ МЕНЮ НА КЛАВИШУ 0 (ЦИФРА НОЛЬ)
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -86,7 +82,7 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // Твой антиоткид 0% (как скала)
+            // ТВОЙ ПОЛНЫЙ АНТИОТКИД (0%)
             if (antiVelocity && client.player.hurtTime > 0) {
                  client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
@@ -105,18 +101,14 @@ public class ExampleMod implements ModInitializer {
                 }
             }
         }
-
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
-
-            // Твои настройки наводки (0.70f)
+            // ТВОЯ НАВОДКА 0.70f
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
-
             if (c.player.getAttackCooldownProgress(0) >= (0.90F + random.nextFloat() * 0.04F)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
@@ -149,11 +141,8 @@ public class ExampleMod implements ModInitializer {
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (stack.isEmpty()) continue;
-            if (wearingElytra) {
-                if (isChestplate(stack)) { slot = i; break; }
-            } else {
-                if (stack.isOf(Items.ELYTRA)) { slot = i; break; }
-            }
+            if (wearingElytra) { if (isChestplate(stack)) { slot = i; break; } }
+            else { if (stack.isOf(Items.ELYTRA)) { slot = i; break; } }
         }
         if (slot != -1) {
             int sid = client.player.playerScreenHandler.syncId;
@@ -182,19 +171,20 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- ФИНАЛЬНЫЙ РАБОЧИЙ ESP (1.21.4) ---
+    // --- ПРАВИЛЬНЫЙ ESP ДЛЯ 1.21.4 (БЕЗ ОШИБОК И СКВОЗЬ СТЕНЫ) ---
     private void onWorldRender(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
-        // Отключаем тест глубины, чтобы линии рисовались ПОВЕРХ блоков
+        // Отключаем тест глубины и смещаем отрисовку вперед, чтобы видеть сквозь блоки
         RenderSystem.disableDepthTest();
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        RenderSystem.enablePolygonOffset();
+        RenderSystem.polygonOffset(-1.0f, -1.0f);
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
-        // Используем встроенный провайдер потребителей для отрисовки линий
+        // Используем универсальный буфер линий, который не требует getPositionColorShader
         VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
@@ -206,31 +196,31 @@ public class ExampleMod implements ModInitializer {
 
             ms.push();
             ms.translate(x, y, z);
-            // Поворот к камере (статичный бокс)
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
 
             float w = p.getWidth() / 2 + 0.1f;
             float h = p.getHeight() + 0.1f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Рисуем прямоугольник (Циан)
-            // Низ
-            line(buffer, model, -w, 0, 0, w, 0, 0);
-            // Верх
-            line(buffer, model, -w, h, 0, w, h, 0);
-            // Лево
-            line(buffer, model, -w, 0, 0, -w, h, 0);
-            // Право
-            line(buffer, model, w, 0, 0, w, h, 0);
-
+            // Рисуем рамку (Циан)
+            drawBox(buffer, model, w, h);
             ms.pop();
         }
+
+        RenderSystem.disablePolygonOffset();
         RenderSystem.enableDepthTest();
     }
 
-    private void line(VertexConsumer b, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2) {
-        b.vertex(m, x1, y1, z1).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
-        b.vertex(m, x2, y2, z2).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+    private void drawBox(VertexConsumer b, Matrix4f m, float w, float h) {
+        // Линии бокса
+        b.vertex(m, -w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, -w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, -w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, -w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
     }
 
     private void checkTotem(MinecraftClient c) {
@@ -289,7 +279,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI ---
+    // --- ГРАФИЧЕСКОЕ МЕНЮ (0) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
