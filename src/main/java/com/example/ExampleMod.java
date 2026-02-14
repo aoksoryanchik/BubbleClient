@@ -11,8 +11,6 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.render.*;
-// ВАЖНО: В 1.21.4 CoreShaders находится тут
-import net.minecraft.client.render.CoreShaders;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
@@ -57,7 +55,12 @@ public class ExampleMod implements ModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
-            if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
+            
+            // Открытие меню на 0
+            if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
+                client.setScreen(new BubbleMenu());
+            }
+
             if (client.currentScreen == null) {
                 if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
                 if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
@@ -67,6 +70,7 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
                 if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
             }
+
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (killaura) runAura(client);
@@ -84,11 +88,12 @@ public class ExampleMod implements ModInitializer {
         Vec3d camPos = context.camera().getPos();
         float tickDelta = context.tickCounter().getTickDelta(true);
 
-        // Настройка рендера для работы СКВОЗЬ СТЕНЫ
-        RenderSystem.disableDepthTest();
+        // НАСТРОЙКА РЕНДЕРА ДЛЯ ESP ЧЕРЕЗ СТЕНЫ
+        RenderSystem.disableDepthTest(); // Ключевая фишка для свечения сквозь стены
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.setShader(CoreShaders.POSITION_COLOR); // 1.21.4 фикс
+        // В 1.21.4 используем CoreShaders вместо GameRenderer
+        RenderSystem.setShader(CoreShaders.POSITION_COLOR);
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
@@ -106,11 +111,11 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.1f;
 
             Tessellator tessellator = Tessellator.getInstance();
-            // В 1.21.4 нужно явно указывать VertexFormat
+            // В 1.21.4 нужно явно указывать VertexFormat через begin
             BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINE_STRIP, VertexFormats.POSITION_COLOR);
             
-            int r = 0, g = 255, b = 255, a = 255; // Бирюзовый цвет ESP
-            if (friendsList.contains(p.getName().getString().toLowerCase())) { g = 255; r = 0; b = 0; } // Друзья зеленые
+            int r = 0, g = 255, b = 255, a = 255;
+            if (friendsList.contains(p.getName().getString().toLowerCase())) { r = 0; g = 255; b = 0; }
 
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
             buffer.vertex(mat, w, 0, 0).color(r, g, b, a);
@@ -118,7 +123,7 @@ public class ExampleMod implements ModInitializer {
             buffer.vertex(mat, -w, h, 0).color(r, g, b, a);
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
 
-            // Финальный штрих отрисовки в 1.21.4
+            // Фикс 1.21.4: отрисовка через глобальную программу
             BufferRenderer.drawWithGlobalProgram(buffer.end());
             
             ms.pop();
@@ -143,7 +148,7 @@ public class ExampleMod implements ModInitializer {
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
             
-            // Твои настройки под обход AresMine/MainBlaze (0.70f)
+            // Твои настройки 0.70f под Ares/MainBlaze
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
             
@@ -180,7 +185,7 @@ public class ExampleMod implements ModInitializer {
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (wearingElytra) {
-                // ФИКС 1.21.4: getType().getEquipmentSlot()
+                // Фикс ошибки 12308: getType().getEquipmentSlot()
                 if (stack.getItem() instanceof ArmorItem armor && armor.getType().getEquipmentSlot() == EquipmentSlot.CHEST) {
                     slot = i; break;
                 }
@@ -221,7 +226,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void notify(MinecraftClient c, String mod, boolean state) {
-        c.player.sendMessage(Text.literal("§b[Bubble] §f" + mod + ": " + (state ? "§aВКЛ" : "§cВЫКЛ")), true);
+        if (c.player != null) c.player.sendMessage(Text.literal("§b[Bubble] §f" + mod + ": " + (state ? "§aВКЛ" : "§cВЫКЛ")), true);
     }
 
     private boolean isPressed(long handle, int key) {
@@ -259,6 +264,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // КЛАССЫ МЕНЮ (БЕЗ ИЗМЕНЕНИЙ В ЛОГИКЕ, ТОЛЬКО ФИКСЫ ОТРИСОВКИ)
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -306,7 +312,7 @@ public class ExampleMod implements ModInitializer {
             int x = width/2, y = height/2;
             rF = new TextFieldWidget(textRenderer, x - 40, y - 75, 40, 14, Text.literal("")); rF.setText(String.valueOf(kaRange));
             wF = new TextFieldWidget(textRenderer, x - 40, y - 55, 40, 14, Text.literal("")); wF.setText(String.valueOf(kaWallsRange));
-            fF = new TextFieldWidget(textRenderer, x + 15, y - 75, 100, 14, Text.literal("Friends")); fF.setText(friendsRaw);
+            fF = new TextFieldWidget(textRenderer, x + 15, y - 75, 100, 14, Text.literal("")); fF.setText(friendsRaw);
             addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
         }
         @Override public void render(DrawContext ctx, int mx, int my, float delta) {
@@ -349,7 +355,7 @@ public class ExampleMod implements ModInitializer {
             if (id == 0) keyKA = v; else if (id == 1) keyTB = v; else if (id == 2) keyFB = v; else if (id == 3) keyAT = v; else if (id == 4) keyESP = v; else if (id == 5) keyFP = v; else if (id == 6) keyES = v;
             saveConfig(); client.setScreen(parent); return true;
         }
-        @Override public void render(DrawContext ctx, int mx, int my, float d) { super.render(ctx, mx, my, d); ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width/2, height/2, 0x00CCFF); }
+        @Override public void render(DrawContext ctx, int mx, int my, float d) { super.render(ctx, mx, my, d); ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ (ESC ДЛЯ СБРОСА)", width/2, height/2, 0x00CCFF); }
     }
 }
 
