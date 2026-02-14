@@ -56,7 +56,7 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Используем LAST событие для максимального приоритета отрисовки поверх всего
+        // Используем LAST событие для рендеринга поверх всех объектов мира
         WorldRenderEvents.LAST.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -89,6 +89,69 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
+    // --- ГАРАНТИРОВАННО ПРОСВЕЧИВАЮЩИЙ ESP ---
+    private void onWorldRender(WorldRenderContext context) {
+        if (!esp) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.world == null) return;
+
+        // 1. Подготовка системы рендеринга
+        RenderSystem.disableDepthTest(); // Отключаем проверку на препятствия
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram); // Используем базовый шейдер без текстур
+
+        MatrixStack ms = context.matrixStack();
+        Vec3d camPos = context.camera().getPos();
+        
+        // 2. Создаем свой собственный буфер, который не зависит от игровых слоев
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+
+        for (PlayerEntity p : client.world.getPlayers()) {
+            if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
+
+            double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
+            double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
+            double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
+
+            ms.push();
+            ms.translate(x, y, z);
+            ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
+
+            float w = p.getWidth() / 2 + 0.05f;
+            float h = p.getHeight() + 0.05f;
+            Matrix4f model = ms.peek().getPositionMatrix();
+
+            // Рисуем рамку (Малиновый цвет как на твоих фото)
+            drawBox(buffer, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
+            
+            ms.pop();
+        }
+        
+        // 3. Сбрасываем буфер на экран ПРЯМО СЕЙЧАС, пока DepthTest выключен
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        
+        // 4. Возвращаем всё как было, чтобы не сломать игру
+        RenderSystem.enableDepthTest();
+        RenderSystem.disableBlend();
+    }
+
+    private void drawBox(BufferBuilder b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
+        // Вертикальные стойки
+        line(b, m, -w, 0, 0, -w, h, 0, r, g, bl, a);
+        line(b, m, w, 0, 0, w, h, 0, r, g, bl, a);
+        // Горизонтальные перекладины
+        line(b, m, -w, 0, 0, w, 0, 0, r, g, bl, a);
+        line(b, m, -w, h, 0, w, h, 0, r, g, bl, a);
+    }
+
+    private void line(BufferBuilder b, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float bl, float a) {
+        b.vertex(m, x1, y1, z1).color(r, g, bl, a);
+        b.vertex(m, x2, y2, z2).color(r, g, bl, a);
+    }
+
+    // --- КИЛЛАУРА И ДРУГИЕ МОДУЛИ (ПОЛНОСТЬЮ СОХРАНЕНЫ) ---
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
@@ -123,63 +186,6 @@ public class ExampleMod implements ModInitializer {
         return start + diff * speed;
     }
 
-    // --- ИСПРАВЛЕННЫЙ ESP: ТЕПЕРЬ ТОЧНО ПРОСВЕЧИВАЕТ СКВОЗЬ СТЕНЫ ---
-    private void onWorldRender(WorldRenderContext context) {
-        if (!esp) return;
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) return;
-
-        // 1. Отключаем глубину принудительно через RenderSystem
-        RenderSystem.disableDepthTest();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-
-        MatrixStack ms = context.matrixStack();
-        Vec3d camPos = context.camera().getPos();
-        
-        // 2. Создаем отдельный Immediate провайдер для игнорирования слоев игры
-        VertexConsumerProvider.Immediate immediate = client.getBufferBuilders().getEntityVertexConsumers();
-        VertexConsumer buffer = immediate.getBuffer(RenderLayer.getLines());
-
-        for (PlayerEntity p : client.world.getPlayers()) {
-            if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
-
-            double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
-            double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
-            double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
-
-            ms.push();
-            ms.translate(x, y, z);
-            ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-
-            float w = p.getWidth() / 2 + 0.1f;
-            float h = p.getHeight() + 0.1f;
-            Matrix4f model = ms.peek().getPositionMatrix();
-
-            // Рисуем рамку (Цвет: Циан)
-            drawBox(buffer, model, w, h, 0f, 1f, 1f, 1f);
-            
-            ms.pop();
-        }
-        
-        // 3. ПРИНУДИТЕЛЬНЫЙ ВЫВОД БУФЕРА (именно это заставляет его просвечивать)
-        immediate.draw();
-        
-        // 4. Возвращаем настройки
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
-    }
-
-    private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
-        // Вертикальные линии
-        b.vertex(m, -w, 0, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, -w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, w, 0, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
-        // Горизонтальные линии
-        b.vertex(m, -w, 0, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, w, 0, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, -w, h, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
-    }
-
-    // --- ОСТАЛЬНЫЕ ФУНКЦИИ (БЕЗ ИЗМЕНЕНИЙ) ---
     private void throwPearl(MinecraftClient client) {
         int pearlSlot = -1;
         for (int i = 0; i < 9; i++) {
