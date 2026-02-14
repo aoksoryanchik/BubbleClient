@@ -95,12 +95,13 @@ public class ExampleMod implements ModInitializer {
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Исправлено под 1.21.4 (один аргумент в clear и новое имя шейдера)
+        // Фикс под 1.21.4: RenderSystem.clear теперь без второго аргумента
         RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT);
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        // Фикс под 1.21.4: название метода шейдера изменено
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
 
         Tessellator tessellator = Tessellator.getInstance();
