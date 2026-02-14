@@ -56,8 +56,8 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Используем BEFORE_ENTITIES, чтобы отрисовать ESP ПЕРЕД блоками, если нужно просвечивание
-        WorldRenderEvents.BEFORE_ENTITIES.register(this::renderESP);
+        // Используем AFTER_TRANSLUCENT - это самая стабильная точка для кастомного рендера
+        WorldRenderEvents.AFTER_TRANSLUCENT.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
@@ -89,7 +89,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    // --- ИСПРАВЛЕННЫЙ ESP: СТАТИЧНЫЙ И ПРОСВЕЧИВАЮЩИЙ ---
+    // --- БЕЗОПАСНЫЙ И ПРОСВЕЧИВАЮЩИЙ ESP (БЕЗ КРАШЕЙ) ---
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -98,54 +98,55 @@ public class ExampleMod implements ModInitializer {
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Настройка системы для отрисовки ПОВЕРХ ВСЕГО
+        // Отключаем проверку глубины (Z-буфер), чтобы видеть через стены
         RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        
-        // Получаем буфер, который не будет сбрасываться раньше времени
-        VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
-        VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder bufferBuilder = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
 
             ms.push();
-            // Интерполяция позиции для плавности (чтобы не дергалось)
             double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
 
             ms.translate(x, y, z);
-            // Поворачиваем рамку за камерой игрока для статичности
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
 
             float w = p.getWidth() / 2 + 0.05f;
             float h = p.getHeight() + 0.05f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Малиновая рамка
-            drawBox(buffer, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
+            // Малиновый цвет (1.0f, 0.0f, 0.6f)
+            drawBox(bufferBuilder, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
             
             ms.pop();
         }
 
-        // КРИТИЧЕСКИЙ ВЫЗОВ: Отрисовываем всё накопленное немедленно, пока DepthTest выключен
-        consumers.draw();
+        // Отрисовка
+        BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
         
         RenderSystem.enableDepthTest();
-        RenderSystem.depthMask(true);
+        RenderSystem.disableBlend();
     }
 
-    private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
-        b.vertex(m, -w, 0, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, w, 0, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, -w, h, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, -w, 0, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, -w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, w, 0, 0).color(r, g, bl, a).normal(0, 1, 0); b.vertex(m, w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
+    private void drawBox(BufferBuilder b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
+        // Низ
+        b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, w, 0, 0).color(r, g, bl, a);
+        // Верх
+        b.vertex(m, -w, h, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
+        // Лево
+        b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, -w, h, 0).color(r, g, bl, a);
+        // Право
+        b.vertex(m, w, 0, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
     }
 
-    // --- ВСЕ ОСТАЛЬНЫЕ ФУНКЦИИ (БЕЗ ИЗМЕНЕНИЙ) ---
+    // --- ФУНКЦИИ КИЛЛАУРЫ И ПРОЧЕГО (БЕЗ ИЗМЕНЕНИЙ) ---
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
@@ -163,7 +164,7 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f)); // 0.70f наводка
+            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f)); 
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
             if (c.player.getAttackCooldownProgress(0) >= (0.90F + random.nextFloat() * 0.04F)) {
                 c.interactionManager.attackEntity(c.player, target);
@@ -376,4 +377,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
