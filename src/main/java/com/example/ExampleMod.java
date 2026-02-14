@@ -37,15 +37,12 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    // Состояние модулей
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
     public static double kaRange = 3.8D, kaWallsRange = 3.0D;
     
-    // Клавиши
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1, keyFP = GLFW.GLFW_KEY_G, keyES = GLFW.GLFW_KEY_C;
     
-    // Список друзей
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
     
@@ -62,12 +59,10 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // Открытие меню на кнопку "0"
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Обработка горячих клавиш без меню
             if (client.currentScreen == null) {
                 if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
                 if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
@@ -78,86 +73,54 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
             }
 
-            // Логика модулей
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
             
             if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(client.player.getVelocity().multiply(0.45D, 1.0D, 0.45D));
+                client.player.setVelocity(client.player.getVelocity().multiply(0.0D, 1.0D, 0.0D));
             }
         });
     }
 
-    // --- ФУНКЦИЯ ELYTRA SWAP (ИСПРАВЛЕНА: Прямая проверка предметов) ---
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
         ItemStack chestStack = client.player.getEquippedStack(EquipmentSlot.CHEST);
-        
-        // Проверяем, надета ли элитра
         boolean wearingElytra = chestStack.isOf(Items.ELYTRA);
-
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (stack.isEmpty()) continue;
-
             if (wearingElytra) {
-                // Если надета элитра -> ищем нагрудник
-                // Используем "тупой" но надежный метод проверки, чтобы избежать ошибок компиляции
-                if (isChestplate(stack)) {
-                    slot = i;
-                    break;
-                }
+                if (isChestplate(stack)) { slot = i; break; }
             } else {
-                // Если надет нагрудник -> ищем элитру
-                if (stack.isOf(Items.ELYTRA)) {
-                    slot = i;
-                    break;
-                }
+                if (stack.isOf(Items.ELYTRA)) { slot = i; break; }
             }
         }
-
         if (slot != -1) {
-            // Механика свапа (клик по слоту -> клик по нагруднику -> клик обратно)
             int sid = client.player.playerScreenHandler.syncId;
             int invSlot = slot < 9 ? slot + 36 : slot;
             client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
-            client.interactionManager.clickSlot(sid, 6, 0, SlotActionType.PICKUP, client.player); // Слот 6 - это слот нагрудника
+            client.interactionManager.clickSlot(sid, 6, 0, SlotActionType.PICKUP, client.player);
             client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
         }
     }
 
-    // Вспомогательный метод для проверки нагрудников (чтобы не было ошибок с ArmorItem)
     private boolean isChestplate(ItemStack stack) {
-        return stack.isOf(Items.NETHERITE_CHESTPLATE) || 
-               stack.isOf(Items.DIAMOND_CHESTPLATE) ||
-               stack.isOf(Items.IRON_CHESTPLATE) ||
-               stack.isOf(Items.GOLDEN_CHESTPLATE) ||
-               stack.isOf(Items.CHAINMAIL_CHESTPLATE) ||
-               stack.isOf(Items.LEATHER_CHESTPLATE);
+        return stack.isOf(Items.NETHERITE_CHESTPLATE) || stack.isOf(Items.DIAMOND_CHESTPLATE) ||
+               stack.isOf(Items.IRON_CHESTPLATE) || stack.isOf(Items.GOLDEN_CHESTPLATE) ||
+               stack.isOf(Items.CHAINMAIL_CHESTPLATE) || stack.isOf(Items.LEATHER_CHESTPLATE);
     }
 
-    // --- ФУНКЦИЯ FAST PEARL (ИСПРАВЛЕНА: Использование встроенного Interact) ---
     private void throwPearl(MinecraftClient client) {
         int pearlSlot = -1;
         for (int i = 0; i < 9; i++) {
-            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { 
-                pearlSlot = i; 
-                break; 
-            }
+            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pearlSlot = i; break; }
         }
-        
         if (pearlSlot != -1) {
             int oldSlot = client.player.getInventory().selectedSlot;
-            
-            // Переключаемся на перл
             client.player.getInventory().selectedSlot = pearlSlot;
-            
-            // Используем официальный метод взаимодействия (сам отправляет правильный пакет с sequence)
             client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-            
-            // Возвращаемся обратно
             client.player.getInventory().selectedSlot = oldSlot;
         }
     }
@@ -168,28 +131,22 @@ public class ExampleMod implements ModInitializer {
         float tickDelta = client.getRenderTickCounter().getTickDelta(true);
         Vec3d camPos = context.camera().getPos();
         MatrixStack ms = context.matrixStack();
-
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
             double x = MathHelper.lerp(tickDelta, p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(tickDelta, p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(tickDelta, p.prevZ, p.getZ()) - camPos.z;
-
             ms.push();
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            
             float w = p.getWidth(); float h = p.getHeight();
             VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
             Matrix4f model = ms.peek().getPositionMatrix();
-            
-            // Рисуем коробку
             buffer.vertex(model, -w/2, 0, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
             buffer.vertex(model, w/2, 0, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
             buffer.vertex(model, w/2, h, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
             buffer.vertex(model, -w/2, h, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
             buffer.vertex(model, -w/2, 0, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
-            
             ms.pop();
         }
     }
@@ -214,9 +171,7 @@ public class ExampleMod implements ModInitializer {
             if (p == c.player || !p.isAlive() || p.isSpectator()) continue;
             if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = c.player.distanceTo(p);
-            if (d <= kaRange && d < dist) { 
-                if (c.player.canSee(p) || d <= kaWallsRange) { dist = d; target = p; } 
-            }
+            if (d <= kaRange && d < dist) { if (c.player.canSee(p) || d <= kaWallsRange) { dist = d; target = p; } }
         }
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
@@ -225,7 +180,6 @@ public class ExampleMod implements ModInitializer {
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.4f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.4f));
-            
             if (c.player.getAttackCooldownProgress(0.5f) >= (0.93f + random.nextFloat() * 0.05f)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
@@ -271,7 +225,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange + ":" + kaWallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES);
+            w.println(kaRange + ":" + kaWallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity);
         } catch (Exception ignored) {}
     }
 
@@ -279,18 +233,17 @@ public class ExampleMod implements ModInitializer {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":", -1);
-            if (p.length >= 12) {
+            if (p.length >= 13) {
                 kaRange = Double.parseDouble(p[0]); kaWallsRange = Double.parseDouble(p[1]); 
                 autoRun = Boolean.parseBoolean(p[2]); keyKA = Integer.parseInt(p[3]); 
                 keyTB = Integer.parseInt(p[4]); keyFB = Integer.parseInt(p[5]); 
                 keyAT = Integer.parseInt(p[6]); updateFriends(p[7]);
                 esp = Boolean.parseBoolean(p[8]); keyESP = Integer.parseInt(p[9]);
                 keyFP = Integer.parseInt(p[10]); keyES = Integer.parseInt(p[11]);
+                antiVelocity = Boolean.parseBoolean(p[12]);
             }
         } catch (Exception ignored) {}
     }
-
-    // --- МЕНЮ (ПОЛНОЕ, БЕЗ ИЗМЕНЕНИЙ) ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
@@ -300,10 +253,8 @@ public class ExampleMod implements ModInitializer {
             int cx = width / 2, cy = height / 2;
             ctx.fill(cx - 95, cy - 105, cx + 95, cy + 120, 0xDD101010);
             ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE 1.21.4", cx, cy - 95, 0x00CCFF);
-            
             String[] names = { "KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap" };
             boolean[] states = { killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap };
-            
             for (int i = 0; i < names.length; i++) {
                 int iy = cy - 70 + i * 24;
                 boolean hover = mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20;
@@ -339,9 +290,10 @@ public class ExampleMod implements ModInitializer {
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
         @Override protected void init() {
             int x = width/2, y = height/2;
-            rF = new TextFieldWidget(textRenderer, x - 100, y - 75, 80, 14, Text.literal(""));
+            // Смещено вправо, чтобы не перекрывать текст
+            rF = new TextFieldWidget(textRenderer, x - 50, y - 75, 50, 14, Text.literal(""));
             rF.setText(String.valueOf(kaRange));
-            wF = new TextFieldWidget(textRenderer, x - 100, y - 55, 80, 14, Text.literal(""));
+            wF = new TextFieldWidget(textRenderer, x - 50, y - 55, 50, 14, Text.literal(""));
             wF.setText(String.valueOf(kaWallsRange));
             fF = new TextFieldWidget(textRenderer, x + 15, y - 75, 100, 14, Text.literal("Friends"));
             fF.setText(friendsRaw);
@@ -350,24 +302,38 @@ public class ExampleMod implements ModInitializer {
         @Override public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int x = width/2, y = height/2;
-            ctx.fill(x - 120, y - 90, x + 130, y + 50, 0xDD101010);
+            ctx.fill(x - 120, y - 90, x + 130, y + 60, 0xDD101010);
             ctx.drawText(textRenderer, "Range:", x - 115, y - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", x - 115, y - 52, -1, true);
+            
             drawBtn(ctx, x - 115, y - 20, "AresMine", mx, my);
             drawBtn(ctx, x - 30, y - 20, "MainBlaze", mx, my);
+            
+            drawCheck(ctx, x - 115, y + 5, "AutoRun", autoRun, mx, my);
+            drawCheck(ctx, x - 30, y + 5, "AntiVelocity", antiVelocity, mx, my);
         }
         private void drawBtn(DrawContext ctx, int x, int y, String name, int mx, int my) {
             boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
             ctx.fill(x, y, x + 75, y + 15, h ? 0xEE404040 : 0xEE202020);
             ctx.drawCenteredTextWithShadow(textRenderer, name, x + 37, y + 4, -1);
         }
+        private void drawCheck(DrawContext ctx, int x, int y, String name, boolean state, int mx, int my) {
+            boolean h = mx >= x && mx <= x + 85 && my >= y && my <= y + 15;
+            ctx.fill(x, y, x + 85, y + 15, h ? 0xEE404040 : 0xEE202020);
+            ctx.drawCenteredTextWithShadow(textRenderer, name, x + 42, y + 4, state ? 0x00FF00 : 0xFFFFFF);
+        }
         @Override public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
             if (mx >= x - 115 && mx <= x - 40 && my >= y - 20 && my <= y - 5) { rF.setText("3.8"); wF.setText("3.1"); return true; }
             if (mx >= x - 30 && mx <= x + 45 && my >= y - 20 && my <= y - 5) { rF.setText("4.0"); wF.setText("3.3"); return true; }
+            if (mx >= x - 115 && mx <= x - 30 && my >= y + 5 && my <= y + 20) { autoRun = !autoRun; return true; }
+            if (mx >= x - 30 && mx <= x + 55 && my >= y + 5 && my <= y + 20) { antiVelocity = !antiVelocity; return true; }
             return super.mouseClicked(mx, my, b);
         }
-        @Override public void close() { try { kaRange = Double.parseDouble(rF.getText()); kaWallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {} updateFriends(fF.getText()); saveConfig(); client.setScreen(parent); }
+        @Override public void close() { 
+            try { kaRange = Double.parseDouble(rF.getText()); kaWallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {} 
+            updateFriends(fF.getText()); saveConfig(); client.setScreen(parent); 
+        }
     }
 
     public static class BindScreen extends Screen {
