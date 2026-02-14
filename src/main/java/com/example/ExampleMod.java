@@ -1,5 +1,6 @@
 package com.example;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
@@ -53,7 +54,7 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
-        WorldRenderEvents.AFTER_ENTITIES.register(this::onWorldRender);
+        WorldRenderEvents.LAST.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
@@ -79,10 +80,56 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot) runTrigger(client);
             
             if (antiVelocity && client.player.hurtTime > 0) {
-                // Полный антиоткид (0%), чтобы стоять как скала
                 client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
         });
+    }
+
+    private void onWorldRender(WorldRenderContext context) {
+        if (!esp) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return;
+
+        MatrixStack ms = context.matrixStack();
+        Vec3d camPos = context.camera().getPos();
+        float tickDelta = context.tickCounter().getTickDelta(true);
+
+        RenderSystem.disableDepthTest();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINE_STRIP, VertexFormats.POSITION_COLOR);
+
+        for (PlayerEntity p : client.world.getPlayers()) {
+            if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
+
+            double x = MathHelper.lerp(tickDelta, p.prevX, p.getX()) - camPos.x;
+            double y = MathHelper.lerp(tickDelta, p.prevY, p.getY()) - camPos.y;
+            double z = MathHelper.lerp(tickDelta, p.prevZ, p.getZ()) - camPos.z;
+
+            ms.push();
+            ms.translate(x, y, z);
+            ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
+            
+            Matrix4f mat = ms.peek().getPositionMatrix();
+            float w = p.getWidth() / 2f + 0.1f;
+            float h = p.getHeight() + 0.1f;
+
+            // Рисуем чистый прямоугольник (бирюзовый)
+            int r = 0, g = 204, b = 255, a = 255;
+            buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
+            buffer.vertex(mat, w, 0, 0).color(r, g, b, a);
+            buffer.vertex(mat, w, h, 0).color(r, g, b, a);
+            buffer.vertex(mat, -w, h, 0).color(r, g, b, a);
+            buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
+
+            tessellator.draw(); // Рисуем каждый бокс отдельно для стабильности
+            buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINE_STRIP, VertexFormats.POSITION_COLOR);
+            ms.pop();
+        }
+        RenderSystem.enableDepthTest();
     }
 
     private void runAura(MinecraftClient c) {
@@ -97,19 +144,13 @@ public class ExampleMod implements ModInitializer {
                 }
             }
         }
-
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
-            
-            // МОЩНАЯ НАВОДКА (0.70f) - Жесткий аим
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
-
-            // Улучшенное КД для максимального DPS
             if (c.player.getAttackCooldownProgress(0) >= (0.90f + random.nextFloat() * 0.04f)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
@@ -120,6 +161,20 @@ public class ExampleMod implements ModInitializer {
     private float lerpAngle(float start, float end, float speed) {
         float diff = MathHelper.wrapDegrees(end - start);
         return start + diff * speed;
+    }
+
+    private void checkTotem(MinecraftClient c) {
+        if (!c.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
+            for (int i = 0; i < 45; i++) {
+                if (c.player.getInventory().getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
+                    int slot = (i < 9) ? (i + 36) : i;
+                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, slot, 0, SlotActionType.PICKUP, c.player);
+                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, 45, 0, SlotActionType.PICKUP, c.player);
+                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, slot, 0, SlotActionType.PICKUP, c.player);
+                    break;
+                }
+            }
+        }
     }
 
     private void throwPearl(MinecraftClient client) {
@@ -142,11 +197,7 @@ public class ExampleMod implements ModInitializer {
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (stack.isEmpty()) continue;
-            if (wearingElytra) {
-                if (isChestplate(stack)) { slot = i; break; }
-            } else {
-                if (stack.isOf(Items.ELYTRA)) { slot = i; break; }
-            }
+            if (wearingElytra ? isChestplate(stack) : stack.isOf(Items.ELYTRA)) { slot = i; break; }
         }
         if (slot != -1) {
             int sid = client.player.playerScreenHandler.syncId;
@@ -158,9 +209,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     private boolean isChestplate(ItemStack stack) {
-        return stack.isOf(Items.NETHERITE_CHESTPLATE) || stack.isOf(Items.DIAMOND_CHESTPLATE) ||
-               stack.isOf(Items.IRON_CHESTPLATE) || stack.isOf(Items.GOLDEN_CHESTPLATE) ||
-               stack.isOf(Items.CHAINMAIL_CHESTPLATE) || stack.isOf(Items.LEATHER_CHESTPLATE);
+        return stack.isOf(Items.NETHERITE_CHESTPLATE) || stack.isOf(Items.DIAMOND_CHESTPLATE) || stack.isOf(Items.IRON_CHESTPLATE);
     }
 
     private void runTrigger(MinecraftClient c) {
@@ -170,46 +219,6 @@ public class ExampleMod implements ModInitializer {
                 if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
                     c.interactionManager.attackEntity(c.player, p);
                     c.player.swingHand(Hand.MAIN_HAND);
-                }
-            }
-        }
-    }
-
-    private void onWorldRender(WorldRenderContext context) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (!esp || client.player == null) return;
-        float tickDelta = client.getRenderTickCounter().getTickDelta(true);
-        Vec3d camPos = context.camera().getPos();
-        MatrixStack ms = context.matrixStack();
-        for (PlayerEntity p : client.world.getPlayers()) {
-            if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
-            double x = MathHelper.lerp(tickDelta, p.prevX, p.getX()) - camPos.x;
-            double y = MathHelper.lerp(tickDelta, p.prevY, p.getY()) - camPos.y;
-            double z = MathHelper.lerp(tickDelta, p.prevZ, p.getZ()) - camPos.z;
-            ms.push();
-            ms.translate(x, y, z);
-            ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            float w = p.getWidth(); float h = p.getHeight();
-            VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
-            Matrix4f model = ms.peek().getPositionMatrix();
-            buffer.vertex(model, -w/2, 0, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
-            buffer.vertex(model, w/2, 0, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
-            buffer.vertex(model, w/2, h, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
-            buffer.vertex(model, -w/2, h, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
-            buffer.vertex(model, -w/2, 0, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
-            ms.pop();
-        }
-    }
-
-    private void checkTotem(MinecraftClient c) {
-        if (!c.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
-            for (int i = 0; i < 45; i++) {
-                if (c.player.getInventory().getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
-                    int slot = (i < 9) ? (i + 36) : i;
-                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, slot, 0, SlotActionType.PICKUP, c.player);
-                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, 45, 0, SlotActionType.PICKUP, c.player);
-                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, slot, 0, SlotActionType.PICKUP, c.player);
-                    break;
                 }
             }
         }
@@ -269,8 +278,8 @@ public class ExampleMod implements ModInitializer {
             boolean[] states = { killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap };
             for (int i = 0; i < names.length; i++) {
                 int iy = cy - 70 + i * 24;
-                boolean hover = mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20;
-                ctx.fill(cx - 85, iy, cx + 85, iy + 20, hover ? 0xEE404040 : 0xEE202020);
+                boolean h = mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20;
+                ctx.fill(cx - 85, iy, cx + 85, iy + 20, h ? 0xEE404040 : 0xEE202020);
                 ctx.drawText(textRenderer, names[i], cx - 80, iy + 6, states[i] ? 0x00FF00 : 0xFFFFFF, true);
             }
         }
@@ -356,3 +365,4 @@ public class ExampleMod implements ModInitializer {
         @Override public void render(DrawContext ctx, int mx, int my, float d) { super.render(ctx, mx, my, d); ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width/2, height/2, 0x00CCFF); }
     }
 }
+
