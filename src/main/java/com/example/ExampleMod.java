@@ -29,7 +29,6 @@ import org.lwjgl.glfw.GLFW;
 
 import java.io.FileWriter;
 import java.io.PrintWriter;
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -37,16 +36,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
-// ИМПОРТЫ ДЛЯ РЕНДЕРА
 import com.mojang.blaze3d.systems.RenderSystem;
-import net.minecraft.client.gl.ShaderProgramKeys;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
 
     public static double kaRange = 3.8D, kawallsRange = 3.0D;
-
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1, keyFP = GLFW.GLFW_KEY_G, keyES = GLFW.GLFW_KEY_C;
 
     public static String friendsRaw = "";
@@ -65,7 +61,7 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // ИСПРАВЛЕНО: Теперь открывается на цифру 0 (ноль)
+            // ОТКРЫТИЕ МЕНЮ НА ЦИФРУ 0 (ВЕРХНЯЯ ПАНЕЛЬ)
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -75,19 +71,17 @@ public class ExampleMod implements ModInitializer {
                 if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
                 if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
                 if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
-            
                 if (isPressed(win, keyFB)) { fullbright = !fullbright; notify(client, "FullBright", fullbright); }
-
                 if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
                 if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
             }
 
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
-            
             if (autoTotem) checkTotem(client);
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
+            // ТВОЙ АНТИОТКИД (0%)
             if (antiVelocity && client.player.hurtTime > 0) {
                  client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
@@ -98,7 +92,6 @@ public class ExampleMod implements ModInitializer {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
             if (p == c.player || !p.isAlive() || p.isSpectator() || p.isInvisible() || p.getAbilities().invulnerable) continue;
-            
             if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = c.player.distanceTo(p);
             if (d <= kaRange) {
@@ -111,6 +104,7 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
 
+            // ТВОЯ НАВОДКА (0.70f)
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
@@ -184,26 +178,19 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- ИСПРАВЛЕННЫЙ ESP (Прямая отрисовка для просвечивания) ---
+    // --- ИСПРАВЛЕННЫЙ ESP (БЕЗ ОШИБОК И СКВОЗЬ СТЕНЫ) ---
     private void onWorldRender(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
-        // Подготовка рендера
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableDepthTest(); // Отключаем тест глубины (просвечивание)
-        RenderSystem.depthMask(false);
-        RenderSystem.lineWidth(2.0F); // Толщина линий
+        // Фикс шейдера и просвечивания
+        RenderSystem.disableDepthTest();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader); // ИСПРАВЛЕННЫЙ МЕТОД 1.21.4
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
-
-        // Используем прямой Tessellator для немедленной отрисовки
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+        VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
@@ -214,41 +201,30 @@ public class ExampleMod implements ModInitializer {
 
             ms.push();
             ms.translate(x, y, z);
-            
-            // Поворот "биллборда" (статичный 2D вид)
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
 
-            float w = p.getWidth() + 0.1f; 
+            float w = p.getWidth() / 2 + 0.1f;
             float h = p.getHeight() + 0.1f;
+            Matrix4f model = ms.peek().getPositionMatrix();
 
-            Matrix4f pos = ms.peek().getPositionMatrix();
-            float r = 0f, g = 1f, b = 1f, a = 1f; // Цвет (Циан)
-
-            // Вершины коробки
-            buffer.vertex(pos, -w/2, 0, 0).color(r,g,b,a);
-            buffer.vertex(pos, -w/2, h, 0).color(r,g,b,a);
-
-            buffer.vertex(pos, w/2, 0, 0).color(r,g,b,a);
-            buffer.vertex(pos, w/2, h, 0).color(r,g,b,a);
-
-            buffer.vertex(pos, -w/2, h, 0).color(r,g,b,a);
-            buffer.vertex(pos, w/2, h, 0).color(r,g,b,a);
-
-            buffer.vertex(pos, -w/2, 0, 0).color(r,g,b,a);
-            buffer.vertex(pos, w/2, 0, 0).color(r,g,b,a);
-
+            // Рисуем 2D коробку (Циан)
+            drawBox(buffer, model, w, h);
             ms.pop();
         }
-
-        // Отрисовка буфера сразу
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
-
-        // Возврат настроек
-        RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
     }
-    // -------------------------
+
+    private void drawBox(VertexConsumer b, Matrix4f m, float w, float h) {
+        // Линии прямоугольника
+        b.vertex(m, -w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, -w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, -w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, -w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+        b.vertex(m, w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+    }
 
     private void checkTotem(MinecraftClient c) {
         if (!c.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
@@ -306,8 +282,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI КЛАССЫ ---
-
+    // --- GUI ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -386,7 +361,6 @@ public class ExampleMod implements ModInitializer {
             int x = width/2, y = height/2;
             if (mx >= x - 115 && mx <= x - 40 && my >= y - 20 && my <= y - 5) { rF.setText("3.8"); wF.setText("3.1"); return true; }
             if (mx >= x - 30 && mx <= x + 45 && my >= y - 20 && my <= y - 5) { rF.setText("4.0"); wF.setText("3.3"); return true; }
-            
             if (mx >= x - 115 && mx <= x - 30 && my >= y + 10 && my <= y + 25) { autoRun = !autoRun; return true; }
             if (mx >= x + 30 && mx <= x + 115 && my >= y + 10 && my <= y + 25) { antiVelocity = !antiVelocity; return true; }
             return super.mouseClicked(mx, my, b);
