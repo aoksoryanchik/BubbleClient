@@ -38,9 +38,11 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
+    // Состояния функций
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
 
+    // Настройки и бинды
     public static double kaRange = 3.8D, kawallsRange = 3.0D;
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_G, keyES = GLFW.GLFW_KEY_C;
@@ -56,12 +58,14 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
+        // Регистрация рендера ESP (LAST отрисовывается в конце кадра)
         WorldRenderEvents.LAST.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
+            // Меню на клавишу 0
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -76,17 +80,20 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
             }
 
+            // Логика функций
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
+            // AntiVelocity (фикс откидывания)
             if (antiVelocity && client.player.hurtTime > 0) {
                  client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
         });
     }
 
+    // Рендер ESP через стены
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -95,13 +102,12 @@ public class ExampleMod implements ModInitializer {
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Фикс под 1.21.4: RenderSystem.clear теперь без второго аргумента
+        // Фикс под 1.21.4 (очистка буфера глубины для рендера поверх стен)
         RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT);
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        // Фикс под 1.21.4: название метода шейдера изменено
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
 
         Tessellator tessellator = Tessellator.getInstance();
@@ -122,6 +128,7 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.05f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
+            // Отрисовка рамки (Малиновый цвет)
             drawBox(bufferBuilder, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
             ms.pop();
         }
@@ -138,6 +145,7 @@ public class ExampleMod implements ModInitializer {
         b.vertex(m, w, 0, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
     }
 
+    // Киллаура (Ares/MainBlaze Bypass)
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
@@ -155,9 +163,13 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f)); 
-            c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
-            if (c.player.getAttackCooldownProgress(0) >= (0.90F + random.nextFloat() * 0.04F)) {
+            
+            // Плавная наводка (Rotation Smoothing)
+            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.75f)); 
+            c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.75f));
+
+            // Рандомизация КД атаки
+            if (c.player.getAttackCooldownProgress(0) >= (0.91F + random.nextFloat() * 0.05F)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -169,6 +181,7 @@ public class ExampleMod implements ModInitializer {
         return start + diff * speed;
     }
 
+    // Быстрый перл
     private void throwPearl(MinecraftClient client) {
         int pS = -1;
         for (int i = 0; i < 9; i++) {
@@ -182,6 +195,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // Свап Элитры/Нагрудника
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
         boolean wear = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.CHEST).isOf(Items.ELYTRA);
@@ -199,6 +213,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // Триггербот
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
             if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) >= 1.0F) {
@@ -208,6 +223,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // АвтоТотем
     private void checkTotem(MinecraftClient c) {
         if (!c.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
             for (int i = 0; i < 45; i++) {
@@ -264,6 +280,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // ГЛАВНОЕ МЕНЮ
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -304,6 +321,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // НАСТРОЙКИ КИЛЛАУРЫ
     public static class KillAuraSettings extends Screen {
         private final Screen parent; private TextFieldWidget rF, wF, fF;
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
@@ -353,6 +371,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // ЭКРАН БИНДОВ
     public static class BindScreen extends Screen {
         private final Screen parent; private final int id;
         public BindScreen(Screen parent, int id) { super(Text.literal("Bind")); this.parent = parent; this.id = id; }
