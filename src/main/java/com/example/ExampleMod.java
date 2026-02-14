@@ -16,7 +16,6 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.*;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -68,7 +67,7 @@ public class ExampleMod implements ModInitializer {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Обработка горячих клавиш
+            // Обработка горячих клавиш без меню
             if (client.currentScreen == null) {
                 if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
                 if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
@@ -79,7 +78,7 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
             }
 
-            // Работа модулей
+            // Логика модулей
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (killaura) runAura(client);
@@ -91,46 +90,74 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    // --- ИСПРАВЛЕННЫЙ ELYTRA SWAP ДЛЯ 1.21.4 ---
+    // --- ФУНКЦИЯ ELYTRA SWAP (ИСПРАВЛЕНА: Прямая проверка предметов) ---
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
         ItemStack chestStack = client.player.getEquippedStack(EquipmentSlot.CHEST);
+        
+        // Проверяем, надета ли элитра
         boolean wearingElytra = chestStack.isOf(Items.ELYTRA);
 
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
+            if (stack.isEmpty()) continue;
+
             if (wearingElytra) {
-                // ФИКС: Используем armor.getType().getEquipmentSlot() вместо getSlotType()
-                if (stack.getItem() instanceof ArmorItem armor) {
-                    if (armor.getType().getEquipmentSlot() == EquipmentSlot.CHEST) {
-                        slot = i; break;
-                    }
+                // Если надета элитра -> ищем нагрудник
+                // Используем "тупой" но надежный метод проверки, чтобы избежать ошибок компиляции
+                if (isChestplate(stack)) {
+                    slot = i;
+                    break;
                 }
-            } else if (stack.isOf(Items.ELYTRA)) {
-                slot = i; break;
+            } else {
+                // Если надет нагрудник -> ищем элитру
+                if (stack.isOf(Items.ELYTRA)) {
+                    slot = i;
+                    break;
+                }
             }
         }
+
         if (slot != -1) {
+            // Механика свапа (клик по слоту -> клик по нагруднику -> клик обратно)
             int sid = client.player.playerScreenHandler.syncId;
             int invSlot = slot < 9 ? slot + 36 : slot;
             client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
-            client.interactionManager.clickSlot(sid, 6, 0, SlotActionType.PICKUP, client.player);
+            client.interactionManager.clickSlot(sid, 6, 0, SlotActionType.PICKUP, client.player); // Слот 6 - это слот нагрудника
             client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
         }
     }
 
-    // --- ИСПРАВЛЕННЫЙ FAST PEARL ДЛЯ 1.21.4 ---
+    // Вспомогательный метод для проверки нагрудников (чтобы не было ошибок с ArmorItem)
+    private boolean isChestplate(ItemStack stack) {
+        return stack.isOf(Items.NETHERITE_CHESTPLATE) || 
+               stack.isOf(Items.DIAMOND_CHESTPLATE) ||
+               stack.isOf(Items.IRON_CHESTPLATE) ||
+               stack.isOf(Items.GOLDEN_CHESTPLATE) ||
+               stack.isOf(Items.CHAINMAIL_CHESTPLATE) ||
+               stack.isOf(Items.LEATHER_CHESTPLATE);
+    }
+
+    // --- ФУНКЦИЯ FAST PEARL (ИСПРАВЛЕНА: Использование встроенного Interact) ---
     private void throwPearl(MinecraftClient client) {
         int pearlSlot = -1;
         for (int i = 0; i < 9; i++) {
-            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pearlSlot = i; break; }
+            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { 
+                pearlSlot = i; 
+                break; 
+            }
         }
+        
         if (pearlSlot != -1) {
             int oldSlot = client.player.getInventory().selectedSlot;
             
-            // ФИКС: Вместо отправки сырого пакета (который крашит из-за sequence), меняем слот и жмем
+            // Переключаемся на перл
             client.player.getInventory().selectedSlot = pearlSlot;
+            
+            // Используем официальный метод взаимодействия (сам отправляет правильный пакет с sequence)
             client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+            
+            // Возвращаемся обратно
             client.player.getInventory().selectedSlot = oldSlot;
         }
     }
@@ -156,6 +183,7 @@ public class ExampleMod implements ModInitializer {
             VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
             Matrix4f model = ms.peek().getPositionMatrix();
             
+            // Рисуем коробку
             buffer.vertex(model, -w/2, 0, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
             buffer.vertex(model, w/2, 0, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
             buffer.vertex(model, w/2, h, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
@@ -262,7 +290,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- МЕНЮ (ПОЛНОЕ) ---
+    // --- МЕНЮ (ПОЛНОЕ, БЕЗ ИЗМЕНЕНИЙ) ---
 
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
