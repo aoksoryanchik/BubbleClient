@@ -89,16 +89,15 @@ public class ExampleMod implements ModInitializer {
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
         ItemStack chest = client.player.getEquippedStack(EquipmentSlot.CHEST);
-        boolean wearingElytra = chest.getItem() instanceof ElytraItem;
+        boolean wearingElytra = chest.isOf(Items.ELYTRA);
 
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
-            Item item = stack.getItem();
             if (wearingElytra) {
-                if (item instanceof ArmorItem ai && ai.getSlotType() == EquipmentSlot.CHEST) {
+                if (stack.getItem() instanceof ArmorItem ai && ai.getSlotType() == EquipmentSlot.CHEST) {
                     slot = i; break;
                 }
-            } else if (item instanceof ElytraItem) {
+            } else if (stack.isOf(Items.ELYTRA)) {
                 slot = i; break;
             }
         }
@@ -119,8 +118,8 @@ public class ExampleMod implements ModInitializer {
         if (ps != -1) {
             int old = client.player.getInventory().selectedSlot;
             client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(ps));
-            // В 1.21.4 используется другой конструктор пакета
-            client.getNetworkHandler().sendPacket(new PlayerInteractItemC2SPacket(Hand.MAIN_HAND, 0, 0.0f, 0.0f));
+            // Исправленный пакет для 1.21.4
+            client.getNetworkHandler().sendPacket(new PlayerInteractItemC2SPacket(Hand.MAIN_HAND, 0, client.player.getYaw(), client.player.getPitch()));
             client.player.swingHand(Hand.MAIN_HAND);
             client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(old));
         }
@@ -179,7 +178,6 @@ public class ExampleMod implements ModInitializer {
             if (p == c.player || !p.isAlive() || p.isSpectator()) continue;
             if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = c.player.distanceTo(p);
-            // Киллаура обходит античит майнблейз и аресмайн с этими настройками
             if (d <= kaRange && d < dist) { if (c.player.canSee(p) || d <= kaWallsRange) { dist = d; target = p; } }
         }
         if (target != null) {
@@ -259,7 +257,7 @@ public class ExampleMod implements ModInitializer {
             super.render(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
             ctx.fill(cx - 95, cy - 105, cx + 95, cy + 120, 0xFF1A1A1B);
-            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE CLIENT 1.21.4", cx, cy - 95, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE 1.21.4", cx, cy - 95, -1);
             String[] n = { "KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap" };
             boolean[] s = { killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap };
             for (int i = 0; i < n.length; i++) {
