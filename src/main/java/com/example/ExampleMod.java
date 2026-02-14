@@ -16,6 +16,7 @@ import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.item.*;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
@@ -56,7 +57,6 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
             
-            // Открытие меню на 0
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -86,14 +86,13 @@ public class ExampleMod implements ModInitializer {
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
-        float tickDelta = context.tickCounter().getTickDelta(true);
+        float tickDelta = (float)context.tickCounter().getTickDelta(true);
 
-        // НАСТРОЙКА РЕНДЕРА ДЛЯ ESP ЧЕРЕЗ СТЕНЫ
-        RenderSystem.disableDepthTest(); // Ключевая фишка для свечения сквозь стены
+        RenderSystem.disableDepthTest();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        // В 1.21.4 используем CoreShaders вместо GameRenderer
-        RenderSystem.setShader(CoreShaders.POSITION_COLOR);
+        // ФИКС 1.21.4: Используем метод-референс, если класс не найден
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
@@ -111,7 +110,7 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.1f;
 
             Tessellator tessellator = Tessellator.getInstance();
-            // В 1.21.4 нужно явно указывать VertexFormat через begin
+            // ФИКС 1.21.4: Новый формат вызова отрисовки
             BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINE_STRIP, VertexFormats.POSITION_COLOR);
             
             int r = 0, g = 255, b = 255, a = 255;
@@ -123,7 +122,7 @@ public class ExampleMod implements ModInitializer {
             buffer.vertex(mat, -w, h, 0).color(r, g, b, a);
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
 
-            // Фикс 1.21.4: отрисовка через глобальную программу
+            // ФИКС 1.21.4: Отрисовка через BufferRenderer
             BufferRenderer.drawWithGlobalProgram(buffer.end());
             
             ms.pop();
@@ -147,11 +146,8 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            
-            // Твои настройки 0.70f под Ares/MainBlaze
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
-            
             if (c.player.getAttackCooldownProgress(0) >= (0.92f + random.nextFloat() * 0.04f)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
@@ -184,9 +180,9 @@ public class ExampleMod implements ModInitializer {
         boolean wearingElytra = chest.isOf(Items.ELYTRA);
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
+            // ФИКС 1.21.4: Используем MobEntity.getPreferredEquipmentSlot(stack)
             if (wearingElytra) {
-                // Фикс ошибки 12308: getType().getEquipmentSlot()
-                if (stack.getItem() instanceof ArmorItem armor && armor.getType().getEquipmentSlot() == EquipmentSlot.CHEST) {
+                if (stack.getItem() instanceof ArmorItem && MobEntity.getPreferredEquipmentSlot(stack) == EquipmentSlot.CHEST) {
                     slot = i; break;
                 }
             } else if (stack.isOf(Items.ELYTRA)) {
@@ -264,7 +260,6 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // КЛАССЫ МЕНЮ (БЕЗ ИЗМЕНЕНИЙ В ЛОГИКЕ, ТОЛЬКО ФИКСЫ ОТРИСОВКИ)
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
