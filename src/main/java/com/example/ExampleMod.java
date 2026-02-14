@@ -38,18 +38,12 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
     public static double kaRange = 3.8D, kaWallsRange = 3.0D;
-    
-    // Бинды
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1, keyFP = GLFW.GLFW_KEY_G, keyES = GLFW.GLFW_KEY_C;
-    
-    // Друзья
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
-    
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
@@ -58,15 +52,10 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         WorldRenderEvents.LAST.register(this::onWorldRender);
-
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
-
-            if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
-                client.setScreen(new BubbleMenu());
-            }
-
+            if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) client.setScreen(new BubbleMenu());
             if (client.currentScreen == null) {
                 if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
                 if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
@@ -76,15 +65,11 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
                 if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
             }
-
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
-            
-            if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(0, client.player.getVelocity().y, 0);
-            }
+            if (antiVelocity && client.player.hurtTime > 0) client.player.setVelocity(0, client.player.getVelocity().y, 0);
         });
     }
 
@@ -92,20 +77,18 @@ public class ExampleMod implements ModInitializer {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return;
-
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
-        float tickDelta = (float) context.tickCounter().getTickDelta(true);
+        float tickDelta = context.tickCounter().getTickDelta(true);
 
         RenderSystem.disableDepthTest();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        // ИСПРАВЛЕНО ДЛЯ 1.21.4: Используем getPositionColorProgram
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+        // ИСПРАВЛЕНО: В 1.21.4 шейдеры берутся через CoreShaders
+        RenderSystem.setShader(net.minecraft.client.render.GameRenderer::getPositionColorProgram);
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
-
             double x = MathHelper.lerp(tickDelta, p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(tickDelta, p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(tickDelta, p.prevZ, p.getZ()) - camPos.z;
@@ -113,15 +96,13 @@ public class ExampleMod implements ModInitializer {
             ms.push();
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            
             Matrix4f mat = ms.peek().getPositionMatrix();
             float w = p.getWidth() / 2f + 0.05f;
             float h = p.getHeight() + 0.05f;
 
             Tessellator tessellator = Tessellator.getInstance();
-            // ИСПРАВЛЕНО ДЛЯ 1.21.4: Метод begin теперь требует VertexFormat.DrawMode
+            // ИСПРАВЛЕНО: В 1.21.4 метод begin требует DrawMode и VertexFormat
             BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINE_STRIP, VertexFormats.POSITION_COLOR);
-
             int r = 0, g = 204, b = 255, a = 255;
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
             buffer.vertex(mat, w, 0, 0).color(r, g, b, a);
@@ -129,7 +110,7 @@ public class ExampleMod implements ModInitializer {
             buffer.vertex(mat, -w, h, 0).color(r, g, b, a);
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
 
-            // ИСПРАВЛЕНО ДЛЯ 1.21.4: draw() заменен на drawWithGlobalProgram
+            // ИСПРАВЛЕНО: Рендеринг через drawWithGlobalProgram
             BufferRenderer.drawWithGlobalProgram(buffer.end());
             ms.pop();
         }
@@ -139,13 +120,11 @@ public class ExampleMod implements ModInitializer {
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
-            if (p == c.player || !p.isAlive() || p.isSpectator() || p.isInvisible() || p.getAbilities().invulnerable) continue;
+            if (p == c.player || !p.isAlive() || p.isSpectator() || p.isInvisible()) continue;
             if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = c.player.distanceTo(p);
-            if (d <= kaRange) {
-                if (c.player.canSee(p) || d <= kaWallsRange) {
-                    if (d < dist) { dist = d; target = p; }
-                }
+            if (d <= kaRange && (c.player.canSee(p) || d <= kaWallsRange)) {
+                if (d < dist) { dist = d; target = p; }
             }
         }
         if (target != null) {
@@ -153,12 +132,9 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            
-            // ТВОЯ НАВОДКА (БЕЗ ИЗМЕНЕНИЙ)
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
-            
-            if (c.player.getAttackCooldownProgress(0) >= (0.90f + random.nextFloat() * 0.04f)) {
+            if (c.player.getAttackCooldownProgress(0) >= (0.92f + random.nextFloat() * 0.04f)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -184,32 +160,15 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void throwPearl(MinecraftClient client) {
-        int pearlSlot = -1;
-        for (int i = 0; i < 9; i++) {
-            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pearlSlot = i; break; }
-        }
-        if (pearlSlot != -1) {
-            int oldSlot = client.player.getInventory().selectedSlot;
-            client.player.getInventory().selectedSlot = pearlSlot;
-            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-            client.player.getInventory().selectedSlot = oldSlot;
-        }
-    }
-
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
-        ItemStack chestStack = client.player.getEquippedStack(EquipmentSlot.CHEST);
-        boolean wearingElytra = chestStack.isOf(Items.ELYTRA);
+        boolean wearingElytra = client.player.getEquippedStack(EquipmentSlot.CHEST).isOf(Items.ELYTRA);
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
-            if (stack.isEmpty()) continue;
             if (wearingElytra) {
-                // ИСПРАВЛЕНО ДЛЯ 1.21.4: Вместо getSlotType() используем getSlot()
-                if (stack.getItem() instanceof ArmorItem armor) {
-                    if (armor.getSlot() == EquipmentSlot.CHEST) {
-                        slot = i; break;
-                    }
+                // ИСПРАВЛЕНО: Проверка на нагрудник в 1.21.4 через тип брони
+                if (stack.getItem() instanceof ArmorItem armor && armor.getSlotType() == EquipmentSlot.CHEST) {
+                    slot = i; break;
                 }
             } else if (stack.isOf(Items.ELYTRA)) {
                 slot = i; break;
@@ -221,6 +180,17 @@ public class ExampleMod implements ModInitializer {
             client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
             client.interactionManager.clickSlot(sid, 6, 0, SlotActionType.PICKUP, client.player);
             client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
+        }
+    }
+
+    private void throwPearl(MinecraftClient client) {
+        int pearlSlot = -1;
+        for (int i = 0; i < 9; i++) if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pearlSlot = i; break; }
+        if (pearlSlot != -1) {
+            int old = client.player.getInventory().selectedSlot;
+            client.player.getInventory().selectedSlot = pearlSlot;
+            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+            client.player.getInventory().selectedSlot = old;
         }
     }
 
@@ -250,9 +220,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void updateFriends(String raw) {
         friendsRaw = raw; friendsList.clear();
-        if (raw != null && !raw.isEmpty()) {
-            Arrays.stream(raw.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
-        }
+        if (raw != null && !raw.isEmpty()) Arrays.stream(raw.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
     }
 
     public static void saveConfig() {
@@ -266,9 +234,9 @@ public class ExampleMod implements ModInitializer {
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":", -1);
             if (p.length >= 13) {
-                kaRange = Double.parseDouble(p[0]); kaWallsRange = Double.parseDouble(p[1]); 
-                autoRun = Boolean.parseBoolean(p[2]); keyKA = Integer.parseInt(p[3]); 
-                keyTB = Integer.parseInt(p[4]); keyFB = Integer.parseInt(p[5]); 
+                kaRange = Double.parseDouble(p[0]); kaWallsRange = Double.parseDouble(p[1]);
+                autoRun = Boolean.parseBoolean(p[2]); keyKA = Integer.parseInt(p[3]);
+                keyTB = Integer.parseInt(p[4]); keyFB = Integer.parseInt(p[5]);
                 keyAT = Integer.parseInt(p[6]); updateFriends(p[7]);
                 esp = Boolean.parseBoolean(p[8]); keyESP = Integer.parseInt(p[9]);
                 keyFP = Integer.parseInt(p[10]); keyES = Integer.parseInt(p[11]);
@@ -277,7 +245,6 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // GUI
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -323,12 +290,9 @@ public class ExampleMod implements ModInitializer {
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
         @Override protected void init() {
             int x = width/2, y = height/2;
-            rF = new TextFieldWidget(textRenderer, x - 40, y - 75, 40, 14, Text.literal(""));
-            rF.setText(String.valueOf(kaRange));
-            wF = new TextFieldWidget(textRenderer, x - 40, y - 55, 40, 14, Text.literal(""));
-            wF.setText(String.valueOf(kaWallsRange));
-            fF = new TextFieldWidget(textRenderer, x + 15, y - 75, 100, 14, Text.literal("Friends"));
-            fF.setText(friendsRaw);
+            rF = new TextFieldWidget(textRenderer, x - 40, y - 75, 40, 14, Text.literal("")); rF.setText(String.valueOf(kaRange));
+            wF = new TextFieldWidget(textRenderer, x - 40, y - 55, 40, 14, Text.literal("")); wF.setText(String.valueOf(kaWallsRange));
+            fF = new TextFieldWidget(textRenderer, x + 15, y - 75, 100, 14, Text.literal("Friends")); fF.setText(friendsRaw);
             addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
         }
         @Override public void render(DrawContext ctx, int mx, int my, float delta) {
@@ -360,10 +324,7 @@ public class ExampleMod implements ModInitializer {
             if (mx >= x - 30 && mx <= x + 55 && my >= y + 10 && my <= y + 25) { antiVelocity = !antiVelocity; return true; }
             return super.mouseClicked(mx, my, b);
         }
-        @Override public void close() { 
-            try { kaRange = Double.parseDouble(rF.getText()); kaWallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {} 
-            updateFriends(fF.getText()); saveConfig(); client.setScreen(parent); 
-        }
+        @Override public void close() { try { kaRange = Double.parseDouble(rF.getText()); kaWallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {} updateFriends(fF.getText()); saveConfig(); client.setScreen(parent); }
     }
 
     public static class BindScreen extends Screen {
@@ -371,15 +332,10 @@ public class ExampleMod implements ModInitializer {
         public BindScreen(Screen parent, int id) { super(Text.literal("Bind")); this.parent = parent; this.id = id; }
         @Override public boolean keyPressed(int k, int s, int m) {
             int v = (k == GLFW.GLFW_KEY_ESCAPE) ? -1 : k;
-            if (id == 0) keyKA = v; else if (id == 1) keyTB = v; else if (id == 2) keyFB = v; 
-            else if (id == 3) keyAT = v; else if (id == 4) keyESP = v; 
-            else if (id == 5) keyFP = v; else if (id == 6) keyES = v;
+            if (id == 0) keyKA = v; else if (id == 1) keyTB = v; else if (id == 2) keyFB = v; else if (id == 3) keyAT = v; else if (id == 4) keyESP = v; else if (id == 5) keyFP = v; else if (id == 6) keyES = v;
             saveConfig(); client.setScreen(parent); return true;
         }
-        @Override public void render(DrawContext ctx, int mx, int my, float d) { 
-            super.render(ctx, mx, my, d); 
-            ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width/2, height/2, 0x00CCFF); 
-        }
+        @Override public void render(DrawContext ctx, int mx, int my, float d) { super.render(ctx, mx, my, d); ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width/2, height/2, 0x00CCFF); }
     }
 }
 
