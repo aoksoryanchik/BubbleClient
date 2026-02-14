@@ -61,7 +61,7 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // Исправлено: теперь открытие меню строго на клавишу 0 (над буквами)
+            // Меню на клавишу 0
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -81,8 +81,13 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(0, client.player.getVelocity().y, 0);
+            // ОБНОВЛЕННЫЙ ANTIVELOCITY (Легитный для серверов)
+            if (antiVelocity && client.player.hurtTime > 0 && !client.player.isDead()) {
+                // Вместо полной остановки (0), мы умножаем скорость на 0.4
+                // Это снижает откидывание на 60%, что выглядит естественно для античита
+                double reduction = 0.4;
+                Vec3d velocity = client.player.getVelocity();
+                client.player.setVelocity(velocity.x * reduction, velocity.y, velocity.z * reduction);
             }
         });
     }
@@ -104,7 +109,7 @@ public class ExampleMod implements ModInitializer {
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
-            // Сохранено: ESP видит невидимок
+            // ESP показывает невидимок
             if (p == client.player || !p.isAlive()) continue;
 
             ms.push();
@@ -174,14 +179,19 @@ public class ExampleMod implements ModInitializer {
 
     private void throwPearl(MinecraftClient client) {
         int pS = -1;
-        for (int i = 0; i < 9; i++) {
-            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pS = i; break; }
-        }
+        for (int i = 9; i < 36; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pS = i; break; } }
+        if (pS == -1) for (int i = 0; i < 9; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pS = i; break; } }
         if (pS != -1) {
             int old = client.player.getInventory().selectedSlot;
-            client.player.getInventory().selectedSlot = pS;
-            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-            client.player.getInventory().selectedSlot = old;
+            if (pS < 9) {
+                client.player.getInventory().selectedSlot = pS;
+                client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+                client.player.getInventory().selectedSlot = old;
+            } else {
+                client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, pS, old, SlotActionType.SWAP, client.player);
+                client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+                client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, pS, old, SlotActionType.SWAP, client.player);
+            }
         }
     }
 
@@ -330,8 +340,12 @@ public class ExampleMod implements ModInitializer {
             ctx.drawText(textRenderer, "Walls:", cx - 115, cy - 52, -1, true);
             drawBtn(ctx, cx - 115, cy - 20, "AresMine", mx, my);
             drawBtn(ctx, cx - 30, cy - 20, "MainBlaze", mx, my);
-            drawCheck(ctx, cx - 115, cy + 10, "AutoRun", autoRun, mx, my);
-            drawCheck(ctx, cx - 30, cy + 10, "AntiVelocity", antiVelocity, mx, my);
+
+            // ИСПРАВЛЕННЫЕ КООРДИНАТЫ КНОПОК
+            // AutoRun (Слева)
+            drawCheck(ctx, cx - 95, cy + 10, "AutoRun", autoRun, mx, my);
+            // AntiVelocity (Справа, ближе к центру)
+            drawCheck(ctx, cx + 10, cy + 10, "AntiVelocity", antiVelocity, mx, my);
         }
         private void drawBtn(DrawContext ctx, int x, int y, String n, int mx, int my) {
             boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
@@ -348,8 +362,13 @@ public class ExampleMod implements ModInitializer {
             int cx = width / 2, cy = height / 2;
             if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { rF.setText("3.8"); wF.setText("3.1"); return true; }
             if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { rF.setText("4.0"); wF.setText("3.3"); return true; }
-            if (mx >= cx - 115 && mx <= cx - 30 && my >= cy + 10 && my <= cy + 25) { autoRun = !autoRun; return true; }
-            if (mx >= cx + 30 && mx <= cx + 115 && my >= cy + 10 && my <= cy + 25) { antiVelocity = !antiVelocity; return true; }
+
+            // ОБНОВЛЕННЫЕ КООРДИНАТЫ НАЖАТИЯ (Совпадают с отрисовкой)
+            // AutoRun (cx-95 to cx-10)
+            if (mx >= cx - 95 && mx <= cx - 10 && my >= cy + 10 && my <= cy + 25) { autoRun = !autoRun; return true; }
+            // AntiVelocity (cx+10 to cx+95)
+            if (mx >= cx + 10 && mx <= cx + 95 && my >= cy + 10 && my <= cy + 25) { antiVelocity = !antiVelocity; return true; }
+
             return super.mouseClicked(mx, my, b);
         }
         @Override
@@ -377,3 +396,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
