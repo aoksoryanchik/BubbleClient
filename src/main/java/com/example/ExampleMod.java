@@ -88,16 +88,15 @@ public class ExampleMod implements ModInitializer {
     private void onWorldRender(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null) return;
+        if (client.player == null || client.world == null) return;
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
-        float tickDelta = context.tickCounter().getTickDelta(true);
+        float tickDelta = (float) context.tickCounter().getTickDelta(true);
 
         RenderSystem.disableDepthTest();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        // Исправлено: корректный вызов шейдера для 1.21.4
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
 
         for (PlayerEntity p : client.world.getPlayers()) {
@@ -125,11 +124,11 @@ public class ExampleMod implements ModInitializer {
             buffer.vertex(mat, -w, h, 0).color(r, g, b, a);
             buffer.vertex(mat, -w, 0, 0).color(r, g, b, a);
 
-            // Исправлено: новый метод отрисовки буфера
             BufferRenderer.drawWithGlobalProgram(buffer.end());
             ms.pop();
         }
         RenderSystem.enableDepthTest();
+        RenderSystem.disableBlend();
     }
 
     private void runAura(MinecraftClient c) {
@@ -192,13 +191,13 @@ public class ExampleMod implements ModInitializer {
 
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
-        ItemStack chestStack = client.player.getEquippedStack(EquipmentSlot.CHEST);
-        boolean wearingElytra = chestStack.isOf(Items.ELYTRA);
+        ItemStack chest = client.player.getEquippedStack(EquipmentSlot.CHEST);
+        boolean hasElytra = chest.isOf(Items.ELYTRA);
+        
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (stack.isEmpty()) continue;
-            // Исправлено: безопасная проверка типа брони для 1.21.4
-            if (wearingElytra) {
+            if (hasElytra) {
                 if (stack.getItem() instanceof ArmorItem armor && armor.getSlotType() == EquipmentSlot.CHEST) {
                     slot = i; break;
                 }
@@ -207,11 +206,10 @@ public class ExampleMod implements ModInitializer {
             }
         }
         if (slot != -1) {
-            int sid = client.player.playerScreenHandler.syncId;
             int invSlot = slot < 9 ? slot + 36 : slot;
-            client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
-            client.interactionManager.clickSlot(sid, 6, 0, SlotActionType.PICKUP, client.player);
-            client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
+            client.interactionManager.clickSlot(client.player.playerScreenHandler.syncId, invSlot, 0, SlotActionType.PICKUP, client.player);
+            client.interactionManager.clickSlot(client.player.playerScreenHandler.syncId, 6, 0, SlotActionType.PICKUP, client.player);
+            client.interactionManager.clickSlot(client.player.playerScreenHandler.syncId, invSlot, 0, SlotActionType.PICKUP, client.player);
         }
     }
 
