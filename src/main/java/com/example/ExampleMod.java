@@ -25,6 +25,7 @@ import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.opengl.GL11;
 import com.mojang.blaze3d.systems.RenderSystem;
 
 import java.io.FileWriter;
@@ -55,7 +56,7 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Используем событие LAST - это гарантирует, что мы рисуем в самом конце кадра
+        // Регистрируем в LAST - самая стабильная точка для "поверх всего"
         WorldRenderEvents.LAST.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -88,7 +89,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    // --- ФИНАЛЬНЫЙ ESP: СКВОЗЬ СТЕНЫ + СТАТИЧНОСТЬ ---
+    // --- РЕНДЕР ESP КОТОРЫЙ РЕАЛЬНО ПРОБИВАЕТ СТЕНЫ ---
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -97,7 +98,8 @@ public class ExampleMod implements ModInitializer {
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // ПОЛНОЕ ОТКЛЮЧЕНИЕ ГЛУБИНЫ ДЛЯ ВСЕХ ПОСЛЕДУЮЩИХ ОПЕРАЦИЙ
+        // Магия: Очищаем буфер глубины ПЕРЕД нашей отрисовкой, чтобы для нас стен не существовало
+        RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT, false);
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
@@ -111,20 +113,19 @@ public class ExampleMod implements ModInitializer {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
 
             ms.push();
-            // Интерполяция для плавности
+            // Позиция
             double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
 
             ms.translate(x, y, z);
-            // Привязка к камере для статичности
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
 
             float w = p.getWidth() / 2 + 0.05f;
             float h = p.getHeight() + 0.05f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Рисуем малиновую рамку
+            // Цвет: Малиновый (1.0, 0.0, 0.6)
             drawBox(bufferBuilder, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
             
             ms.pop();
@@ -132,23 +133,20 @@ public class ExampleMod implements ModInitializer {
 
         BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
         
-        // Возвращаем настройки в дефолт
+        // Возвращаем как было
         RenderSystem.enableDepthTest();
         RenderSystem.depthMask(true);
     }
 
     private void drawBox(BufferBuilder b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
-        // Низ
+        // Линии бокса
         b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, w, 0, 0).color(r, g, bl, a);
-        // Верх
         b.vertex(m, -w, h, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
-        // Левая вертикаль
         b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, -w, h, 0).color(r, g, bl, a);
-        // Правая вертикаль
         b.vertex(m, w, 0, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
     }
 
-    // --- КИЛЛАУРА И ОСТАЛЬНОЕ (БЕЗ ИЗМЕНЕНИЙ) ---
+    // --- ВСЕ ОСТАЛЬНЫЕ ФУНКЦИИ БЕЗ ИЗМЕНЕНИЙ ---
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
