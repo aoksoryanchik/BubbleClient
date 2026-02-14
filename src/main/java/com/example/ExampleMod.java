@@ -57,8 +57,8 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Регистрируем ESP в событии LAST, чтобы рисовать поверх всего
-        WorldRenderEvents.LAST.register(this::onWorldRender);
+        // Используем AFTER_ENTITIES для ESP, чтобы рисовать после существ
+        WorldRenderEvents.AFTER_ENTITIES.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
@@ -83,6 +83,7 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
+            // ТВОЙ АНТИОТКИД 0%
             if (antiVelocity && client.player.hurtTime > 0) {
                  client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
@@ -106,6 +107,7 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            // НАВОДКА 0.70f
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
             if (c.player.getAttackCooldownProgress(0) >= (0.90F + random.nextFloat() * 0.04F)) {
@@ -170,21 +172,21 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- ИСПРАВЛЕННЫЙ ESP ДЛЯ 1.21.4 ---
+    // --- РАБОЧИЙ ESP ПОВЕРХ ВСЕГО ДЛЯ 1.21.4 ---
     private void onWorldRender(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
-        // Отключаем тест глубины, чтобы видеть сквозь блоки
+        // Отключаем проверку глубины (Wallhack)
         RenderSystem.disableDepthTest();
+        RenderSystem.enableBlend();
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Используем встроенный провайдер буферов
+        // Используем встроенный провайдер буферов. Слой DEBUG_LINE_STRIP отлично подходит для отрисовки поверх всего
         VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
-        // Слой Lines автоматически использует правильный шейдер в 1.21.4
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
@@ -196,31 +198,36 @@ public class ExampleMod implements ModInitializer {
 
             ms.push();
             ms.translate(x, y, z);
+            // Поворачиваем прямоугольник за камерой (Billboarding)
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
 
             float w = p.getWidth() / 2 + 0.1f;
             float h = p.getHeight() + 0.1f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Рисуем рамку
+            // Рисуем прямоугольник (Циан)
             drawBox(buffer, model, w, h);
             
             ms.pop();
         }
         
-        // ВАЖНО: Рисуем содержимое буфера прямо сейчас, пока DepthTest отключен
-        consumers.draw(RenderLayer.getLines());
+        // СБРОС БУФЕРА — это заставляет линии нарисоваться прямо сейчас
+        consumers.draw();
         RenderSystem.enableDepthTest();
+        RenderSystem.disableBlend();
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h) {
-        // Линии прямоугольника
+        // Цвет: 0, 1, 1 (Циан)
         b.vertex(m, -w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
         b.vertex(m, w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+
         b.vertex(m, -w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
         b.vertex(m, w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+
         b.vertex(m, -w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
         b.vertex(m, -w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+
         b.vertex(m, w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
         b.vertex(m, w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
     }
@@ -281,7 +288,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI ---
+    // --- МЕНЮ БЕЗ ИЗМЕНЕНИЙ ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -386,4 +393,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
