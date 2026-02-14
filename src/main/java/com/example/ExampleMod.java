@@ -56,7 +56,7 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Регистрируем в LAST - самая стабильная точка для "поверх всего"
+        // Регистрация рендера ESP
         WorldRenderEvents.LAST.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -82,28 +82,28 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // АНТИОТКИД (0%)
             if (antiVelocity && client.player.hurtTime > 0) {
                  client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
         });
     }
 
-    // --- РЕНДЕР ESP КОТОРЫЙ РЕАЛЬНО ПРОБИВАЕТ СТЕНЫ ---
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) return;
+        // Фикс NullPointerException: проверяем ms и мир
+        if (client.player == null || client.world == null || context.matrixStack() == null) return;
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Магия: Очищаем буфер глубины ПЕРЕД нашей отрисовкой, чтобы для нас стен не существовало
-        RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT, false);
+        // Исправлено: RenderSystem.clear в 1.21.4 принимает только маску
+        RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT);
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        // Исправлено: название метода в 1.21.4 изменено на getPositionColorProgram
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
 
         Tessellator tessellator = Tessellator.getInstance();
@@ -113,7 +113,6 @@ public class ExampleMod implements ModInitializer {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
 
             ms.push();
-            // Позиция
             double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
@@ -125,28 +124,23 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.05f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Цвет: Малиновый (1.0, 0.0, 0.6)
             drawBox(bufferBuilder, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
-            
             ms.pop();
         }
 
         BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
         
-        // Возвращаем как было
         RenderSystem.enableDepthTest();
         RenderSystem.depthMask(true);
     }
 
     private void drawBox(BufferBuilder b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
-        // Линии бокса
         b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, w, 0, 0).color(r, g, bl, a);
         b.vertex(m, -w, h, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
         b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, -w, h, 0).color(r, g, bl, a);
         b.vertex(m, w, 0, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
     }
 
-    // --- ВСЕ ОСТАЛЬНЫЕ ФУНКЦИИ БЕЗ ИЗМЕНЕНИЙ ---
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
