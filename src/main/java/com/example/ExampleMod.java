@@ -20,7 +20,6 @@ import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
@@ -56,7 +55,7 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // BEFORE_DEBUG_RENDER - позволяет рисовать поверх всего мира без краша буферов
+        // Используем BEFORE_DEBUG_RENDER для стабильности, но с правильным слоем
         WorldRenderEvents.BEFORE_DEBUG_RENDER.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -89,7 +88,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    // --- ИДЕАЛЬНЫЙ ESP: СКВОЗЬ БЛОКИ, БЕЗ ТРЯСКИ, БЕЗ КРАШЕЙ ---
+    // --- ИСПРАВЛЕННЫЙ ESP: СКВОЗЬ СТЕНЫ + СТАТИЧНЫЙ ---
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -98,13 +97,13 @@ public class ExampleMod implements ModInitializer {
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Магия просвечивания: отключаем DepthTest и заставляем рендер игнорировать Z-Buffer
+        // КЛЮЧЕВАЯ НАСТРОЙКА: Отключаем тест глубины ПЕРЕД получением буфера
         RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        RenderSystem.depthMask(false); 
 
-        // Используем встроенные буферы игры для стабильности
+        // Берем специальный слой, который игнорирует стандартный пайплайн рендера
         VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
@@ -112,7 +111,7 @@ public class ExampleMod implements ModInitializer {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
 
             ms.push();
-            // Плавная интерполяция позиции
+            // Позиция с интерполяцией (чтобы не дергалось)
             double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
@@ -124,22 +123,23 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.05f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Малиновая рамка (1.0, 0.0, 0.6)
+            // Рисуем рамку малиновым цветом (1.0, 0.0, 0.6)
             drawBox(buffer, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
             
             ms.pop();
         }
 
-        // Принудительно выводим линии на экран, пока DepthTest выключен
+        // ВЫВОДИМ ВСЁ ПРЯМО СЕЙЧАС, пока DepthTest выключен
         consumers.draw(RenderLayer.getLines());
         
+        // Возвращаем настройки обратно, чтобы не сломать остальную игру
         RenderSystem.enableDepthTest();
         RenderSystem.depthMask(true);
         RenderSystem.disableBlend();
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
-        // Рисуем 4 вертикальные линии и 2 горизонтальные для создания прямоугольника
+        // Отрисовка линий прямоугольника
         line(b, m, -w, 0, 0, w, 0, 0, r, g, bl, a);
         line(b, m, -w, h, 0, w, h, 0, r, g, bl, a);
         line(b, m, -w, 0, 0, -w, h, 0, r, g, bl, a);
@@ -151,7 +151,7 @@ public class ExampleMod implements ModInitializer {
         b.vertex(m, x2, y2, z2).color(r, g, bl, a).normal(0, 1, 0);
     }
 
-    // --- ОСТАЛЬНЫЕ ФУНКЦИИ (БЕЗ ИЗМЕНЕНИЙ) ---
+    // --- ОСТАЛЬНЫЕ МОДУЛИ (БЕЗ ИЗМЕНЕНИЙ) ---
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
