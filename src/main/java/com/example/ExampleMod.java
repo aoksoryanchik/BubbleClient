@@ -25,7 +25,6 @@ import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.opengl.GL11;
 import com.mojang.blaze3d.systems.RenderSystem;
 
 import java.io.FileWriter;
@@ -38,18 +37,15 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния функций
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
 
-    // Настройки и бинды
     public static double kaRange = 3.8D, kawallsRange = 3.0D;
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_G, keyES = GLFW.GLFW_KEY_C;
 
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
-
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
     private final Random random = new Random();
@@ -58,8 +54,8 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Регистрация рендера ESP (LAST отрисовывается в конце кадра)
-        WorldRenderEvents.LAST.register(this::renderESP);
+        // Регистрация ESP через современный хук
+        WorldRenderEvents.LAST.register(this::onRenderWorld);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
@@ -86,33 +82,30 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    // ИСПРАВЛЕННЫЙ ESP ПОД 1.21.4
-    private void renderESP(WorldRenderContext context) {
+    // ИСПРАВЛЕННЫЙ РЕНДЕР ESP ДЛЯ 1.21.4
+    private void onRenderWorld(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
-        // Фикс получения MatrixStack (теперь берем из контекста безопасно)
         MatrixStack ms = context.matrixStack();
-        if (ms == null) return; 
+        if (ms == null) return;
 
         Vec3d camPos = context.camera().getPos();
         
-        // Настройка рендера (фикс под 1.21.4)
         RenderSystem.disableDepthTest();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        // Используем базовый PositionColorShader через встроенный репозиторий
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+        // Используем встроенный шейдер позиционирования цвета, который точно есть в 1.21.4
+        RenderSystem.setShader(CoreShaderRegistrationService.POSITION_COLOR_SHADER_PROGRAM::getProgram);
 
         Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder bufferBuilder = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
 
             ms.push();
-            // Интерполяция позиции игрока для плавности
             double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
@@ -124,23 +117,24 @@ public class ExampleMod implements ModInitializer {
             float h = p.getHeight() + 0.05f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Рисуем рамку (Малиновый цвет)
-            drawBox(bufferBuilder, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
+            // Рисуем бокс (Малиновый цвет)
+            buffer.vertex(model, -w, 0, 0).color(1.0f, 0.0f, 0.6f, 1.0f);
+            buffer.vertex(model, w, 0, 0).color(1.0f, 0.0f, 0.6f, 1.0f);
+            buffer.vertex(model, -w, h, 0).color(1.0f, 0.0f, 0.6f, 1.0f);
+            buffer.vertex(model, w, h, 0).color(1.0f, 0.0f, 0.6f, 1.0f);
+            buffer.vertex(model, -w, 0, 0).color(1.0f, 0.0f, 0.6f, 1.0f);
+            buffer.vertex(model, -w, h, 0).color(1.0f, 0.0f, 0.6f, 1.0f);
+            buffer.vertex(model, w, 0, 0).color(1.0f, 0.0f, 0.6f, 1.0f);
+            buffer.vertex(model, w, h, 0).color(1.0f, 0.0f, 0.6f, 1.0f);
+
             ms.pop();
         }
 
-        BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
         RenderSystem.enableDepthTest();
+        RenderSystem.disableBlend();
     }
 
-    private void drawBox(BufferBuilder b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
-        b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, w, 0, 0).color(r, g, bl, a);
-        b.vertex(m, -w, h, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
-        b.vertex(m, -w, 0, 0).color(r, g, bl, a); b.vertex(m, -w, h, 0).color(r, g, bl, a);
-        b.vertex(m, w, 0, 0).color(r, g, bl, a); b.vertex(m, w, h, 0).color(r, g, bl, a);
-    }
-
-    // Киллаура (Ares/MainBlaze Bypass)
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
@@ -158,9 +152,8 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            
-            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.75f)); 
-            c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.75f));
+            c.player.setYaw(startLerp(c.player.getYaw(), yaw, 0.75f)); 
+            c.player.setPitch(startLerp(c.player.getPitch(), pitch, 0.75f));
 
             if (c.player.getAttackCooldownProgress(0) >= (0.92F + random.nextFloat() * 0.04F)) {
                 c.interactionManager.attackEntity(c.player, target);
@@ -169,9 +162,9 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private float lerpAngle(float start, float end, float speed) {
-        float diff = MathHelper.wrapDegrees(end - start);
-        return start + diff * speed;
+    private float startLerp(float s, float e, float sp) {
+        float d = MathHelper.wrapDegrees(e - s);
+        return s + d * sp;
     }
 
     private void throwPearl(MinecraftClient client) {
