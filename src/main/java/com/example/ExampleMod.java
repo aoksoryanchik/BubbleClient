@@ -90,13 +90,16 @@ public class ExampleMod implements ModInitializer {
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
         ItemStack chest = client.player.getEquippedStack(EquipmentSlot.CHEST);
-        boolean wearingElytra = chest.isOf(Items.ELYTRA);
+        boolean wearingElytra = (chest.getItem() == Items.ELYTRA);
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (wearingElytra) {
-                if (stack.getItem() instanceof ArmorItem ai && ai.getSlotType() == EquipmentSlot.CHEST) { slot = i; break; }
+                if (stack.getItem() instanceof ArmorItem) {
+                    ArmorItem ai = (ArmorItem) stack.getItem();
+                    if (ai.getSlotType() == EquipmentSlot.CHEST) { slot = i; break; }
+                }
             } else {
-                if (stack.isOf(Items.ELYTRA)) { slot = i; break; }
+                if (stack.getItem() == Items.ELYTRA) { slot = i; break; }
             }
         }
         if (slot != -1) {
@@ -110,10 +113,11 @@ public class ExampleMod implements ModInitializer {
 
     private void throwPearl(MinecraftClient client) {
         int ps = -1;
-        for (int i = 0; i < 9; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; } }
+        for (int i = 0; i < 9; i++) { if (client.player.getInventory().getStack(i).getItem() == Items.ENDER_PEARL) { ps = i; break; } }
         if (ps != -1) {
             int old = client.player.getInventory().selectedSlot;
             client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(ps));
+            // Исправленный конструктор для твоей версии (Hand, sequence)
             client.getNetworkHandler().sendPacket(new PlayerInteractItemC2SPacket(Hand.MAIN_HAND, 0));
             client.player.swingHand(Hand.MAIN_HAND);
             client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(old));
@@ -154,9 +158,9 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void checkTotem(MinecraftClient c) {
-        if (!c.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
+        if (c.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
             for (int i = 0; i < 45; i++) {
-                if (c.player.getInventory().getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
+                if (c.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
                     int sl = (i < 9) ? (i + 36) : i;
                     c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, sl, 0, SlotActionType.PICKUP, c.player);
                     c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, 45, 0, SlotActionType.PICKUP, c.player);
@@ -197,11 +201,15 @@ public class ExampleMod implements ModInitializer {
 
     private void runTrigger(MinecraftClient c) {
         HitResult r = c.crosshairTarget;
-        if (r instanceof EntityHitResult ehr && ehr.getEntity() instanceof PlayerEntity p) {
-            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase())) {
-                if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
-                    c.interactionManager.attackEntity(c.player, p);
-                    c.player.swingHand(Hand.MAIN_HAND);
+        if (r != null && r.getType() == HitResult.Type.ENTITY) {
+            Entity ent = ((EntityHitResult)r).getEntity();
+            if (ent instanceof PlayerEntity) {
+                PlayerEntity p = (PlayerEntity) ent;
+                if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase())) {
+                    if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
+                        c.interactionManager.attackEntity(c.player, p);
+                        c.player.swingHand(Hand.MAIN_HAND);
+                    }
                 }
             }
         }
@@ -219,7 +227,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     public static void updateFriends(String raw) {
-        if (raw == null || raw.equals("Friends:") || raw.isEmpty()) { friendsRaw = ""; friendsList.clear(); return; }
+        if (raw == null || raw.isEmpty() || raw.equals("Friends:")) { friendsRaw = ""; friendsList.clear(); return; }
         friendsRaw = raw; friendsList.clear();
         Arrays.stream(raw.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
     }
@@ -304,7 +312,6 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(x - 180, y - 100, x + 120, y + 90, 0xFF1A1A1B);
             ctx.drawText(textRenderer, "Range:", x - 170, y - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", x - 170, y - 52, -1, true);
-            // Кнопки пресетов
             drawCfgBtn(ctx, x - 170, y, "Ares", mx, my);
             drawCfgBtn(ctx, x - 90, y, "Blaze", mx, my);
         }
@@ -315,8 +322,8 @@ public class ExampleMod implements ModInitializer {
         }
         @Override public boolean mouseClicked(double mx, double my, int b) {
             int x = width/2, y = height/2;
-            if (mx >= x - 170 && mx <= x - 100 && my >= y && my <= y + 15) { rF.setText("3.8"); wF.setText("3.1"); return true; } // Ares
-            if (mx >= x - 90 && mx <= x - 20 && my >= y && my <= y + 15) { rF.setText("4.0"); wF.setText("3.3"); return true; } // Blaze
+            if (mx >= x - 170 && mx <= x - 100 && my >= y && my <= y + 15) { rF.setText("3.8"); wF.setText("3.1"); return true; }
+            if (mx >= x - 90 && mx <= x - 20 && my >= y && my <= y + 15) { rF.setText("4.0"); wF.setText("3.3"); return true; }
             return super.mouseClicked(mx, my, b);
         }
         @Override public void close() { try { kaRange = Double.parseDouble(rF.getText()); kaWallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {} updateFriends(fF.getText()); saveConfig(); client.setScreen(parent); }
