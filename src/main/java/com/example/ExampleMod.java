@@ -79,8 +79,8 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot) runTrigger(client);
             
             if (antiVelocity && client.player.hurtTime > 0) {
-                // Плавный анти-откид (оставляем 10% для обхода проверки на "0 velocity")
-                client.player.setVelocity(client.player.getVelocity().multiply(0.1D, 1.0D, 0.1D));
+                // Полный антиоткид (0%), чтобы стоять как скала
+                client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
         });
     }
@@ -101,17 +101,16 @@ public class ExampleMod implements ModInitializer {
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
             
-            // Плавная, но уверенная наводка
-            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.6, 0).subtract(c.player.getEyePos());
+            // МОЩНАЯ НАВОДКА (0.70f) - Жесткий аим
+            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
             
-            // Speed 0.18f - быстро, но не моментально (легитно для античита)
-            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.18f));
-            c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.15f));
+            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
+            c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
 
-            // Умное КД удара
-            if (c.player.getAttackCooldownProgress(0) >= (0.91f + random.nextFloat() * 0.06f)) {
+            // Улучшенное КД для максимального DPS
+            if (c.player.getAttackCooldownProgress(0) >= (0.90f + random.nextFloat() * 0.04f)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -258,7 +257,6 @@ public class ExampleMod implements ModInitializer {
     }
 
     // --- ИНТЕРФЕЙС ---
-
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -358,4 +356,3 @@ public class ExampleMod implements ModInitializer {
         @Override public void render(DrawContext ctx, int mx, int my, float d) { super.render(ctx, mx, my, d); ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width/2, height/2, 0x00CCFF); }
     }
 }
-
