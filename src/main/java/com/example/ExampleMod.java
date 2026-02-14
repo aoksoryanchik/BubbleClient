@@ -13,6 +13,7 @@ import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Items;
+import net.minecraft.screen.slot.SlotActionType; // Фикс ошибки SlotActionType
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.MathHelper;
@@ -41,7 +42,8 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
-        // Используем BEFORE_DEBUG_RENDER для отрисовки поверх всего мира
+        
+        // Регистрация рендера ESP
         WorldRenderEvents.BEFORE_DEBUG_RENDER.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -81,13 +83,13 @@ public class ExampleMod implements ModInitializer {
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
 
-        // Настройка рендера: отключаем глубину, чтобы видеть сквозь стены
+        // 1.21.4 FIX: Отключаем тест глубины и настраиваем прозрачность
         RenderSystem.disableDepthTest();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+        // Используем базовый CoreShader для линий
+        RenderSystem.setShader(CoreShaders.POSITION_COLOR); 
 
-        // Используем Lines слой для четких границ
         VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
@@ -96,18 +98,18 @@ public class ExampleMod implements ModInitializer {
 
             ms.push();
             
-            // Плавная интерполяция позиции (убирает тряску)
-            double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
-            double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
-            double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
+            // Интерполяция для 1.21.4 (ликвидирует тряску)
+            float tickDelta = context.tickCounter().getTickDelta(true);
+            double x = MathHelper.lerp(tickDelta, p.prevX, p.getX()) - camPos.x;
+            double y = MathHelper.lerp(tickDelta, p.prevY, p.getY()) - camPos.y;
+            double z = MathHelper.lerp(tickDelta, p.prevZ, p.getZ()) - camPos.z;
 
             ms.translate(x, y, z);
             
-            // Чтобы бокс всегда смотрел на нас или был ровным
             float w = p.getWidth() / 2 + 0.05f;
             float h = p.getHeight() + 0.05f;
 
-            // Рисуем малиновую рамку (1.0, 0.0, 0.6)
+            // Рисуем бокс (цвет: малиновый)
             drawBox(buffer, ms.peek().getPositionMatrix(), w, h, 1.0f, 0.0f, 0.6f, 1.0f);
             
             ms.pop();
@@ -119,17 +121,15 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
-        // Нижний квадрат
+        // Рендер 12 линий бокса
         line(b, m, -w, 0, -w,  w, 0, -w, r, g, bl, a);
         line(b, m,  w, 0, -w,  w, 0,  w, r, g, bl, a);
         line(b, m,  w, 0,  w, -w, 0,  w, r, g, bl, a);
         line(b, m, -w, 0,  w, -w, 0, -w, r, g, bl, a);
-        // Верхний квадрат
         line(b, m, -w, h, -w,  w, h, -w, r, g, bl, a);
         line(b, m,  w, h, -w,  w, h,  w, r, g, bl, a);
         line(b, m,  w, h,  w, -w, h,  w, r, g, bl, a);
         line(b, m, -w, h,  w, -w, h, -w, r, g, bl, a);
-        // Стойки
         line(b, m, -w, 0, -w, -w, h, -w, r, g, bl, a);
         line(b, m,  w, 0, -w,  w, h, -w, r, g, bl, a);
         line(b, m,  w, 0,  w,  w, h,  w, r, g, bl, a);
@@ -267,6 +267,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    // Вспомогательный класс меню
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(net.minecraft.text.Text.literal("Bubble")); }
         @Override
@@ -298,62 +299,9 @@ public class ExampleMod implements ModInitializer {
                         else if (i == 6) elytraSwap = !elytraSwap;
                         saveConfig(); return true;
                     }
-                    if (i == 0 && b == 0) client.setScreen(new KillAuraSettings(this));
                 }
             }
             return super.mouseClicked(mx, my, b);
-        }
-    }
-
-    public static class KillAuraSettings extends Screen {
-        private final Screen parent; private TextFieldWidget rF, wF, fF;
-        public KillAuraSettings(Screen parent) { super(net.minecraft.text.Text.literal("KA")); this.parent = parent; }
-        @Override
-        protected void init() {
-            int x = width / 2, y = height / 2;
-            rF = new TextFieldWidget(textRenderer, x - 40, y - 75, 40, 14, net.minecraft.text.Text.literal(""));
-            rF.setText(String.valueOf(kaRange));
-            wF = new TextFieldWidget(textRenderer, x - 40, y - 55, 40, 14, net.minecraft.text.Text.literal(""));
-            wF.setText(String.valueOf(kawallsRange));
-            fF = new TextFieldWidget(textRenderer, x + 15, y - 75, 100, 14, net.minecraft.text.Text.literal(""));
-            fF.setText(friendsRaw);
-            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
-        }
-        @Override
-        public void render(DrawContext ctx, int mx, int my, float delta) {
-            super.render(ctx, mx, my, delta);
-            int x = width / 2, y = height / 2;
-            ctx.fill(x - 120, y - 90, x + 130, y + 65, 0xDD101010);
-            ctx.drawText(textRenderer, "Range:", x - 115, y - 72, -1, true);
-            ctx.drawText(textRenderer, "Walls:", x - 115, y - 52, -1, true);
-            drawBtn(ctx, x - 115, y - 20, "AresMine", mx, my);
-            drawBtn(ctx, x - 30, y - 20, "MainBlaze", mx, my);
-            drawCheck(ctx, x - 115, y + 10, "AutoRun", autoRun, mx, my);
-            drawCheck(ctx, x - 30, y + 10, "AntiVelocity", antiVelocity, mx, my);
-        }
-        private void drawBtn(DrawContext ctx, int x, int y, String n, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 75, y + 15, h ? 0xEE404040 : 0xEE202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 37, y + 4, -1);
-        }
-        private void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 85 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 85, y + 15, h ? 0xEE404040 : 0xEE202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 42, y + 4, s ? 0x00FF00 : 0xFFFFFF);
-        }
-        @Override
-        public boolean mouseClicked(double mx, double my, int b) {
-            int x = width / 2, y = height / 2;
-            if (mx >= x - 115 && mx <= x - 40 && my >= y - 20 && my <= y - 5) { rF.setText("3.8"); wF.setText("3.1"); return true; }
-            if (mx >= x - 30 && mx <= x + 45 && my >= y - 20 && my <= y - 5) { rF.setText("4.0"); wF.setText("3.3"); return true; }
-            if (mx >= x - 115 && mx <= x - 30 && my >= y + 10 && my <= y + 25) { autoRun = !autoRun; return true; }
-            if (mx >= x + 30 && mx <= x + 115 && my >= y + 10 && my <= y + 25) { antiVelocity = !antiVelocity; return true; }
-            return super.mouseClicked(mx, my, b);
-        }
-        @Override
-        public void close() {
-            try { kaRange = Double.parseDouble(rF.getText()); kawallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {}
-            updateFriends(fF.getText()); saveConfig(); client.setScreen(parent);
         }
     }
 
@@ -372,6 +320,22 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width / 2, height / 2, 0x00CCFF);
+        }
+    }
+
+    public static class KillAuraSettings extends Screen {
+        private final Screen parent; private TextFieldWidget rF, wF, fF;
+        public KillAuraSettings(Screen parent) { super(net.minecraft.text.Text.literal("KA")); this.parent = parent; }
+        @Override
+        protected void init() {
+            int x = width / 2, y = height / 2;
+            rF = new TextFieldWidget(textRenderer, x - 40, y - 75, 40, 14, net.minecraft.text.Text.literal(""));
+            rF.setText(String.valueOf(kaRange));
+            wF = new TextFieldWidget(textRenderer, x - 40, y - 55, 40, 14, net.minecraft.text.Text.literal(""));
+            wF.setText(String.valueOf(kawallsRange));
+            fF = new TextFieldWidget(textRenderer, x + 15, y - 75, 100, 14, net.minecraft.text.Text.literal(""));
+            fF.setText(friendsRaw);
+            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
         }
     }
 }
