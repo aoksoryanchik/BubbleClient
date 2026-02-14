@@ -57,8 +57,8 @@ public class ExampleMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         
-        // Используем AFTER_ENTITIES для ESP, чтобы рисовать после существ
-        WorldRenderEvents.AFTER_ENTITIES.register(this::onWorldRender);
+        // Регистрируем ESP в событии LAST, чтобы он рисовался в самом конце цикла рендера
+        WorldRenderEvents.LAST.register(this::onWorldRender);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
@@ -83,7 +83,7 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // ТВОЙ АНТИОТКИД 0%
+            // ТВОЙ ПОЛНЫЙ АНТИОТКИД (0%)
             if (antiVelocity && client.player.hurtTime > 0) {
                  client.player.setVelocity(0, client.player.getVelocity().y, 0);
             }
@@ -107,7 +107,7 @@ public class ExampleMod implements ModInitializer {
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            // НАВОДКА 0.70f
+            // ТВОЯ НАВОДКА 0.70f
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.70f));
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.70f));
             if (c.player.getAttackCooldownProgress(0) >= (0.90F + random.nextFloat() * 0.04F)) {
@@ -172,21 +172,23 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // --- РАБОЧИЙ ESP ПОВЕРХ ВСЕГО ДЛЯ 1.21.4 ---
+    // --- УЛЬТИМАТИВНЫЙ ESP (WALLHACK) ДЛЯ 1.21.4 ---
     private void onWorldRender(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
-        // Отключаем проверку глубины (Wallhack)
+        // ПРИНУДИТЕЛЬНО ВЫКЛЮЧАЕМ ТЕСТ ГЛУБИНЫ ДЛЯ ВСЕХ СЛОЕВ
         RenderSystem.disableDepthTest();
         RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
 
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         
-        // Используем встроенный провайдер буферов. Слой DEBUG_LINE_STRIP отлично подходит для отрисовки поверх всего
+        // Используем непосредственный буфер для линий
         VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
+        // RenderLayer.getLines() в 1.21.4 автоматически подключает нужный шейдер
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
@@ -198,38 +200,37 @@ public class ExampleMod implements ModInitializer {
 
             ms.push();
             ms.translate(x, y, z);
-            // Поворачиваем прямоугольник за камерой (Billboarding)
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
 
             float w = p.getWidth() / 2 + 0.1f;
             float h = p.getHeight() + 0.1f;
             Matrix4f model = ms.peek().getPositionMatrix();
 
-            // Рисуем прямоугольник (Циан)
-            drawBox(buffer, model, w, h);
+            // Рисуем рамку (Бирюзовый/Циан)
+            drawWallhackBox(buffer, model, w, h);
             
             ms.pop();
         }
         
-        // СБРОС БУФЕРА — это заставляет линии нарисоваться прямо сейчас
-        consumers.draw();
+        // ОЧЕНЬ ВАЖНО: Вызываем draw() ДО того, как включим DepthTest обратно
+        consumers.draw(); 
+        
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
     }
 
-    private void drawBox(VertexConsumer b, Matrix4f m, float w, float h) {
-        // Цвет: 0, 1, 1 (Циан)
-        b.vertex(m, -w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
-        b.vertex(m, w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
-
-        b.vertex(m, -w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
-        b.vertex(m, w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
-
-        b.vertex(m, -w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
-        b.vertex(m, -w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
-
-        b.vertex(m, w, 0, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
-        b.vertex(m, w, h, 0).color(0f, 1f, 1f, 1f).normal(0, 1, 0);
+    private void drawWallhackBox(VertexConsumer b, Matrix4f m, float w, float h) {
+        float r = 0f, g = 1f, bl = 1f, a = 1f; // Цвет бирюзовый
+        // Вертикальные линии
+        b.vertex(m, -w, 0, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, -w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, w, 0, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
+        // Горизонтальные линии (верх и низ)
+        b.vertex(m, -w, 0, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, w, 0, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, -w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, w, h, 0).color(r, g, bl, a).normal(0, 1, 0);
     }
 
     private void checkTotem(MinecraftClient c) {
@@ -288,7 +289,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- МЕНЮ БЕЗ ИЗМЕНЕНИЙ ---
+    // --- МЕНЮ (БЕЗ ИЗМЕНЕНИЙ) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -393,3 +394,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
