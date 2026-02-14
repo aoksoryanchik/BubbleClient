@@ -39,10 +39,15 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
+    // Состояние модулей
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
     public static double kaRange = 3.8D, kaWallsRange = 3.0D;
+    
+    // Клавиши
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1, keyFP = GLFW.GLFW_KEY_G, keyES = GLFW.GLFW_KEY_C;
+    
+    // Список друзей
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
     
@@ -59,10 +64,12 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
+            // Открытие меню на кнопку "0"
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
+            // Обработка горячих клавиш
             if (client.currentScreen == null) {
                 if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
                 if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
@@ -73,6 +80,7 @@ public class ExampleMod implements ModInitializer {
                 if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
             }
 
+            // Работа модулей
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (killaura) runAura(client);
@@ -86,13 +94,14 @@ public class ExampleMod implements ModInitializer {
 
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
-        ItemStack chest = client.player.getEquippedStack(EquipmentSlot.CHEST);
-        boolean wearingElytra = chest.isOf(Items.ELYTRA);
+        ItemStack chestStack = client.player.getEquippedStack(EquipmentSlot.CHEST);
+        boolean wearingElytra = chestStack.isOf(Items.ELYTRA);
 
         for (int i = 0; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (wearingElytra) {
-                if (stack.getItem() instanceof ArmorItem ai && ai.getEquipmentSlot() == EquipmentSlot.CHEST) {
+                // Ищем любой нагрудник, если на нас элитра
+                if (stack.getItem() instanceof ArmorItem armor && armor.getSlotType() == EquipmentSlot.CHEST) {
                     slot = i; break;
                 }
             } else if (stack.isOf(Items.ELYTRA)) {
@@ -101,67 +110,68 @@ public class ExampleMod implements ModInitializer {
         }
         if (slot != -1) {
             int sid = client.player.playerScreenHandler.syncId;
-            int cs = slot < 9 ? slot + 36 : slot;
-            client.interactionManager.clickSlot(sid, cs, 0, SlotActionType.PICKUP, client.player);
+            int invSlot = slot < 9 ? slot + 36 : slot;
+            client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
             client.interactionManager.clickSlot(sid, 6, 0, SlotActionType.PICKUP, client.player);
-            client.interactionManager.clickSlot(sid, cs, 0, SlotActionType.PICKUP, client.player);
+            client.interactionManager.clickSlot(sid, invSlot, 0, SlotActionType.PICKUP, client.player);
         }
     }
 
     private void throwPearl(MinecraftClient client) {
-        int ps = -1;
+        int pearlSlot = -1;
         for (int i = 0; i < 9; i++) {
-            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; }
+            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { pearlSlot = i; break; }
         }
-        if (ps != -1) {
-            int old = client.player.getInventory().selectedSlot;
-            client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(ps));
-            // Фикс для 1.21.4: отправка корректной последовательности (sequence)
-            int seq = client.getNetworkHandler().getPendingSequence();
-            client.getNetworkHandler().sendPacket(new PlayerInteractItemC2SPacket(Hand.MAIN_HAND, seq, client.player.getYaw(), client.player.getPitch()));
+        if (pearlSlot != -1) {
+            int oldSlot = client.player.getInventory().selectedSlot;
+            client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(pearlSlot));
+            // 1.21.4 Fix: sequence = 0 обычно достаточно для простых действий
+            client.getNetworkHandler().sendPacket(new PlayerInteractItemC2SPacket(Hand.MAIN_HAND, 0, client.player.getYaw(), client.player.getPitch()));
             client.player.swingHand(Hand.MAIN_HAND);
-            client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(old));
+            client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(oldSlot));
         }
     }
 
     private void onWorldRender(WorldRenderContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!esp || client.player == null) return;
-        float d = client.getRenderTickCounter().getTickDelta(true);
-        Vec3d cp = context.camera().getPos();
+        float tickDelta = client.getRenderTickCounter().getTickDelta(true);
+        Vec3d camPos = context.camera().getPos();
         MatrixStack ms = context.matrixStack();
+
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || p.isInvisible()) continue;
-            double x = MathHelper.lerp(d, p.prevX, p.getX()) - cp.x;
-            double y = MathHelper.lerp(d, p.prevY, p.getY()) - cp.y;
-            double z = MathHelper.lerp(d, p.prevZ, p.getZ()) - cp.z;
+            double x = MathHelper.lerp(tickDelta, p.prevX, p.getX()) - camPos.x;
+            double y = MathHelper.lerp(tickDelta, p.prevY, p.getY()) - camPos.y;
+            double z = MathHelper.lerp(tickDelta, p.prevZ, p.getZ()) - camPos.z;
+
             ms.push();
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
+            
             float w = p.getWidth(); float h = p.getHeight();
-            VertexConsumer b = context.consumers().getBuffer(RenderLayer.getLines());
-            Matrix4f m = ms.peek().getPositionMatrix();
-            drawBox(m, b, -w/2, 0, w/2, h);
+            VertexConsumer buffer = context.consumers().getBuffer(RenderLayer.getLines());
+            Matrix4f model = ms.peek().getPositionMatrix();
+            
+            // Отрисовка бокса
+            buffer.vertex(model, -w/2, 0, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
+            buffer.vertex(model, w/2, 0, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
+            buffer.vertex(model, w/2, h, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
+            buffer.vertex(model, -w/2, h, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
+            buffer.vertex(model, -w/2, 0, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
+            
             ms.pop();
         }
-    }
-
-    private void drawBox(Matrix4f m, VertexConsumer b, float x1, float y1, float x2, float y2) {
-        b.vertex(m, x1, y1, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
-        b.vertex(m, x2, y1, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
-        b.vertex(m, x2, y2, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
-        b.vertex(m, x1, y2, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
-        b.vertex(m, x1, y1, 0).color(1f, 1f, 1f, 1f).normal(0, 1, 0);
     }
 
     private void checkTotem(MinecraftClient c) {
         if (!c.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
             for (int i = 0; i < 45; i++) {
                 if (c.player.getInventory().getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
-                    int sl = (i < 9) ? (i + 36) : i;
-                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, sl, 0, SlotActionType.PICKUP, c.player);
+                    int slot = (i < 9) ? (i + 36) : i;
+                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, slot, 0, SlotActionType.PICKUP, c.player);
                     c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, 45, 0, SlotActionType.PICKUP, c.player);
-                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, sl, 0, SlotActionType.PICKUP, c.player);
+                    c.interactionManager.clickSlot(c.player.playerScreenHandler.syncId, slot, 0, SlotActionType.PICKUP, c.player);
                     break;
                 }
             }
@@ -174,15 +184,18 @@ public class ExampleMod implements ModInitializer {
             if (p == c.player || !p.isAlive() || p.isSpectator()) continue;
             if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = c.player.distanceTo(p);
-            if (d <= kaRange && d < dist) { if (c.player.canSee(p) || d <= kaWallsRange) { dist = d; target = p; } }
+            if (d <= kaRange && d < dist) { 
+                if (c.player.canSee(p) || d <= kaWallsRange) { dist = d; target = p; } 
+            }
         }
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.5, 0).subtract(c.player.getEyePos());
-            float ty = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
-            float tp = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            c.player.setYaw(lerpAngle(c.player.getYaw(), ty, 0.4f));
-            c.player.setPitch(lerpAngle(c.player.getPitch(), tp, 0.4f));
+            float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0F;
+            float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 0.4f));
+            c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 0.4f));
+            
             if (c.player.getAttackCooldownProgress(0.5f) >= (0.93f + random.nextFloat() * 0.05f)) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
@@ -190,13 +203,14 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private float lerpAngle(float s, float e, float sp) {
-        float d = MathHelper.wrapDegrees(e - s); return s + d * sp;
+    private float lerpAngle(float start, float end, float speed) {
+        float diff = MathHelper.wrapDegrees(end - start);
+        return start + diff * speed;
     }
 
     private void runTrigger(MinecraftClient c) {
-        HitResult r = c.crosshairTarget;
-        if (r instanceof EntityHitResult ehr && ehr.getEntity() instanceof PlayerEntity p) {
+        HitResult hit = c.crosshairTarget;
+        if (hit instanceof EntityHitResult ehr && ehr.getEntity() instanceof PlayerEntity p) {
             if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase())) {
                 if (c.player.getAttackCooldownProgress(0) >= 1.0F) {
                     c.interactionManager.attackEntity(c.player, p);
@@ -206,20 +220,23 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void notify(MinecraftClient c, String m, boolean s) {
-        c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (s ? "§aON" : "§cOFF")), true);
+    private void notify(MinecraftClient c, String mod, boolean state) {
+        c.player.sendMessage(Text.literal("§b[Bubble] §f" + mod + ": " + (state ? "§aВКЛ" : "§cВЫКЛ")), true);
     }
 
-    private boolean isPressed(long h, int k) {
-        if (k == -1) return false;
-        boolean p = InputUtil.isKeyPressed(h, k);
-        if (p && !keyStates[k]) { keyStates[k] = true; return true; }
-        if (!p) keyStates[k] = false; return false;
+    private boolean isPressed(long handle, int key) {
+        if (key == -1) return false;
+        boolean pressed = InputUtil.isKeyPressed(handle, key);
+        if (pressed && !keyStates[key]) { keyStates[key] = true; return true; }
+        if (!pressed) keyStates[key] = false;
+        return false;
     }
 
     public static void updateFriends(String raw) {
         friendsRaw = raw; friendsList.clear();
-        if (raw != null && !raw.isEmpty()) Arrays.stream(raw.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
+        if (raw != null && !raw.isEmpty()) {
+            Arrays.stream(raw.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
+        }
     }
 
     public static void saveConfig() {
@@ -243,28 +260,33 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // --- ИНТЕРФЕЙС (МЕНЮ) ---
+
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 90, cy - 100, cx + 90, cy + 110, 0xCC101010);
-            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE 1.21.4", cx, cy - 90, 0x00CCFF);
-            String[] n = { "KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap" };
-            boolean[] s = { killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap };
-            for (int i = 0; i < n.length; i++) {
-                int iy = cy - 70 + i * 22;
-                ctx.fill(cx - 80, iy, cx + 80, iy + 18, (mx >= cx - 80 && mx <= cx + 80 && my >= iy && my <= iy + 18) ? 0xEE404040 : 0xEE202020);
-                ctx.drawText(textRenderer, n[i], cx - 75, iy + 5, s[i] ? 0x00FF00 : 0xFFFFFF, true);
+            ctx.fill(cx - 95, cy - 105, cx + 95, cy + 120, 0xDD101010);
+            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE 1.21.4", cx, cy - 95, 0x00CCFF);
+            
+            String[] names = { "KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap" };
+            boolean[] states = { killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap };
+            
+            for (int i = 0; i < names.length; i++) {
+                int iy = cy - 70 + i * 24;
+                boolean hover = mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20;
+                ctx.fill(cx - 85, iy, cx + 85, iy + 20, hover ? 0xEE404040 : 0xEE202020);
+                ctx.drawText(textRenderer, names[i], cx - 80, iy + 6, states[i] ? 0x00FF00 : 0xFFFFFF, true);
             }
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
             for (int i = 0; i < 7; i++) {
-                int iy = cy - 70 + i * 22;
-                if (mx >= cx - 80 && mx <= cx + 80 && my >= iy && my <= iy + 18) {
+                int iy = cy - 70 + i * 24;
+                if (mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20) {
                     if (b == 1) { client.setScreen(new BindScreen(this, i)); return true; }
                     if (b == 0) {
                         if (i == 0) client.setScreen(new KillAuraSettings(this));
@@ -301,10 +323,10 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(x - 120, y - 90, x + 130, y + 50, 0xDD101010);
             ctx.drawText(textRenderer, "Range:", x - 115, y - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", x - 115, y - 52, -1, true);
-            drawCfg(ctx, x - 115, y - 20, "AresMine", mx, my);
-            drawCfg(ctx, x - 30, y - 20, "MainBlaze", mx, my);
+            drawBtn(ctx, x - 115, y - 20, "AresMine", mx, my);
+            drawBtn(ctx, x - 30, y - 20, "MainBlaze", mx, my);
         }
-        private void drawCfg(DrawContext ctx, int x, int y, String name, int mx, int my) {
+        private void drawBtn(DrawContext ctx, int x, int y, String name, int mx, int my) {
             boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
             ctx.fill(x, y, x + 75, y + 15, h ? 0xEE404040 : 0xEE202020);
             ctx.drawCenteredTextWithShadow(textRenderer, name, x + 37, y + 4, -1);
@@ -326,6 +348,7 @@ public class ExampleMod implements ModInitializer {
             if (id == 0) keyKA = v; else if (id == 1) keyTB = v; else if (id == 2) keyFB = v; else if (id == 3) keyAT = v; else if (id == 4) keyESP = v; else if (id == 5) keyFP = v; else if (id == 6) keyES = v;
             saveConfig(); client.setScreen(parent); return true;
         }
-        @Override public void render(DrawContext ctx, int mx, int my, float d) { super.render(ctx, mx, my, d); ctx.drawCenteredTextWithShadow(textRenderer, "PRESS ANY KEY", width/2, height/2, 0x00CCFF); }
+        @Override public void render(DrawContext ctx, int mx, int my, float d) { super.render(ctx, mx, my, d); ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width/2, height/2, 0x00CCFF); }
     }
 }
+
