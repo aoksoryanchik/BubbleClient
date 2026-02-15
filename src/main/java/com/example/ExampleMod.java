@@ -16,6 +16,7 @@ import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -40,9 +41,10 @@ public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
     public static boolean isAres = false, isBlaze = false;
+    public static boolean silentRotations = false; // Новая функция
 
     public static double kaRange = 3.8, kawallsRange = 3.0;
-    public static float smoothSpeed = 0.78f; // Теперь настраивается через AimSpeed
+    public static float smoothSpeed = 0.78f; 
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_V, keyES = GLFW.GLFW_KEY_C;
@@ -163,13 +165,22 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 0.75f * smoothSpeed));
-            client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 0.75f * smoothSpeed));
+            if (silentRotations) {
+                // Silent Logic: Отправляем пакет поворота, но не крутим камеру
+            } else {
+                // Normal Logic: Крутим камеру плавно
+                client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 0.75f * smoothSpeed));
+                client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 0.75f * smoothSpeed));
+            }
 
             boolean isFalling = client.player.fallDistance > 0.08f && !client.player.isOnGround() && !client.player.isClimbing();
             
             if (client.player.getAttackCooldownProgress(0) >= 0.93f) {
                 if (isFalling || client.player.isOnGround()) {
+                    if (silentRotations) {
+                        // Отправляем пакет поворота ПЕРЕД ударом
+                        client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(targetYaw, targetPitch, client.player.isOnGround()));
+                    }
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -264,7 +275,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange + ":" + kawallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity + ":" + smoothSpeed);
+            w.println(kaRange + ":" + kawallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity + ":" + smoothSpeed + ":" + silentRotations);
         } catch (Exception ignored) {}
     }
 
@@ -272,7 +283,7 @@ public class ExampleMod implements ModInitializer {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":", -1);
-            if (p.length >= 14) {
+            if (p.length >= 15) {
                 kaRange = Double.parseDouble(p[0]); kawallsRange = Double.parseDouble(p[1]);
                 autoRun = Boolean.parseBoolean(p[2]); keyKA = Integer.parseInt(p[3]);
                 keyTB = Integer.parseInt(p[4]); keyFB = Integer.parseInt(p[5]);
@@ -280,6 +291,7 @@ public class ExampleMod implements ModInitializer {
                 esp = Boolean.parseBoolean(p[8]); keyESP = Integer.parseInt(p[9]);
                 keyFP = Integer.parseInt(p[10]); keyES = Integer.parseInt(p[11]);
                 antiVelocity = Boolean.parseBoolean(p[12]); smoothSpeed = Float.parseFloat(p[13]);
+                silentRotations = Boolean.parseBoolean(p[14]);
             }
         } catch (Exception ignored) {}
     }
@@ -325,7 +337,7 @@ public class ExampleMod implements ModInitializer {
 
     public static class KillAuraSettings extends Screen {
         private final Screen parent;
-        private TextFieldWidget rF, wF, fF, sF; // sF - AimSpeed
+        private TextFieldWidget rF, wF, fF, sF; 
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
         protected void init() {
             int cx = width / 2, cy = height / 2;
@@ -352,6 +364,7 @@ public class ExampleMod implements ModInitializer {
             
             drawCheck(ctx, cx - 95, cy + 10, "AutoRun", autoRun, mx, my);
             drawCheck(ctx, cx + 10, cy + 10, "AntiVel", antiVelocity, mx, my);
+            drawCheck(ctx, cx - 42, cy + 30, "Silent", silentRotations, mx, my); // Кнопка Silent
         }
         private void drawBtnServer(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
@@ -381,6 +394,7 @@ public class ExampleMod implements ModInitializer {
             }
             if (mx >= cx - 95 && mx <= cx - 10 && my >= cy + 10 && my <= cy + 25) { autoRun = !autoRun; return true; }
             if (mx >= cx + 10 && mx <= cx + 95 && my >= cy + 10 && my <= cy + 25) { antiVelocity = !antiVelocity; return true; }
+            if (mx >= cx - 42 && mx <= cx + 43 && my >= cy + 30 && my <= cy + 45) { silentRotations = !silentRotations; return true; }
             return super.mouseClicked(mx, my, b);
         }
         public void close() {
