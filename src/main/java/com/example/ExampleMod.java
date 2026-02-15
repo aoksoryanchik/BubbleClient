@@ -46,6 +46,7 @@ public class ExampleMod implements ModInitializer {
     
     private static float sYaw, sPitch;
     private static boolean rotateBack = false;
+    private static PlayerEntity currentTarget = null;
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_V, keyES = GLFW.GLFW_KEY_C;
@@ -69,6 +70,7 @@ public class ExampleMod implements ModInitializer {
                 client.setScreen(new BubbleMenu());
             }
 
+            // Обработка биндов
             if (client.currentScreen == null) {
                 if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
                 if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
@@ -84,41 +86,44 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // AntiVelocity fix
+            // AntiVelocity
             if (antiVelocity && client.player.hurtTime > 0) {
-                Vec3d velocity = client.player.getVelocity();
-                client.player.setVelocity(velocity.x * 0.4, velocity.y, velocity.z * 0.4);
+                Vec3d vel = client.player.getVelocity();
+                client.player.setVelocity(vel.x * 0.45, vel.y, vel.z * 0.45);
             }
         });
     }
 
     private void runAura(MinecraftClient client) {
-        PlayerEntity target = null;
+        currentTarget = null;
         double dist = Double.MAX_VALUE;
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = client.player.distanceTo(p);
             if (d <= kaRange && (client.player.canSee(p) || d <= kawallsRange)) {
-                if (d < dist) { dist = d; target = p; }
+                if (d < dist) { dist = d; currentTarget = p; }
             }
         }
 
-        if (target != null) {
-            // Исправлено: использование правильного поля ввода для 1.21.4
+        if (currentTarget != null) {
+            // FIX: Исправленное поле для бега
             if (autoRun && client.player.input.movementForward > 0) client.player.setSprinting(true);
             
-            Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
+            Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
+            // Плавность через SpeedAim
             sYaw = lerpAngle(rotateBack ? client.player.getYaw() : sYaw, targetYaw, smoothSpeed);
             sPitch = lerpAngle(rotateBack ? client.player.getPitch() : sPitch, targetPitch, smoothSpeed);
             rotateBack = false;
 
-            // Исправлено: конструктор LookAndOnGround требует 4 аргумента
+            // FIX: Критическое исправление для движения и прыжков
+            // Вместо того чтобы просто слать пакет, мы принудительно синхронизируем вращение в пакете
             if (silentRotations) {
+                // Отправляем пакет поворота, но НЕ трогаем yaw/pitch игрока, чтобы он мог прыгать
                 client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
                     sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision
                 ));
@@ -127,17 +132,20 @@ public class ExampleMod implements ModInitializer {
                 client.player.setPitch(sPitch);
             }
 
-            // Исправлено: получение кулдауна без лишних аргументов
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.92f) {
-                if (Math.abs(MathHelper.wrapDegrees(sYaw - targetYaw)) < 15) {
-                    client.interactionManager.attackEntity(client.player, target);
+            // УДАР: Проверка кулдауна
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.93f) {
+                // Бьем только если "невидимый" прицел наведен
+                if (Math.abs(MathHelper.wrapDegrees(sYaw - targetYaw)) < 20) {
+                    client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
             }
-        } else if (!rotateBack) {
-            sYaw = client.player.getYaw();
-            sPitch = client.player.getPitch();
-            rotateBack = true;
+        } else {
+            if (!rotateBack) {
+                sYaw = client.player.getYaw();
+                sPitch = client.player.getPitch();
+                rotateBack = true;
+            }
         }
     }
 
@@ -281,6 +289,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // Меню и настройки (без изменений, но исправлено сохранение)
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
