@@ -113,12 +113,12 @@ public class ExampleMod implements ModInitializer {
                 double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
                 ms.translate(x, y, z);
                 ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-                drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 0.0f, 0.7f, 1.0f);
+                drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth() / 2 + 0.05f, p.getHeight() + 0.05f, 0.0f, 0.7f, 1.0f);
                 ms.pop();
             }
         }
 
-        // ESP НА СУНДУКИ (ИСПРАВЛЕННЫЙ МЕТОД ДЛЯ 1.21.4)
+        // ESP НА СУНДУКИ
         if (chestESP) {
             int dist = client.options.getClampedViewDistance();
             int pCX = client.player.getChunkPos().x;
@@ -135,10 +135,10 @@ public class ExampleMod implements ModInitializer {
                                 double by = be.getPos().getY() - camPos.y;
                                 double bz = be.getPos().getZ() - camPos.z;
                                 ms.translate(bx, by, bz);
-                                
-                                float r = 1.0f, g = 0.8f, b = 0.0f; // Обычный сундук (Золотистый)
-                                if (be instanceof EnderChestBlockEntity) { r = 0.2f; g = 1.0f; b = 0.6f; } // Эндер (Бирюзовый)
-                                if (be instanceof ShulkerBoxBlockEntity) { r = 0.8f; g = 0.2f; b = 1.0f; } // Шалкер (Фиолетовый)
+
+                                float r = 1.0f, g = 0.8f, b = 0.0f;
+                                if (be instanceof EnderChestBlockEntity) { r = 0.2f; g = 0.8f; b = 0.8f; }
+                                if (be instanceof ShulkerBoxBlockEntity) { r = 0.8f; g = 0.2f; b = 1.0f; }
 
                                 drawBox(buffer, ms.peek().getPositionMatrix(), 0.51f, 1.01f, r, g, b);
                                 ms.pop();
@@ -155,7 +155,6 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl) {
-        // Отрисовка каркаса (12 линий)
         line(b, m, -w, 0, -w, w, 0, -w, r, g, bl);
         line(b, m, w, 0, -w, w, 0, w, r, g, bl);
         line(b, m, w, 0, w, -w, 0, w, r, g, bl);
@@ -198,7 +197,7 @@ public class ExampleMod implements ModInitializer {
 
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
-            if (!friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) >= 1.0f) {
+            if (!friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) >= 0.95f) {
                 c.interactionManager.attackEntity(c.player, p);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -207,7 +206,7 @@ public class ExampleMod implements ModInitializer {
 
     private void throwPearl(MinecraftClient client) {
         int ps = -1;
-        for (int i = 0; i < 36; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; } }
+        for (int i = 0; i < 36; i++) if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; }
         if (ps != -1) {
             int old = client.player.getInventory().selectedSlot;
             client.player.getInventory().selectedSlot = ps < 9 ? ps : old;
@@ -223,7 +222,7 @@ public class ExampleMod implements ModInitializer {
             ItemStack s = client.player.getInventory().getStack(i);
             if (wear ? s.isOf(Items.NETHERITE_CHESTPLATE) : s.isOf(Items.ELYTRA)) { slot = i; break; }
         }
-        if (slot != -1) client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, slot < 9 ? slot + 36 : slot, 6, SlotActionType.SWAP, client.player);
+        if (slot != -1) client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, slot < 9 ? slot + 36 : slot, 0, SlotActionType.PICKUP, client.player);
     }
 
     private void checkTotem(MinecraftClient c) {
@@ -237,8 +236,8 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void notify(MinecraftClient c, String m, boolean s) {
-        c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (s ? "§aON" : "§cOFF")), true);
+    private void notify(MinecraftClient c, String n, boolean s) {
+        c.player.sendMessage(Text.literal("§b[Bubble] §f" + n + ": " + (s ? "§aON" : "§cOFF")), true);
     }
 
     private boolean isPressed(long h, int k) {
@@ -277,14 +276,13 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI СЕКЦИЯ ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 95, cy - 110, cx + 95, cy + 130, 0xDD101010);
+            ctx.fill(cx - 95, cy - 110, cx + 95, cy + 130, 0xD0101010);
             ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE 1.21.4", cx, cy - 100, 0x00CCFF);
             String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "ChestESP", "FastPearl", "ElytraSwap"};
             boolean[] states = {killaura, triggerbot, fullbright, autoTotem, esp, chestESP, fastPearl, elytraSwap};
@@ -294,6 +292,7 @@ public class ExampleMod implements ModInitializer {
                 ctx.drawText(textRenderer, names[i], cx - 80, iy + 7, states[i] ? 0x00FF00 : 0xFFFFFF, true);
             }
         }
+
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
@@ -333,7 +332,7 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 120, cy - 90, cx + 130, cy + 65, 0xDD101010);
+            ctx.fill(cx - 120, cy - 90, cx + 130, cy + 65, 0xD0101010);
             ctx.drawText(textRenderer, "Range:", cx - 115, cy - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", cx - 115, cy - 52, -1, true);
             drawBtn(ctx, cx - 115, cy - 20, "AresMine", mx, my);
@@ -341,26 +340,30 @@ public class ExampleMod implements ModInitializer {
             drawCheck(ctx, cx - 95, cy + 10, "AutoRun", autoRun, mx, my);
             drawCheck(ctx, cx + 10, cy + 10, "AntiVel", antiVelocity, mx, my);
         }
+
         private void drawBtn(DrawContext ctx, int x, int y, String n, int mx, int my) {
             ctx.fill(x, y, x + 75, y + 15, (mx >= x && mx <= x + 75 && my >= y && my <= y + 15) ? 0xEE404040 : 0xEE202020);
             ctx.drawCenteredTextWithShadow(textRenderer, n, x + 37, y + 4, -1);
         }
+
         private void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             ctx.fill(x, y, x + 85, y + 15, (mx >= x && mx <= x + 85 && my >= y && my <= y + 15) ? 0xEE404040 : 0xEE202020);
             ctx.drawCenteredTextWithShadow(textRenderer, n, x + 42, y + 4, s ? 0x00FF00 : 0xFFFFFF);
         }
+
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { rF.setText("3.8"); wF.setText("3.1"); return true; }
-            if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { rF.setText("4.0"); wF.setText("3.3"); return true; }
+            if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { rF.setText("3.8"); wF.setText("3.1"); }
+            if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { rF.setText("4.0"); wF.setText("3.3"); }
             if (mx >= cx - 95 && mx <= cx - 10 && my >= cy + 10 && my <= cy + 25) { autoRun = !autoRun; return true; }
             if (mx >= cx + 10 && mx <= cx + 95 && my >= cy + 10 && my <= cy + 25) { antiVelocity = !antiVelocity; return true; }
             return super.mouseClicked(mx, my, b);
         }
+
         @Override
         public void close() {
-            try { kaRange = Double.parseDouble(rF.getText()); kawallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {}
+            try { kaRange = Double.parseDouble(rF.getText()); kawallsRange = Double.parseDouble(wF.getText()); } catch (Exception e) {}
             updateFriends(fF.getText()); saveConfig(); client.setScreen(parent);
         }
     }
@@ -371,8 +374,8 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean keyPressed(int k, int s, int n) {
             int v = (k == GLFW.GLFW_KEY_ESCAPE) ? -1 : k;
-            if (id == 0) keyKA = v; else if (id == 1) keyTB = v; else if (id == 2) keyFB = v; 
-            else if (id == 3) keyAT = v; else if (id == 4) keyESP = v; else if (id == 6) keyFP = v; else if (id == 7) keyES = v;
+            if (id == 0) keyKA = v; else if (id == 1) keyTB = v; else if (id == 2) keyFB = v;
+            else if (id == 3) keyAT = v; else if (id == 4) keyESP = v;
             saveConfig(); client.setScreen(parent); return true;
         }
         @Override
@@ -382,3 +385,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
