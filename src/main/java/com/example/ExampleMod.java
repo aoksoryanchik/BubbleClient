@@ -63,7 +63,6 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // Меню на клавишу G
             if (isPressed(win, GLFW.GLFW_KEY_G) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -83,7 +82,6 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // ИСПРАВЛЕННЫЙ ANTIVELOCITY (60% откидывания для легитности)
             if (antiVelocity && client.player.hurtTime == 9 && !client.player.isDead()) {
                 Vec3d velocity = client.player.getVelocity();
                 client.player.setVelocity(velocity.x * 0.6, velocity.y, velocity.z * 0.6);
@@ -106,7 +104,7 @@ public class ExampleMod implements ModInitializer {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
 
-        // ESP ИГРОКИ
+        // ИГРОКИ
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive()) continue;
 
@@ -124,9 +122,12 @@ public class ExampleMod implements ModInitializer {
             ms.pop();
         }
 
-        // ESP СУНДУКИ (CHEST ESP)
+        // СУНДУКИ (ИСПРАВЛЕННЫЙ ЦИКЛ)
         if (chestESP) {
-            for (BlockEntity be : client.world.blockEntities) {
+            // В 1.21.4 используем world.blockEntities перебором через chunks или специальный итератор, 
+            // но в Fabric проще всего использовать client.world.getLoadedEntities() для блоков не получится, 
+            // используем правильный доступ к списку сущностей блоков через встроенный список ClientWorld:
+            client.world.blockEntities.forEach((pos, be) -> {
                 if (be instanceof ChestBlockEntity || be instanceof EnderChestBlockEntity || be instanceof ShulkerBoxBlockEntity) {
                     ms.push();
                     double x = be.getPos().getX() - camPos.x;
@@ -141,7 +142,7 @@ public class ExampleMod implements ModInitializer {
                     drawBox(buffer, ms.peek().getPositionMatrix(), 0.5f, 1.0f, r, g, b);
                     ms.pop();
                 }
-            }
+            });
         }
 
         consumers.draw(RenderLayer.getLines());
@@ -185,11 +186,16 @@ public class ExampleMod implements ModInitializer {
         }
         if (target != null) {
             if (autoRun) c.player.setSprinting(true);
-            // УМНАЯ ЛОГИКА АТАКИ (CRIT WAIT)
+            
+            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
+            float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
+            float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            c.player.setYaw(yaw); c.player.setPitch(pitch);
+
             boolean isRising = !c.player.isOnGround() && c.player.getVelocity().y > 0.05;
             boolean ready = c.player.getAttackCooldownProgress(0) >= (0.92f + random.nextFloat() * 0.03f);
             
-            if (isRising && dist < 3.5) return; // Пропуск тика для крита
+            if (isRising && dist < 3.5) return;
 
             if (ready) {
                 c.interactionManager.attackEntity(c.player, target);
@@ -209,17 +215,19 @@ public class ExampleMod implements ModInitializer {
 
     private void throwPearl(MinecraftClient client) {
         int ps = -1;
-        for (int i = 0; i < 36; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; } }
-        if (ps == -1) return;
-        int old = client.player.getInventory().selectedSlot;
-        if (ps < 9) {
-            client.player.getInventory().selectedSlot = ps;
-            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-            client.player.getInventory().selectedSlot = old;
-        } else {
-            client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, ps, old, SlotActionType.SWAP, client.player);
-            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-            client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, ps, old, SlotActionType.SWAP, client.player);
+        for (int i = 9; i < 36; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; } }
+        if (ps == -1) for (int i = 0; i < 9; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; } }
+        if (ps != -1) {
+            int old = client.player.getInventory().selectedSlot;
+            if (ps < 9) {
+                client.player.getInventory().selectedSlot = ps;
+                client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+                client.player.getInventory().selectedSlot = old;
+            } else {
+                client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, ps, old, SlotActionType.SWAP, client.player);
+                client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+                client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, ps, old, SlotActionType.SWAP, client.player);
+            }
         }
     }
 
@@ -396,8 +404,7 @@ public class ExampleMod implements ModInitializer {
         public boolean keyPressed(int k, int s, int n) {
             int v = (k == GLFW.GLFW_KEY_ESCAPE) ? -1 : k;
             if (id == 0) keyKA = v; else if (id == 1) keyTB = v; else if (id == 2) keyFB = v; 
-            else if (id == 3) keyAT = v; else if (id == 4) keyESP = v; else if (id == 5) { /* бинд для ChestESP если надо */ }
-            else if (id == 6) keyFP = v; else if (id == 7) keyES = v;
+            else if (id == 3) keyAT = v; else if (id == 4) keyESP = v; else if (id == 6) keyFP = v; else if (id == 7) keyES = v;
             saveConfig(); client.setScreen(parent); return true;
         }
         @Override
