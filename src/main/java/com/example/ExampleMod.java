@@ -39,6 +39,7 @@ import java.util.Random;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
+    public static boolean isAres = false, isBlaze = false; // Состояния кнопок серверов
 
     public static double kaRange = 3.8, kawallsRange = 3.0;
     public static float smoothSpeed = 1.0f; 
@@ -167,7 +168,6 @@ public class ExampleMod implements ModInitializer {
 
             boolean isFalling = client.player.fallDistance > 0.08f && !client.player.isOnGround() && !client.player.isClimbing();
             
-            // ИСПРАВЛЕННАЯ СТРОКА ТУТ (client.player вместо client)
             if (client.player.getAttackCooldownProgress(0) >= 0.93f) {
                 if (isFalling || client.player.isOnGround()) {
                     client.interactionManager.attackEntity(client.player, target);
@@ -343,16 +343,18 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(cx - 120, cy - 90, cx + 130, cy + 65, 0xDD101010);
             ctx.drawText(textRenderer, "Range:", cx - 115, cy - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", cx - 115, cy - 52, -1, true);
-            drawBtn(ctx, cx - 115, cy - 20, "AresMine", mx, my);
-            drawBtn(ctx, cx - 30, cy - 20, "MainBlaze", mx, my);
-            drawBtn(ctx, cx + 55, cy - 20, "Mixer", mx, my);
+            
+            // Кнопки серверов
+            drawBtnServer(ctx, cx - 115, cy - 20, "AresMine", isAres, mx, my);
+            drawBtnServer(ctx, cx - 30, cy - 20, "MainBlaze", isBlaze, mx, my);
+            
             drawCheck(ctx, cx - 95, cy + 10, "AutoRun", autoRun, mx, my);
             drawCheck(ctx, cx + 10, cy + 10, "AntiVel", antiVelocity, mx, my);
         }
-        private void drawBtn(DrawContext ctx, int x, int y, String n, int mx, int my) {
+        private void drawBtnServer(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
             ctx.fill(x, y, x + 75, y + 15, h ? 0x404040 : 0x202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 37, y + 4, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 37, y + 4, s ? 0x00FF00 : 0xFFFFFF);
         }
         private void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 85 && my >= y && my <= y + 15;
@@ -361,15 +363,21 @@ public class ExampleMod implements ModInitializer {
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
+            // AresMine
             if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { 
-                kaRange = 3.8; rF.setText("3.8"); smoothSpeed = 0.70f; return true; 
+                isAres = !isAres;
+                if (isAres) {
+                    isBlaze = false; kaRange = 3.8; rF.setText("3.8"); smoothSpeed = 0.70f;
+                } else { smoothSpeed = 1.0f; }
+                return true; 
             }
+            // MainBlaze
             if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { 
-                kaRange = 4.0; rF.setText("4.0"); smoothSpeed = 0.70f; return true; 
-            }
-            if (mx >= cx + 55 && mx <= cx + 130 && my >= cy - 20 && my <= cy - 5) { 
-                kaRange = 3.0; kawallsRange = 0.0; smoothSpeed = 0.53f;
-                rF.setText("3.0"); wF.setText("0.0"); return true; 
+                isBlaze = !isBlaze;
+                if (isBlaze) {
+                    isAres = false; kaRange = 4.0; rF.setText("4.0"); smoothSpeed = 0.70f;
+                } else { smoothSpeed = 1.0f; }
+                return true; 
             }
             if (mx >= cx - 95 && mx <= cx - 10 && my >= cy + 10 && my <= cy + 25) { autoRun = !autoRun; return true; }
             if (mx >= cx + 10 && mx <= cx + 95 && my >= cy + 10 && my <= cy + 25) { antiVelocity = !antiVelocity; return true; }
