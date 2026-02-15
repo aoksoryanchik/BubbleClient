@@ -42,7 +42,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean isAres = false, isBlaze = false, silentRotations = true;
 
     public static double kaRange = 3.3, kawallsRange = 3.0;
-    public static float smoothSpeed = 0.78f; 
+    public static float smoothSpeed = 0.78f; // Твой SpeedAim
     
     private static float sYaw, sPitch;
     private static boolean rotateBack = false;
@@ -84,8 +84,10 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
+            // Легитный AntiVelocity
             if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
+                double reduction = 0.4;
+                client.player.setVelocity(client.player.getVelocity().multiply(reduction, 1.0, reduction));
             }
         });
     }
@@ -103,45 +105,44 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            if (autoRun && client.player.input.pressingForward) client.player.setSprinting(true);
+            // ИСПРАВЛЕНО: Правильный доступ к вводу игрока для 1.21.4
+            if (autoRun && client.player.input.movementForward > 0) client.player.setSprinting(true);
             
             Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавность через SpeedAim
+            // SpeedAim (smoothSpeed)
             sYaw = lerpAngle(rotateBack ? client.player.getYaw() : sYaw, targetYaw, smoothSpeed);
             sPitch = lerpAngle(rotateBack ? client.player.getPitch() : sPitch, targetPitch, smoothSpeed);
             rotateBack = false;
 
-            // Сначала отправляем пакет поворота, чтобы сервер "увидел" взгляд
+            // ИСПРАВЛЕНО: Правильный конструктор пакета
             if (silentRotations) {
-                client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                    sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+                    sYaw, sPitch, client.player.isOnGround()
                 ));
             } else {
                 client.player.setYaw(sYaw);
                 client.player.setPitch(sPitch);
             }
 
-            // УДАР: Проверка кулдауна и точности наведения
-            if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
-                double angleDiff = Math.abs(MathHelper.wrapDegrees(sYaw - targetYaw));
-                if (angleDiff < 15) { // Удар только если прицел реально наведен
+            // УДАР: Проверка готовности
+            if (client.player.getAttackCooldownProgress(0.5f) >= 0.93f) {
+                if (Math.abs(MathHelper.wrapDegrees(sYaw - targetYaw)) < 20) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
             }
-        } else {
-            if (!rotateBack) {
-                sYaw = client.player.getYaw();
-                sPitch = client.player.getPitch();
-                rotateBack = true;
-            }
+        } else if (!rotateBack) {
+            sYaw = client.player.getYaw();
+            sPitch = client.player.getPitch();
+            rotateBack = true;
         }
     }
 
+    // Рендер ESP
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -151,6 +152,7 @@ public class ExampleMod implements ModInitializer {
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
+        
         VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
