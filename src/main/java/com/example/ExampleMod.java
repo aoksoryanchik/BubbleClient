@@ -8,6 +8,7 @@ import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.InputUtil;
@@ -58,7 +59,7 @@ public class ExampleMod implements ModInitializer {
     public static int keyES = GLFW.GLFW_KEY_C, keyFP = GLFW.GLFW_KEY_V, keyAF = -1;
 
     private static final boolean[] keyStates = new boolean[512];
-    private static final String CONFIG_FILE = "bubble_v3_config.txt";
+    private static final String CONFIG_FILE = "bubble_v4_config.txt";
     private final Random random = new Random();
 
     @Override
@@ -71,12 +72,12 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // Открытие меню на клавишу "0"
+            // Menu on "0"
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new MainMenu());
             }
 
-            // Бинды (если не в меню)
+            // Keybinds check
             if (client.currentScreen == null) {
                 if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
                 if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
@@ -89,39 +90,34 @@ public class ExampleMod implements ModInitializer {
                 if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
             }
 
-            // Логика модулей
+            // Active Modules
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
             if (autoFarm) runAutoFarm(client);
 
-            // AntiVelocity (Smart/Legit fix for MineBlaze)
+            // AntiVelocity (MineBlaze Legit Fix)
             if (antiVelocity && client.player.hurtTime == 9 && !client.player.isDead()) {
                  Vec3d v = client.player.getVelocity();
-                 // Мягкое гашение скорости, чтобы сервер не тепал назад
-                 client.player.setVelocity(v.x * 0.6, v.y, v.z * 0.6);
+                 client.player.setVelocity(v.x * 0.6, v.y, v.z * 0.6); // 60% velocity retention
             }
         });
     }
 
-    // --- AUTOFARM LOGIC ---
+    // --- LOGIC ---
+
     private void runAutoFarm(MinecraftClient c) {
-        // Проверка валидности текущей цели
         if (currentMineTarget != null) {
             BlockState state = c.world.getBlockState(currentMineTarget);
             String name = state.getBlock().getName().getString();
             double dist = c.player.squaredDistanceTo(currentMineTarget.toCenterPos());
             
             boolean valid = false;
-            // Проверяем, есть ли имя блока в списке (поиск подстроки для удобства)
             for (String s : farmBlockList) {
-                if (!s.isEmpty() && name.toLowerCase().contains(s)) {
-                    valid = true; break;
-                }
+                if (!s.isEmpty() && name.toLowerCase().contains(s)) { valid = true; break; }
             }
             
-            // Если блок сломан, далеко ( > 7 блоков) или стал воздухом -> сброс
             if (c.world.isAir(currentMineTarget) || !valid || dist > 49) {
                 currentMineTarget = null;
                 c.options.forwardKey.setPressed(false);
@@ -129,7 +125,6 @@ public class ExampleMod implements ModInitializer {
             }
         }
 
-        // Поиск новой цели, только если нет текущей (Target Lock)
         if (currentMineTarget == null) {
             BlockPos bestPos = null;
             double bestDist = Double.MAX_VALUE;
@@ -146,10 +141,7 @@ public class ExampleMod implements ModInitializer {
                         for (String targetName : farmBlockList) {
                             if (!targetName.isEmpty() && name.contains(targetName)) {
                                 double d = c.player.squaredDistanceTo(pos.toCenterPos());
-                                if (d < bestDist) {
-                                    bestDist = d;
-                                    bestPos = pos;
-                                }
+                                if (d < bestDist) { bestDist = d; bestPos = pos; }
                             }
                         }
                     }
@@ -158,11 +150,8 @@ public class ExampleMod implements ModInitializer {
             currentMineTarget = bestPos;
         }
 
-        // Движение и добыча
         if (currentMineTarget != null) {
             Vec3d targetCenter = currentMineTarget.toCenterPos();
-            
-            // Смотрим на блок
             double dx = targetCenter.x - c.player.getX();
             double dy = targetCenter.y - c.player.getEyeY();
             double dz = targetCenter.z - c.player.getZ();
@@ -170,24 +159,19 @@ public class ExampleMod implements ModInitializer {
             
             float yaw = (float) (Math.atan2(dz, dx) * 57.29577951308232) - 90.0F;
             float pitch = (float) -(Math.atan2(dy, dist) * 57.29577951308232);
-            
-            c.player.setYaw(yaw);
-            c.player.setPitch(pitch);
+            c.player.setYaw(yaw); c.player.setPitch(pitch);
 
-            // Идем к блоку
             if (Math.sqrt(c.player.squaredDistanceTo(targetCenter)) > 3.5) {
                 c.options.forwardKey.setPressed(true);
                 c.options.attackKey.setPressed(false);
             } else {
                 c.options.forwardKey.setPressed(false);
-                // Копаем
                 c.interactionManager.updateBlockBreakingProgress(currentMineTarget, Direction.UP);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
         }
     }
 
-    // --- KILLAURA LOGIC (Fixes for MineBlaze) ---
     private void runAura(MinecraftClient c) {
         PlayerEntity target = null; double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
@@ -202,24 +186,18 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // AutoRun logic
             if (autoRun) c.player.setSprinting(true);
-
-            // Плавная наводка (Fix invalid rotations)
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
             float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
             
-            // Интерполяция стала чуть жестче для точности, но плавнее для античита
             c.player.setYaw(lerpAngle(c.player.getYaw(), yaw, 1.0f)); 
             c.player.setPitch(lerpAngle(c.player.getPitch(), pitch, 1.0f));
 
-            // Smart Crit logic + Fix "Hit eating"
             boolean rising = !c.player.isOnGround() && c.player.getVelocity().y > 0.05;
-            
-            // Увеличенный рандом для cooldown (0.93 вместо 0.90), чтобы сервер точно засчитал удар
+            // MineBlaze Safe Delay: 0.93 + random
             if (c.player.getAttackCooldownProgress(0) >= (0.93f + random.nextFloat() * 0.05f)) {
-                 if (rising && dist < 3.0) return; // Wait for crit fall
+                 if (rising && dist < 3.0) return; 
                  c.interactionManager.attackEntity(c.player, target);
                  c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -228,10 +206,9 @@ public class ExampleMod implements ModInitializer {
 
     private float lerpAngle(float start, float end, float speed) {
         float diff = MathHelper.wrapDegrees(end - start);
-        return start + diff * speed; // Simple linear for crisp aim
+        return start + diff * speed;
     }
 
-    // --- UTILS ---
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -272,7 +249,6 @@ public class ExampleMod implements ModInitializer {
         int pS = findItem(c, Items.ENDER_PEARL);
         if (pS != -1) runInteract(c, pS);
     }
-
     private void swapElytra(MinecraftClient c) {
         boolean wear = c.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.CHEST).isOf(Items.ELYTRA);
         int slot = -1;
@@ -287,35 +263,28 @@ public class ExampleMod implements ModInitializer {
             c.interactionManager.clickSlot(c.player.currentScreenHandler.syncId, invS, 0, SlotActionType.PICKUP, c.player);
         }
     }
-
     private int findItem(MinecraftClient c, net.minecraft.item.Item item) {
         for (int i = 9; i < 36; i++) if (c.player.getInventory().getStack(i).isOf(item)) return i;
         for (int i = 0; i < 9; i++) if (c.player.getInventory().getStack(i).isOf(item)) return i;
         return -1;
     }
-
     private void runInteract(MinecraftClient c, int slot) {
         int old = c.player.getInventory().selectedSlot;
         if (slot < 9) {
-            c.player.getInventory().selectedSlot = slot;
-            c.interactionManager.interactItem(c.player, Hand.MAIN_HAND);
-            c.player.getInventory().selectedSlot = old;
+            c.player.getInventory().selectedSlot = slot; c.interactionManager.interactItem(c.player, Hand.MAIN_HAND); c.player.getInventory().selectedSlot = old;
         } else {
             c.interactionManager.clickSlot(c.player.currentScreenHandler.syncId, slot, old, SlotActionType.SWAP, c.player);
             c.interactionManager.interactItem(c.player, Hand.MAIN_HAND);
             c.interactionManager.clickSlot(c.player.currentScreenHandler.syncId, slot, old, SlotActionType.SWAP, c.player);
         }
     }
-
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
             if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) == 1.0f) {
-                c.interactionManager.attackEntity(c.player, p);
-                c.player.swingHand(Hand.MAIN_HAND);
+                c.interactionManager.attackEntity(c.player, p); c.player.swingHand(Hand.MAIN_HAND);
             }
         }
     }
-
     private void checkTotem(MinecraftClient c) {
         if (!c.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
             for (int i = 0; i < 45; i++) {
@@ -329,11 +298,9 @@ public class ExampleMod implements ModInitializer {
             }
         }
     }
-
     private void notify(MinecraftClient c, String m, boolean s) {
         c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (s ? "§aON" : "§cOFF")), true);
     }
-
     private boolean isPressed(long h, int k) {
         if (k == -1) return false;
         boolean p = InputUtil.isKeyPressed(h, k);
@@ -341,8 +308,6 @@ public class ExampleMod implements ModInitializer {
         if (!p) keyStates[k] = false;
         return false;
     }
-
-    // --- CONFIG ---
     public static void updateFriends(String r) {
         friendsRaw = r; friendsList.clear();
         if (r != null && !r.isEmpty()) Arrays.stream(r.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
@@ -351,7 +316,6 @@ public class ExampleMod implements ModInitializer {
         farmBlocksRaw = r; farmBlockList.clear();
         if (r != null && !r.isEmpty()) Arrays.stream(r.split(",")).map(String::trim).map(String::toLowerCase).forEach(farmBlockList::add);
     }
-
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange+":"+kawallsRange+":"+autoRun+":"+keyKA+":"+keyTB+":"+keyAT+":"+friendsRaw+":"+esp+":"+keyESP+":"+fullbright+":"+keyFB+":"+elytraSwap+":"+keyES+":"+fastPearl+":"+keyFP+":"+antiVelocity+":"+autoFarm+":"+keyAF+":"+farmBlocksRaw);
@@ -372,9 +336,8 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI SCREENS ---
+    // --- GUI ---
     
-    // 1. MAIN MENU (Categories)
     public static class MainMenu extends Screen {
         public MainMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -382,7 +345,6 @@ public class ExampleMod implements ModInitializer {
             renderBackground(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
             ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE MENU", cx, cy - 60, 0x00CCFF);
-            
             drawBtn(ctx, cx - 105, cy - 20, "Combat", mx, my);
             drawBtn(ctx, cx - 35, cy - 20, "Visuals", mx, my);
             drawBtn(ctx, cx + 35, cy - 20, "Binds", mx, my);
@@ -395,21 +357,18 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx-105 && mx <= cx-35 && my >= cy-20 && my <= cy) client.setScreen(new CategoryScreen(0, this)); // Combat
-            if (mx >= cx-35 && mx <= cx+35 && my >= cy-20 && my <= cy) client.setScreen(new CategoryScreen(1, this)); // Visuals
-            if (mx >= cx+35 && mx <= cx+105 && my >= cy-20 && my <= cy) client.setScreen(new CategoryScreen(2, this)); // Binds
+            if (mx >= cx-105 && mx <= cx-35 && my >= cy-20 && my <= cy) client.setScreen(new CategoryScreen(0, this));
+            if (mx >= cx-35 && mx <= cx+35 && my >= cy-20 && my <= cy) client.setScreen(new CategoryScreen(1, this));
+            if (mx >= cx+35 && mx <= cx+105 && my >= cy-20 && my <= cy) client.setScreen(new CategoryScreen(2, this));
             return super.mouseClicked(mx, my, b);
         }
     }
 
-    // 2. CATEGORY SCREEN (Modules)
     public static class CategoryScreen extends Screen {
-        private final Screen parent;
-        private final int category; // 0=Combat, 1=Visuals, 2=Binds
+        private final Screen parent; private final int category;
         private final String[] combat = {"KillAura", "TriggerBot", "AutoTotem"};
         private final String[] visuals = {"ESP", "FullBright"};
         private final String[] binds = {"ElytraSwap", "FastPearl", "AutoFarm"};
-
         public CategoryScreen(int cat, Screen p) { super(Text.literal("Cat")); this.category = cat; this.parent = p; }
         
         @Override
@@ -418,7 +377,6 @@ public class ExampleMod implements ModInitializer {
             int cx = width / 2, cy = height / 2;
             String t = category == 0 ? "Combat" : category == 1 ? "Visuals" : "Binds";
             ctx.drawCenteredTextWithShadow(textRenderer, t, cx, cy - 80, 0x00CCFF);
-            
             String[] list = category == 0 ? combat : category == 1 ? visuals : binds;
             for (int i = 0; i < list.length; i++) {
                 int iy = cy - 50 + i * 24;
@@ -428,7 +386,6 @@ public class ExampleMod implements ModInitializer {
                 ctx.drawText(textRenderer, list[i], cx - 55, iy + 6, s ? 0x00FF00 : 0xFFFFFF, true);
             }
         }
-
         private boolean getState(String n) {
             switch(n) {
                 case "KillAura": return killaura; case "TriggerBot": return triggerbot; case "AutoTotem": return autoTotem;
@@ -436,32 +393,26 @@ public class ExampleMod implements ModInitializer {
                 case "ElytraSwap": return elytraSwap; case "FastPearl": return fastPearl; case "AutoFarm": return autoFarm;
             } return false;
         }
-
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
             String[] list = category == 0 ? combat : category == 1 ? visuals : binds;
-            
             for (int i = 0; i < list.length; i++) {
                 int iy = cy - 50 + i * 24;
                 if (mx >= cx - 60 && mx <= cx + 60 && my >= iy && my <= iy + 20) {
                     String n = list[i];
-                    if (b == 1) { // Right Click Settings/Bind
+                    if (b == 1) { // Right Click
                         if (n.equals("KillAura")) client.setScreen(new KillAuraSettings(this));
                         else if (n.equals("AutoFarm")) client.setScreen(new AutoFarmSettings(this));
                         else client.setScreen(new BindScreen(this, getId(n)));
                         return true;
                     }
-                    if (b == 0) { // Toggle
-                        toggle(n); saveConfig(); return true;
-                    }
+                    if (b == 0) { toggle(n); saveConfig(); return true; }
                 }
             }
             return super.mouseClicked(mx, my, b);
         }
-        
         @Override public void close() { client.setScreen(parent); }
-
         private void toggle(String n) {
             switch(n) {
                 case "KillAura": killaura=!killaura; break; case "TriggerBot": triggerbot=!triggerbot; break;
@@ -479,78 +430,89 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // 3. KILL AURA SETTINGS (Preserved)
     public static class KillAuraSettings extends Screen {
         private final Screen parent; private TextFieldWidget rF, wF, fF;
+        private ButtonWidget bindBtn;
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
         @Override
         protected void init() {
             int cx = width / 2, cy = height / 2;
-            rF = new TextFieldWidget(textRenderer, cx - 40, cy - 75, 40, 14, Text.literal("")); rF.setText(String.valueOf(kaRange));
-            wF = new TextFieldWidget(textRenderer, cx - 40, cy - 55, 40, 14, Text.literal("")); wF.setText(String.valueOf(kawallsRange));
-            fF = new TextFieldWidget(textRenderer, cx + 15, cy - 75, 100, 14, Text.literal("Friends")); fF.setText(friendsRaw);
-            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
+            // Range Field
+            rF = new TextFieldWidget(textRenderer, cx - 100, cy - 65, 90, 16, Text.literal(""));
+            rF.setText(String.valueOf(kaRange));
+            // Walls Field
+            wF = new TextFieldWidget(textRenderer, cx + 10, cy - 65, 90, 16, Text.literal(""));
+            wF.setText(String.valueOf(kawallsRange));
+            // Friends Field
+            fF = new TextFieldWidget(textRenderer, cx - 100, cy - 25, 200, 16, Text.literal("Friends"));
+            fF.setText(friendsRaw);
+            
+            // BIND BUTTON INSIDE SETTINGS
+            bindBtn = ButtonWidget.builder(Text.literal("Bind Key: " + getKeyName(keyKA)), button -> {
+                client.setScreen(new BindScreen(this, 0));
+            }).dimensions(cx - 50, cy + 45, 100, 20).build();
+
+            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF); addDrawableChild(bindBtn);
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             renderBackground(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 120, cy - 90, cx + 130, cy + 65, 0xDD101010);
-            ctx.drawText(textRenderer, "Range:", cx - 115, cy - 72, -1, true);
-            ctx.drawText(textRenderer, "Walls:", cx - 115, cy - 52, -1, true);
-            drawBtn(ctx, cx - 115, cy - 20, "AresMine", mx, my); drawBtn(ctx, cx - 30, cy - 20, "MainBlaze", mx, my);
-            drawCheck(ctx, cx - 95, cy + 10, "AutoRun", autoRun, mx, my);
-            drawCheck(ctx, cx + 10, cy + 10, "AntiVelocity", antiVelocity, mx, my);
-        }
-        private void drawBtn(DrawContext ctx, int x, int y, String n, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 75, y + 15, h ? 0xEE404040 : 0xEE202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 37, y + 4, -1);
+            ctx.drawCenteredTextWithShadow(textRenderer, "KILLAURA SETTINGS", cx, cy - 90, 0x00CCFF);
+            ctx.drawText(textRenderer, "Range:", cx - 100, cy - 77, -1, true);
+            ctx.drawText(textRenderer, "Walls Range:", cx + 10, cy - 77, -1, true);
+            ctx.drawText(textRenderer, "Friends (comma separated):", cx - 100, cy - 37, -1, true);
+            
+            drawCheck(ctx, cx - 100, cy + 5, "AutoRun", autoRun, mx, my);
+            drawCheck(ctx, cx + 10, cy + 5, "AntiVelocity", antiVelocity, mx, my);
         }
         private void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 85 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 85, y + 15, h ? 0xEE404040 : 0xEE202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 42, y + 4, s ? 0x00FF00 : 0xFFFFFF);
+            boolean h = mx >= x && mx <= x + 90 && my >= y && my <= y + 20;
+            ctx.fill(x, y, x + 90, y + 20, h ? 0xEE404040 : 0xEE202020);
+            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 45, y + 6, s ? 0x00FF00 : 0xFFFFFF);
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { rF.setText("3.8"); wF.setText("3.1"); return true; }
-            if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { rF.setText("4.0"); wF.setText("3.3"); return true; }
-            if (mx >= cx - 95 && mx <= cx - 10 && my >= cy + 10 && my <= cy + 25) { autoRun = !autoRun; return true; }
-            if (mx >= cx + 10 && mx <= cx + 95 && my >= cy + 10 && my <= cy + 25) { antiVelocity = !antiVelocity; return true; }
+            if (mx >= cx - 100 && mx <= cx - 10 && my >= cy + 5 && my <= cy + 25) { autoRun = !autoRun; return true; }
+            if (mx >= cx + 10 && mx <= cx + 100 && my >= cy + 5 && my <= cy + 25) { antiVelocity = !antiVelocity; return true; }
             return super.mouseClicked(mx, my, b);
         }
         @Override public void close() {
             try { kaRange = Double.parseDouble(rF.getText()); kawallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {}
             updateFriends(fF.getText()); saveConfig(); client.setScreen(parent);
         }
+        private String getKeyName(int k) { return k == -1 ? "NONE" : InputUtil.fromKeyCode(k, 0).getLocalizedText().getString(); }
     }
 
-    // 4. AUTO FARM SETTINGS
     public static class AutoFarmSettings extends Screen {
-        private final Screen parent; private TextFieldWidget bF;
+        private final Screen parent; private TextFieldWidget bF; private ButtonWidget bindBtn;
         public AutoFarmSettings(Screen parent) { super(Text.literal("Farm")); this.parent = parent; }
         @Override
         protected void init() {
             int cx = width / 2, cy = height / 2;
             bF = new TextFieldWidget(textRenderer, cx - 100, cy - 10, 200, 20, Text.literal("Blocks"));
             bF.setText(farmBlocksRaw); bF.setMaxLength(256);
-            addDrawableChild(bF);
+            
+            bindBtn = ButtonWidget.builder(Text.literal("Bind Key: " + getKeyName(keyAF)), button -> {
+                client.setScreen(new BindScreen(this, 7));
+            }).dimensions(cx - 50, cy + 20, 100, 20).build();
+
+            addDrawableChild(bF); addDrawableChild(bindBtn);
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             renderBackground(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
             ctx.drawCenteredTextWithShadow(textRenderer, "BLOCKS TO MINE (Comma separated)", cx, cy - 30, -1);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Example: Алмазная руда, Золотая руда", cx, cy + 20, 0xAAAAAA);
+            ctx.drawCenteredTextWithShadow(textRenderer, "Example: Алмазная руда, Золотая руда", cx, cy + 50, 0xAAAAAA);
         }
         @Override public void close() {
             updateFarm(bF.getText()); saveConfig(); client.setScreen(parent);
         }
+        private String getKeyName(int k) { return k == -1 ? "NONE" : InputUtil.fromKeyCode(k, 0).getLocalizedText().getString(); }
     }
 
-    // 5. BIND SCREEN
     public static class BindScreen extends Screen {
         private final Screen parent; private final int id;
         public BindScreen(Screen parent, int id) { super(Text.literal("Bind")); this.parent = parent; this.id = id; }
@@ -566,6 +528,7 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float delta) {
             renderBackground(ctx, mx, my, delta);
             ctx.drawCenteredTextWithShadow(textRenderer, "PRESS ANY KEY", width / 2, height / 2, 0x00CCFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "Escape to unbind", width / 2, height / 2 + 20, 0xAAAAAA);
         }
     }
 }
