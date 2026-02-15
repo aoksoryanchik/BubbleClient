@@ -42,7 +42,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean isAres = false, isBlaze = false, silentRotations = true;
 
     public static double kaRange = 3.3, kawallsRange = 3.0;
-    public static float smoothSpeed = 0.78f; // Твой SpeedAim
+    public static float smoothSpeed = 0.78f; 
     
     private static float sYaw, sPitch;
     private static boolean rotateBack = false;
@@ -84,10 +84,10 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // Легитный AntiVelocity
+            // AntiVelocity fix
             if (antiVelocity && client.player.hurtTime > 0) {
-                double reduction = 0.4;
-                client.player.setVelocity(client.player.getVelocity().multiply(reduction, 1.0, reduction));
+                Vec3d velocity = client.player.getVelocity();
+                client.player.setVelocity(velocity.x * 0.4, velocity.y, velocity.z * 0.4);
             }
         });
     }
@@ -105,7 +105,7 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            // ИСПРАВЛЕНО: Правильный доступ к вводу игрока для 1.21.4
+            // Исправлено: использование правильного поля ввода для 1.21.4
             if (autoRun && client.player.input.movementForward > 0) client.player.setSprinting(true);
             
             Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
@@ -113,24 +113,23 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // SpeedAim (smoothSpeed)
             sYaw = lerpAngle(rotateBack ? client.player.getYaw() : sYaw, targetYaw, smoothSpeed);
             sPitch = lerpAngle(rotateBack ? client.player.getPitch() : sPitch, targetPitch, smoothSpeed);
             rotateBack = false;
 
-            // ИСПРАВЛЕНО: Правильный конструктор пакета
+            // Исправлено: конструктор LookAndOnGround требует 4 аргумента
             if (silentRotations) {
                 client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                    sYaw, sPitch, client.player.isOnGround()
+                    sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision
                 ));
             } else {
                 client.player.setYaw(sYaw);
                 client.player.setPitch(sPitch);
             }
 
-            // УДАР: Проверка готовности
-            if (client.player.getAttackCooldownProgress(0.5f) >= 0.93f) {
-                if (Math.abs(MathHelper.wrapDegrees(sYaw - targetYaw)) < 20) {
+            // Исправлено: получение кулдауна без лишних аргументов
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.92f) {
+                if (Math.abs(MathHelper.wrapDegrees(sYaw - targetYaw)) < 15) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -142,7 +141,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // Рендер ESP
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -152,7 +150,6 @@ public class ExampleMod implements ModInitializer {
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
-        
         VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
