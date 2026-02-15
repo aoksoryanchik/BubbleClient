@@ -84,8 +84,7 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot) runTrigger(client);
 
             if (antiVelocity && client.player.hurtTime == 9 && !client.player.isDead()) {
-                Vec3d velocity = client.player.getVelocity();
-                client.player.setVelocity(velocity.x * 0.6, velocity.y, velocity.z * 0.6);
+                client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
             }
         });
     }
@@ -108,29 +107,24 @@ public class ExampleMod implements ModInitializer {
         // ESP НА ИГРОКОВ
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive()) continue;
-
             ms.push();
             double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
-
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-
-            float w = p.getWidth() / 2 + 0.05f;
-            float h = p.getHeight() + 0.05f;
-            drawBox(buffer, ms.peek().getPositionMatrix(), w, h, 0.0f, 0.6f, 1.0f);
+            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 0.0f, 0.7f, 1.0f);
             ms.pop();
         }
 
-        // ESP НА СУНДУКИ (ИСПРАВЛЕННЫЙ ЦИКЛ ПО ВСЕМ ЧАНКАМ)
+        // ESP НА СУНДУКИ (FIXED)
         if (chestESP) {
-            int dist = client.options.getClampedViewDistance();
-            int pX = client.player.getChunkPos().x;
-            int pZ = client.player.getChunkPos().z;
+            int renderDist = client.options.getClampedViewDistance();
+            int chunkX = client.player.getChunkPos().x;
+            int chunkZ = client.player.getChunkPos().z;
 
-            for (int x = pX - dist; x <= pX + dist; x++) {
-                for (int z = pZ - dist; z <= pZ + dist; z++) {
+            for (int x = chunkX - renderDist; x <= chunkX + renderDist; x++) {
+                for (int z = chunkZ - renderDist; z <= chunkZ + renderDist; z++) {
                     WorldChunk chunk = client.world.getChunk(x, z);
                     if (chunk != null) {
                         for (BlockEntity be : chunk.getBlockEntities().values()) {
@@ -140,12 +134,12 @@ public class ExampleMod implements ModInitializer {
                                 double by = be.getPos().getY() - camPos.y;
                                 double bz = be.getPos().getZ() - camPos.z;
                                 ms.translate(bx, by, bz);
-
+                                
                                 float r = 1.0f, g = 0.8f, b = 0.0f; // Обычный - желтый
-                                if (be instanceof ShulkerBoxBlockEntity) { r = 0.8f; g = 0.0f; b = 1.0f; } // Шалкер - фиолетовый
-                                if (be instanceof EnderChestBlockEntity) { r = 0.0f; g = 1.0f; b = 1.0f; } // Эндер - голубой
+                                if (be instanceof EnderChestBlockEntity) { r = 0.2f; g = 1.0f; b = 0.6f; }
+                                if (be instanceof ShulkerBoxBlockEntity) { r = 0.8f; g = 0.2f; b = 1.0f; }
 
-                                drawBox(buffer, ms.peek().getPositionMatrix(), 0.5f, 1.0f, r, g, b);
+                                drawBox(buffer, ms.peek().getPositionMatrix(), 0.51f, 1.01f, r, g, b);
                                 ms.pop();
                             }
                         }
@@ -157,7 +151,6 @@ public class ExampleMod implements ModInitializer {
         consumers.draw(RenderLayer.getLines());
         RenderSystem.enableDepthTest();
         RenderSystem.depthMask(true);
-        RenderSystem.disableBlend();
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl) {
@@ -184,29 +177,17 @@ public class ExampleMod implements ModInitializer {
         PlayerEntity target = null;
         double dist = Double.MAX_VALUE;
         for (PlayerEntity p : c.world.getPlayers()) {
-            if (p == c.player || !p.isAlive() || p.isSpectator() || p.getAbilities().invulnerable) continue;
-            if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
+            if (p == c.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = c.player.distanceTo(p);
-            if (d < kaRange) {
-                if (c.player.canSee(p) || d <= kawallsRange) {
-                    if (d < dist) { dist = d; target = p; }
-                }
+            if (d < kaRange && (c.player.canSee(p) || d <= kawallsRange)) {
+                if (d < dist) { dist = d; target = p; }
             }
         }
         if (target != null) {
-            if (autoRun) c.player.setSprinting(true);
-            
             Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(c.player.getEyePos());
-            float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
-            float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-            c.player.setYaw(yaw); c.player.setPitch(pitch);
-
-            boolean isRising = !c.player.isOnGround() && c.player.getVelocity().y > 0.05;
-            boolean ready = c.player.getAttackCooldownProgress(0) >= (0.92f + random.nextFloat() * 0.03f);
-            
-            if (isRising && dist < 3.5) return;
-
-            if (ready) {
+            c.player.setYaw((float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f);
+            c.player.setPitch((float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z))));
+            if (c.player.getAttackCooldownProgress(0) >= 0.95f) {
                 c.interactionManager.attackEntity(c.player, target);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -215,7 +196,7 @@ public class ExampleMod implements ModInitializer {
 
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
-            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) == 1.0f) {
+            if (!friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) >= 1.0f) {
                 c.interactionManager.attackEntity(c.player, p);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -225,16 +206,11 @@ public class ExampleMod implements ModInitializer {
     private void throwPearl(MinecraftClient client) {
         int ps = -1;
         for (int i = 0; i < 36; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; } }
-        if (ps == -1) return;
-        int old = client.player.getInventory().selectedSlot;
-        if (ps < 9) {
-            client.player.getInventory().selectedSlot = ps;
+        if (ps != -1) {
+            int old = client.player.getInventory().selectedSlot;
+            client.player.getInventory().selectedSlot = ps < 9 ? ps : old;
             client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
             client.player.getInventory().selectedSlot = old;
-        } else {
-            client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, ps, old, SlotActionType.SWAP, client.player);
-            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-            client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, ps, old, SlotActionType.SWAP, client.player);
         }
     }
 
@@ -243,26 +219,16 @@ public class ExampleMod implements ModInitializer {
         boolean wear = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.CHEST).isOf(Items.ELYTRA);
         for (int i = 0; i < 36; i++) {
             ItemStack s = client.player.getInventory().getStack(i);
-            if (wear ? (s.isOf(Items.NETHERITE_CHESTPLATE) || s.isOf(Items.DIAMOND_CHESTPLATE)) : s.isOf(Items.ELYTRA)) {
-                slot = i; break;
-            }
+            if (wear ? s.isOf(Items.NETHERITE_CHESTPLATE) : s.isOf(Items.ELYTRA)) { slot = i; break; }
         }
-        if (slot != -1) {
-            int invS = slot < 9 ? slot + 36 : slot;
-            client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, invS, 6, SlotActionType.PICKUP, client.player);
-            client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, 6, 0, SlotActionType.PICKUP, client.player);
-            client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, invS, 0, SlotActionType.PICKUP, client.player);
-        }
+        if (slot != -1) client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, slot < 9 ? slot + 36 : slot, 6, SlotActionType.SWAP, client.player);
     }
 
     private void checkTotem(MinecraftClient c) {
         if (!c.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
             for (int i = 0; i < 45; i++) {
                 if (c.player.getInventory().getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
-                    int s = (i < 9) ? i + 36 : i;
-                    c.interactionManager.clickSlot(c.player.currentScreenHandler.syncId, s, 0, SlotActionType.PICKUP, c.player);
-                    c.interactionManager.clickSlot(c.player.currentScreenHandler.syncId, 45, 0, SlotActionType.PICKUP, c.player);
-                    c.interactionManager.clickSlot(c.player.currentScreenHandler.syncId, s, 0, SlotActionType.PICKUP, c.player);
+                    c.interactionManager.clickSlot(c.player.currentScreenHandler.syncId, i < 9 ? i + 36 : i, 45, SlotActionType.SWAP, c.player);
                     break;
                 }
             }
@@ -270,7 +236,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void notify(MinecraftClient c, String m, boolean s) {
-        c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (s ? "§aВКЛ" : "§cВЫКЛ")), true);
+        c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (s ? "§aON" : "§cOFF")), true);
     }
 
     private boolean isPressed(long h, int k) {
@@ -283,9 +249,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void updateFriends(String r) {
         friendsRaw = r; friendsList.clear();
-        if (r != null && !r.isEmpty()) {
-            Arrays.stream(r.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
-        }
+        if (r != null && !r.isEmpty()) Arrays.stream(r.split(",")).forEach(s -> friendsList.add(s.trim().toLowerCase()));
     }
 
     public static void saveConfig() {
@@ -305,8 +269,7 @@ public class ExampleMod implements ModInitializer {
                 keyAT = Integer.parseInt(p[6]); friendsRaw = p[7];
                 esp = Boolean.parseBoolean(p[8]); keyESP = Integer.parseInt(p[9]);
                 keyFP = Integer.parseInt(p[10]); keyES = Integer.parseInt(p[11]);
-                antiVelocity = Boolean.parseBoolean(p[12]);
-                chestESP = Boolean.parseBoolean(p[13]);
+                antiVelocity = Boolean.parseBoolean(p[12]); chestESP = Boolean.parseBoolean(p[13]);
                 updateFriends(friendsRaw);
             }
         } catch (Exception ignored) {}
@@ -318,12 +281,12 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 95, cy - 115, cx + 95, cy + 135, 0xDD101010);
-            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE 1.21.4", cx, cy - 105, 0x00CCFF);
+            ctx.fill(cx - 95, cy - 110, cx + 95, cy + 130, 0xDD101010);
+            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE 1.21.4", cx, cy - 100, 0x00CCFF);
             String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "ChestESP", "FastPearl", "ElytraSwap"};
             boolean[] states = {killaura, triggerbot, fullbright, autoTotem, esp, chestESP, fastPearl, elytraSwap};
             for (int i = 0; i < names.length; i++) {
-                int iy = cy - 85 + i * 25;
+                int iy = cy - 80 + i * 25;
                 ctx.fill(cx - 85, iy, cx + 85, iy + 22, (mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 22) ? 0xEE404040 : 0xEE202020);
                 ctx.drawText(textRenderer, names[i], cx - 80, iy + 7, states[i] ? 0x00FF00 : 0xFFFFFF, true);
             }
@@ -332,7 +295,7 @@ public class ExampleMod implements ModInitializer {
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
             for (int i = 0; i < 8; i++) {
-                int iy = cy - 85 + i * 25;
+                int iy = cy - 80 + i * 25;
                 if (mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 22) {
                     if (b == 0) {
                         if (i == 0) client.setScreen(new KillAuraSettings(this));
@@ -351,19 +314,16 @@ public class ExampleMod implements ModInitializer {
             return super.mouseClicked(mx, my, b);
         }
     }
-    // [Остальные настройки KillAuraSettings и BindScreen остаются без изменений]
+
     public static class KillAuraSettings extends Screen {
         private final Screen parent; private TextFieldWidget rF, wF, fF;
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
         @Override
         protected void init() {
             int cx = width / 2, cy = height / 2;
-            rF = new TextFieldWidget(textRenderer, cx - 40, cy - 75, 40, 14, Text.literal(""));
-            rF.setText(String.valueOf(kaRange));
-            wF = new TextFieldWidget(textRenderer, cx - 40, cy - 55, 40, 14, Text.literal(""));
-            wF.setText(String.valueOf(kawallsRange));
-            fF = new TextFieldWidget(textRenderer, cx + 15, cy - 75, 100, 14, Text.literal("Friends"));
-            fF.setText(friendsRaw);
+            rF = new TextFieldWidget(textRenderer, cx - 40, cy - 75, 40, 14, Text.literal("")); rF.setText(String.valueOf(kaRange));
+            wF = new TextFieldWidget(textRenderer, cx - 40, cy - 55, 40, 14, Text.literal("")); wF.setText(String.valueOf(kawallsRange));
+            fF = new TextFieldWidget(textRenderer, cx + 15, cy - 75, 100, 14, Text.literal("Friends")); fF.setText(friendsRaw);
             addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
         }
         @Override
@@ -376,16 +336,14 @@ public class ExampleMod implements ModInitializer {
             drawBtn(ctx, cx - 115, cy - 20, "AresMine", mx, my);
             drawBtn(ctx, cx - 30, cy - 20, "MainBlaze", mx, my);
             drawCheck(ctx, cx - 95, cy + 10, "AutoRun", autoRun, mx, my);
-            drawCheck(ctx, cx + 10, cy + 10, "AntiVelocity", antiVelocity, mx, my);
+            drawCheck(ctx, cx + 10, cy + 10, "AntiVel", antiVelocity, mx, my);
         }
         private void drawBtn(DrawContext ctx, int x, int y, String n, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 75, y + 15, h ? 0xEE404040 : 0xEE202020);
+            ctx.fill(x, y, x + 75, y + 15, (mx >= x && mx <= x + 75 && my >= y && my <= y + 15) ? 0xEE404040 : 0xEE202020);
             ctx.drawCenteredTextWithShadow(textRenderer, n, x + 37, y + 4, -1);
         }
         private void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 85 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 85, y + 15, h ? 0xEE404040 : 0xEE202020);
+            ctx.fill(x, y, x + 85, y + 15, (mx >= x && mx <= x + 85 && my >= y && my <= y + 15) ? 0xEE404040 : 0xEE202020);
             ctx.drawCenteredTextWithShadow(textRenderer, n, x + 42, y + 4, s ? 0x00FF00 : 0xFFFFFF);
         }
         @Override
@@ -417,8 +375,7 @@ public class ExampleMod implements ModInitializer {
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
-            ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width / 2, height / 2, 0x00CCFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ (ESC - СБРОС)", width / 2, height / 2, 0x00CCFF);
         }
     }
 }
-
