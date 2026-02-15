@@ -37,24 +37,21 @@ import java.util.Arrays;
 import java.util.List;
 
 public class ExampleMod implements ModInitializer {
-    // Настройки авто-включения
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
     public static boolean isAres = false, isBlaze = false, silentRotations = true;
 
     public static double kaRange = 3.3, kawallsRange = 3.0;
-    public static float smoothSpeed = 0.78f; 
+    public static float smoothSpeed = 0.85f; 
     
     private static float sYaw, sPitch;
-    private static boolean rotateBack = false;
+    private static boolean hasTarget = false;
 
-    // Бинды: C - Elytra, Q - Pearl
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
 
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
-
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
 
@@ -87,8 +84,7 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot) runTrigger(client);
 
             if (antiVelocity && client.player.hurtTime > 0) {
-                Vec3d velocity = client.player.getVelocity();
-                client.player.setVelocity(velocity.x * 0.4, velocity.y, velocity.z * 0.4);
+                client.player.setVelocity(client.player.getVelocity().multiply(0.4, 1.0, 0.4));
             }
         });
     }
@@ -106,35 +102,38 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            if (autoRun && client.player.input.movementForward > 0) client.player.setSprinting(true);
-            
+            hasTarget = true;
+            // Рассчитываем ротации
             Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            sYaw = lerpAngle(rotateBack ? client.player.getYaw() : sYaw, targetYaw, smoothSpeed);
-            sPitch = lerpAngle(rotateBack ? client.player.getPitch() : sPitch, targetPitch, smoothSpeed);
-            rotateBack = false;
+            // Плавная фантомная наводка
+            sYaw = lerpAngle(sYaw, targetYaw, smoothSpeed);
+            sPitch = lerpAngle(sPitch, targetPitch, smoothSpeed);
 
-            // FIX: Отправляем пакет Look только если мы РЕАЛЬНО собираемся бить
-            // Это решает проблему лагов при ходьбе/прыжках
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.92f) {
-                if (silentRotations) {
-                    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                        sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision
-                    ));
-                } else {
-                    client.player.setYaw(sYaw);
-                    client.player.setPitch(sPitch);
-                }
+            if (silentRotations) {
+                // Шлем пакет поворота КАЖДЫЙ тик для точности (Silent), но не меняем камеру игрока
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+                    sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision
+                ));
+            } else {
+                client.player.setYaw(sYaw);
+                client.player.setPitch(sPitch);
+            }
+
+            // Удар только по КД
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.93f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
-        } else if (!rotateBack) {
-            sYaw = client.player.getYaw();
-            sPitch = client.player.getPitch();
-            rotateBack = true;
+        } else {
+            if (hasTarget) {
+                sYaw = client.player.getYaw();
+                sPitch = client.player.getPitch();
+                hasTarget = false;
+            }
         }
     }
 
@@ -158,7 +157,7 @@ public class ExampleMod implements ModInitializer {
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 0f, 0.8f, 1f, 1f);
+            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 0.2f, 0.6f, 1f, 1f);
             ms.pop();
         }
         consumers.draw(RenderLayer.getLines());
@@ -212,7 +211,6 @@ public class ExampleMod implements ModInitializer {
             client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, invS, 0, SlotActionType.PICKUP, client.player);
             client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, 6, 0, SlotActionType.PICKUP, client.player);
             client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, invS, 0, SlotActionType.PICKUP, client.player);
-            notify(client, "Elytra", !isElytra);
         }
     }
 
@@ -239,7 +237,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void notify(MinecraftClient c, String m, boolean v) {
-        if (c.player != null) c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (v ? "§aВКЛ" : "§cВЫКЛ")), true);
+        if (c.player != null) c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (v ? "§aON" : "§cOFF")), true);
     }
 
     private boolean isPressed(long h, int k) {
@@ -248,11 +246,6 @@ public class ExampleMod implements ModInitializer {
         if (p && !keyStates[k]) { keyStates[k] = true; return true; }
         if (!p) keyStates[k] = false;
         return false;
-    }
-
-    public static void updateFriends(String r) {
-        friendsRaw = r; friendsList.clear();
-        if (r != null && !r.isEmpty()) Arrays.stream(r.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
     }
 
     public static void saveConfig() {
@@ -269,7 +262,7 @@ public class ExampleMod implements ModInitializer {
                 kaRange = Double.parseDouble(p[0]); kawallsRange = Double.parseDouble(p[1]);
                 autoRun = Boolean.parseBoolean(p[2]); keyKA = Integer.parseInt(p[3]);
                 keyTB = Integer.parseInt(p[4]); keyFB = Integer.parseInt(p[5]);
-                keyAT = Integer.parseInt(p[6]); updateFriends(p[7]);
+                keyAT = Integer.parseInt(p[6]); friendsRaw = p[7];
                 esp = Boolean.parseBoolean(p[8]); keyESP = Integer.parseInt(p[9]);
                 keyFP = Integer.parseInt(p[10]); keyES = Integer.parseInt(p[11]);
                 antiVelocity = Boolean.parseBoolean(p[12]); smoothSpeed = Float.parseFloat(p[13]);
@@ -371,7 +364,7 @@ public class ExampleMod implements ModInitializer {
         }
         public void close() {
             try { kaRange = Double.parseDouble(rF.getText()); kawallsRange = Double.parseDouble(wF.getText()); smoothSpeed = Float.parseFloat(sF.getText()); } catch (Exception ignored) {}
-            updateFriends(fF.getText()); saveConfig(); client.setScreen(parent);
+            saveConfig(); client.setScreen(parent);
         }
     }
 
@@ -392,3 +385,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
