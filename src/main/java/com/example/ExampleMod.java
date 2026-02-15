@@ -43,8 +43,8 @@ public class ExampleMod implements ModInitializer {
     public static boolean isAres = false, isBlaze = false;
     public static boolean silentRotations = false;
 
-    public static double kaRange = 3.8, kawallsRange = 3.0;
-    public static float smoothSpeed = 0.78f;
+    public static double kaRange = 3.6, kawallsRange = 3.0;
+    public static float smoothSpeed = 0.75f;
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_V, keyES = GLFW.GLFW_KEY_C;
@@ -84,10 +84,11 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
+            // Улучшенный AntiVelocity
             if (antiVelocity && client.player.hurtTime > 0 && !client.player.isDead()) {
-                double reduction = 0.4;
-                Vec3d velocity = client.player.getVelocity();
-                client.player.setVelocity(velocity.x * reduction, velocity.y, velocity.z * reduction);
+                double reduction = 0.45;
+                Vec3d vel = client.player.getVelocity();
+                client.player.setVelocity(vel.x * reduction, vel.y, vel.z * reduction);
             }
         });
     }
@@ -161,45 +162,40 @@ public class ExampleMod implements ModInitializer {
 
         if (target != null) {
             if (autoRun) client.player.setSprinting(true);
-            Vec3d targetBox = target.getPos().add(0, target.getHeight() * 0.65, 0);
-            Vec3d diff = targetBox.subtract(client.player.getEyePos());
             
+            // Расчет позиции цели (умное наведение в хитбокс)
+            Vec3d targetVec = target.getPos().add(0, target.getHeight() * 0.7, 0);
+            Vec3d diff = targetVec.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавность только если Silent выключен
+            // Если не Silent, плавно поворачиваем камеру
             if (!silentRotations) {
-                client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 0.75f * smoothSpeed));
-                client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 0.75f * smoothSpeed));
+                client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, smoothSpeed));
+                client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, smoothSpeed));
             }
 
-            // Рандомизация кулдауна для обхода
-            float cooldownRequirement = 0.92f + random.nextFloat() * 0.05f;
-            
-            if (client.player.getAttackCooldownProgress(0) >= cooldownRequirement) {
-                // Если мы в воздухе или на земле (криты)
-                if (client.player.fallDistance > 0 || client.player.isOnGround()) {
-                    
+            // Умная задержка удара (кулдаун + рандом)
+            float cd = client.player.getAttackCooldownProgress(0);
+            if (cd >= 0.92f + random.nextFloat() * 0.06f) {
+                // Проверка на крит (падение)
+                boolean isFalling = client.player.fallDistance > 0.05f && !client.player.isOnGround() && !client.player.isClimbing();
+                
+                if (isFalling || client.player.isOnGround()) {
                     if (silentRotations) {
-                        // ФИКС ТЕППАНИЯ: Отправляем пакет перед ударом
+                        // Пакет взгляда ПЕРЕД ударом (4 аргумента для 1.21.4)
                         client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                            targetYaw, 
-                            targetPitch, 
-                            client.player.isOnGround(),
-                            client.player.horizontalCollision
+                            targetYaw, targetPitch, client.player.isOnGround(), client.player.horizontalCollision
                         ));
                     }
-                    
+
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
-                    
+
                     if (silentRotations) {
-                        // Возвращаем серверный взгляд назад, чтобы античит не дергал за резкий поворот
+                        // Сразу возвращаем взгляд игрока, чтобы не было десинхрона движения
                         client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                            client.player.getYaw(),
-                            client.player.getPitch(),
-                            client.player.isOnGround(),
-                            client.player.horizontalCollision
+                            client.player.getYaw(), client.player.getPitch(), client.player.isOnGround(), client.player.horizontalCollision
                         ));
                     }
                 }
@@ -400,15 +396,15 @@ public class ExampleMod implements ModInitializer {
             if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { 
                 isAres = !isAres;
                 if (isAres) {
-                    isBlaze = false; kaRange = 3.8; rF.setText("3.8"); smoothSpeed = 0.78f; sF.setText("0.78");
-                } else { smoothSpeed = 1.0f; sF.setText("1.0"); }
+                    isBlaze = false; kaRange = 3.3; rF.setText("3.3"); // Легитный ренж для Ареса
+                }
                 return true; 
             }
             if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { 
                 isBlaze = !isBlaze;
                 if (isBlaze) {
-                    isAres = false; kaRange = 4.0; rF.setText("4.0"); smoothSpeed = 0.78f; sF.setText("0.78");
-                } else { smoothSpeed = 1.0f; sF.setText("1.0"); }
+                    isAres = false; kaRange = 3.5; rF.setText("3.5");
+                }
                 return true; 
             }
             if (mx >= cx - 95 && mx <= cx - 10 && my >= cy + 10 && my <= cy + 25) { autoRun = !autoRun; return true; }
@@ -443,4 +439,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
