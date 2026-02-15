@@ -40,11 +40,13 @@ import java.util.Random;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
-    public static boolean isAres = false, isBlaze = false;
-    public static boolean silentRotations = false;
+    public static boolean isAres = false, isBlaze = false, silentRotations = true;
 
-    public static double kaRange = 3.6, kawallsRange = 3.0;
-    public static float smoothSpeed = 0.75f;
+    public static double kaRange = 3.4, kawallsRange = 3.0;
+    public static float smoothSpeed = 0.85f;
+    
+    private static float serverYaw, serverPitch;
+    private static boolean needsRotation = false;
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_V, keyES = GLFW.GLFW_KEY_C;
@@ -84,53 +86,86 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // Улучшенный AntiVelocity
-            if (antiVelocity && client.player.hurtTime > 0 && !client.player.isDead()) {
-                double reduction = 0.45;
-                Vec3d vel = client.player.getVelocity();
-                client.player.setVelocity(vel.x * reduction, vel.y, vel.z * reduction);
+            // Оптимизированный AntiVelocity
+            if (antiVelocity && client.player.hurtTime > 0) {
+                double reduction = 0.6; // Еще более легитно
+                Vec3d v = client.player.getVelocity();
+                client.player.setVelocity(v.x * reduction, v.y, v.z * reduction);
             }
         });
+    }
+
+    private void runAura(MinecraftClient client) {
+        PlayerEntity target = null;
+        double dist = Double.MAX_VALUE;
+
+        for (PlayerEntity p : client.world.getPlayers()) {
+            if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
+            double d = client.player.distanceTo(p);
+            if (d <= kaRange && (client.player.canSee(p) || d <= kawallsRange)) {
+                if (d < dist) { dist = d; target = p; }
+            }
+        }
+
+        if (target != null) {
+            if (autoRun) client.player.setSprinting(true);
+            
+            // Умное наведение (центр масс)
+            Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
+            Vec3d diff = tPos.subtract(client.player.getEyePos());
+            
+            serverYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
+            serverPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            needsRotation = true;
+
+            float cooldown = client.player.getAttackCooldownProgress(0);
+            if (cooldown >= 0.93f) {
+                // Синхронный удар с подменой пакета ротации
+                if (silentRotations) {
+                    client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+                        serverYaw, serverPitch, client.player.isOnGround(), client.player.horizontalCollision
+                    ));
+                } else {
+                    client.player.setYaw(lerpAngle(client.player.getYaw(), serverYaw, smoothSpeed));
+                    client.player.setPitch(lerpAngle(client.player.getPitch(), serverPitch, smoothSpeed));
+                }
+
+                client.interactionManager.attackEntity(client.player, target);
+                client.player.swingHand(Hand.MAIN_HAND);
+                
+                // Сброс состояния для предотвращения лагов движения
+                needsRotation = false;
+            }
+        } else {
+            needsRotation = false;
+        }
     }
 
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
-
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
-
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-
         VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive()) continue;
-
             ms.push();
             double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
             double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
-
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-
-            float w = p.getWidth() / 2 + 0.05f;
-            float h = p.getHeight() + 0.05f;
-            Matrix4f model = ms.peek().getPositionMatrix();
-
-            drawBox(buffer, model, w, h, 1.0f, 0.0f, 0.6f, 1.0f);
+            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 0f, 0.8f, 1f, 1f);
             ms.pop();
         }
         consumers.draw(RenderLayer.getLines());
         RenderSystem.enableDepthTest();
-        RenderSystem.depthMask(true);
-        RenderSystem.disableBlend();
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
@@ -145,64 +180,6 @@ public class ExampleMod implements ModInitializer {
         b.vertex(m, x2, y2, z2).color(r, g, bl, a).normal(0, 1, 0);
     }
 
-    private void runAura(MinecraftClient client) {
-        PlayerEntity target = null;
-        double dist = Double.MAX_VALUE;
-
-        for (PlayerEntity p : client.world.getPlayers()) {
-            if (p == client.player || !p.isAlive() || p.isSpectator() || p.getAbilities().invulnerable) continue;
-            if (friendsList.contains(p.getName().getString().toLowerCase())) continue;
-            double d = client.player.distanceTo(p);
-            if (d <= kaRange) {
-                if (client.player.canSee(p) || d <= kawallsRange) {
-                    if (d < dist) { dist = d; target = p; }
-                }
-            }
-        }
-
-        if (target != null) {
-            if (autoRun) client.player.setSprinting(true);
-            
-            // Расчет позиции цели (умное наведение в хитбокс)
-            Vec3d targetVec = target.getPos().add(0, target.getHeight() * 0.7, 0);
-            Vec3d diff = targetVec.subtract(client.player.getEyePos());
-            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
-            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-
-            // Если не Silent, плавно поворачиваем камеру
-            if (!silentRotations) {
-                client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, smoothSpeed));
-                client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, smoothSpeed));
-            }
-
-            // Умная задержка удара (кулдаун + рандом)
-            float cd = client.player.getAttackCooldownProgress(0);
-            if (cd >= 0.92f + random.nextFloat() * 0.06f) {
-                // Проверка на крит (падение)
-                boolean isFalling = client.player.fallDistance > 0.05f && !client.player.isOnGround() && !client.player.isClimbing();
-                
-                if (isFalling || client.player.isOnGround()) {
-                    if (silentRotations) {
-                        // Пакет взгляда ПЕРЕД ударом (4 аргумента для 1.21.4)
-                        client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                            targetYaw, targetPitch, client.player.isOnGround(), client.player.horizontalCollision
-                        ));
-                    }
-
-                    client.interactionManager.attackEntity(client.player, target);
-                    client.player.swingHand(Hand.MAIN_HAND);
-
-                    if (silentRotations) {
-                        // Сразу возвращаем взгляд игрока, чтобы не было десинхрона движения
-                        client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                            client.player.getYaw(), client.player.getPitch(), client.player.isOnGround(), client.player.horizontalCollision
-                        ));
-                    }
-                }
-            }
-        }
-    }
-
     private float lerpAngle(float start, float end, float speed) {
         float diff = MathHelper.wrapDegrees(end - start);
         return start + diff * MathHelper.clamp(speed, 0, 1);
@@ -210,13 +187,8 @@ public class ExampleMod implements ModInitializer {
 
     private void throwPearl(MinecraftClient client) {
         int ps = -1;
-        for (int i = 9; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {
             if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; }
-        }
-        if (ps == -1) {
-            for (int i = 0; i < 9; i++) {
-                if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; }
-            }
         }
         if (ps != -1) {
             int old = client.player.getInventory().selectedSlot;
@@ -237,9 +209,7 @@ public class ExampleMod implements ModInitializer {
         boolean wear = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.CHEST).isOf(Items.ELYTRA);
         for (int i = 0; i < 36; i++) {
             ItemStack s = client.player.getInventory().getStack(i);
-            if (wear ? (s.isOf(Items.NETHERITE_CHESTPLATE) || s.isOf(Items.DIAMOND_CHESTPLATE)) : s.isOf(Items.ELYTRA)) {
-                slot = i; break;
-            }
+            if (wear ? s.isOf(Items.NETHERITE_CHESTPLATE) : s.isOf(Items.ELYTRA)) { slot = i; break; }
         }
         if (slot != -1) {
             int invS = slot < 9 ? slot + 36 : slot;
@@ -352,7 +322,7 @@ public class ExampleMod implements ModInitializer {
 
     public static class KillAuraSettings extends Screen {
         private final Screen parent;
-        private TextFieldWidget rF, wF, fF, sF; 
+        private TextFieldWidget rF, wF, fF; 
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
         protected void init() {
             int cx = width / 2, cy = height / 2;
@@ -360,64 +330,45 @@ public class ExampleMod implements ModInitializer {
             rF.setText(String.valueOf(kaRange));
             wF = new TextFieldWidget(textRenderer, cx - 40, cy - 55, 40, 14, Text.literal(""));
             wF.setText(String.valueOf(kawallsRange));
-            sF = new TextFieldWidget(textRenderer, cx + 65, cy - 55, 40, 14, Text.literal(""));
-            sF.setText(String.valueOf(smoothSpeed));
-            fF = new TextFieldWidget(textRenderer, cx + 15, cy - 75, 100, 14, Text.literal("Friends"));
+            fF = new TextFieldWidget(textRenderer, cx - 60, cy - 35, 120, 14, Text.literal("Friends"));
             fF.setText(friendsRaw);
-            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF); addDrawableChild(sF);
+            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
         }
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 120, cy - 90, cx + 130, cy + 65, 0xDD101010);
-            ctx.drawText(textRenderer, "Range:", cx - 115, cy - 72, -1, true);
-            ctx.drawText(textRenderer, "Walls:", cx - 115, cy - 52, -1, true);
-            ctx.drawText(textRenderer, "AimSpeed:", cx + 10, cy - 52, -1, true);
-            
-            drawBtnServer(ctx, cx - 115, cy - 20, "AresMine", isAres, mx, my);
-            drawBtnServer(ctx, cx - 30, cy - 20, "MainBlaze", isBlaze, mx, my);
-            
-            drawCheck(ctx, cx - 95, cy + 10, "AutoRun", autoRun, mx, my);
-            drawCheck(ctx, cx + 10, cy + 10, "AntiVel", antiVelocity, mx, my);
-            drawCheck(ctx, cx - 42, cy + 30, "Silent", silentRotations, mx, my);
+            ctx.fill(cx - 120, cy - 90, cx + 120, cy + 70, 0xDD101010);
+            ctx.drawText(textRenderer, "Range:", cx - 110, cy - 72, -1, true);
+            ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
+            drawBtn(ctx, cx - 110, cy - 10, "AresMine", isAres, mx, my);
+            drawBtn(ctx, cx + 10, cy - 10, "MainBlaze", isBlaze, mx, my);
+            drawCheck(ctx, cx - 110, cy + 20, "Silent", silentRotations, mx, my);
+            drawCheck(ctx, cx - 110, cy + 40, "AntiVel", antiVelocity, mx, my);
         }
-        private void drawBtnServer(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 75, y + 15, h ? 0x404040 : 0x202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 37, y + 4, s ? 0x00FF00 : 0xFFFFFF);
+        private void drawBtn(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
+            boolean h = mx >= x && mx <= x + 100 && my >= y && my <= y + 15;
+            ctx.fill(x, y, x + 100, y + 15, h ? 0x404040 : 0x202020);
+            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 50, y + 4, s ? 0x00FF00 : 0xFFFFFF);
         }
         private void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 85 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 85, y + 15, h ? 0x404040 : 0x202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 42, y + 4, s ? 0x00FF00 : 0xFFFFFF);
+            boolean h = mx >= x && mx <= x + 220 && my >= y && my <= y + 15;
+            ctx.fill(x, y, x + 220, y + 15, h ? 0x404040 : 0x202020);
+            ctx.drawText(textRenderer, n + ": " + (s ? "ON" : "OFF"), x + 5, y + 4, s ? 0x00FF00 : 0xFFFFFF, true);
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { 
-                isAres = !isAres;
-                if (isAres) {
-                    isBlaze = false; kaRange = 3.3; rF.setText("3.3"); // Легитный ренж для Ареса
-                }
-                return true; 
+            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { 
+                isAres = !isAres; isBlaze = false; kaRange = 3.3; rF.setText("3.3"); return true; 
             }
-            if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { 
-                isBlaze = !isBlaze;
-                if (isBlaze) {
-                    isAres = false; kaRange = 3.5; rF.setText("3.5");
-                }
-                return true; 
+            if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { 
+                isBlaze = !isBlaze; isAres = false; kaRange = 3.6; rF.setText("3.6"); return true; 
             }
-            if (mx >= cx - 95 && mx <= cx - 10 && my >= cy + 10 && my <= cy + 25) { autoRun = !autoRun; return true; }
-            if (mx >= cx + 10 && mx <= cx + 95 && my >= cy + 10 && my <= cy + 25) { antiVelocity = !antiVelocity; return true; }
-            if (mx >= cx - 42 && mx <= cx + 43 && my >= cy + 30 && my <= cy + 45) { silentRotations = !silentRotations; return true; }
+            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { silentRotations = !silentRotations; return true; }
+            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) { antiVelocity = !antiVelocity; return true; }
             return super.mouseClicked(mx, my, b);
         }
         public void close() {
-            try { 
-                kaRange = Double.parseDouble(rF.getText()); 
-                kawallsRange = Double.parseDouble(wF.getText()); 
-                smoothSpeed = Float.parseFloat(sF.getText()); 
-            } catch (Exception ignored) {}
+            try { kaRange = Double.parseDouble(rF.getText()); kawallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {}
             updateFriends(fF.getText()); saveConfig(); client.setScreen(parent);
         }
     }
@@ -439,3 +390,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
