@@ -35,7 +35,6 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
@@ -43,10 +42,10 @@ public class ExampleMod implements ModInitializer {
     public static boolean isAres = false, isBlaze = false, silentRotations = true;
 
     public static double kaRange = 3.3, kawallsRange = 3.0;
-    public static float smoothSpeed = 0.78f; // Тот самый SpeedAim
+    public static float smoothSpeed = 0.78f; 
     
-    private static float serverYaw, serverPitch;
-    private static boolean hasTarget = false;
+    private static float sYaw, sPitch;
+    private static boolean rotateBack = false;
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_V, keyES = GLFW.GLFW_KEY_C;
@@ -56,7 +55,6 @@ public class ExampleMod implements ModInitializer {
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    private static final Random random = new Random();
 
     @Override
     public void onInitialize() {
@@ -87,8 +85,7 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot) runTrigger(client);
 
             if (antiVelocity && client.player.hurtTime > 0) {
-                Vec3d v = client.player.getVelocity();
-                client.player.setVelocity(v.x * 0.6, v.y, v.z * 0.6);
+                client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
             }
         });
     }
@@ -106,41 +103,41 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            if (autoRun && client.player.forwardSpeed > 0) client.player.setSprinting(true);
+            if (autoRun && client.player.input.pressingForward) client.player.setSprinting(true);
             
-            Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.6, 0);
+            Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавный расчет углов для Silent (используем SpeedAim)
-            serverYaw = lerpAngle(serverYaw == 0 ? client.player.getYaw() : serverYaw, targetYaw, smoothSpeed);
-            serverPitch = lerpAngle(serverPitch == 0 ? client.player.getPitch() : serverPitch, targetPitch, smoothSpeed);
-            hasTarget = true;
+            // Плавность через SpeedAim
+            sYaw = lerpAngle(rotateBack ? client.player.getYaw() : sYaw, targetYaw, smoothSpeed);
+            sPitch = lerpAngle(rotateBack ? client.player.getPitch() : sPitch, targetPitch, smoothSpeed);
+            rotateBack = false;
 
+            // Сначала отправляем пакет поворота, чтобы сервер "увидел" взгляд
             if (silentRotations) {
-                // Отправляем пакет поворота
                 client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                    serverYaw, serverPitch, client.player.isOnGround(), client.player.horizontalCollision
+                    sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision
                 ));
             } else {
-                client.player.setYaw(serverYaw);
-                client.player.setPitch(serverPitch);
+                client.player.setYaw(sYaw);
+                client.player.setPitch(sPitch);
             }
 
-            // УДАРЫ: Теперь бьем только если кулдаун готов И голова довернулась до цели
-            if (client.player.getAttackCooldownProgress(0) >= 0.93f) {
-                float yawDiff = Math.abs(MathHelper.wrapDegrees(serverYaw - targetYaw));
-                if (yawDiff < 20) { // Если наводка почти закончена
+            // УДАР: Проверка кулдауна и точности наведения
+            if (client.player.getAttackCooldownProgress(0) >= 0.92f) {
+                double angleDiff = Math.abs(MathHelper.wrapDegrees(sYaw - targetYaw));
+                if (angleDiff < 15) { // Удар только если прицел реально наведен
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
             }
         } else {
-            if (hasTarget) {
-                serverYaw = client.player.getYaw();
-                serverPitch = client.player.getPitch();
-                hasTarget = false;
+            if (!rotateBack) {
+                sYaw = client.player.getYaw();
+                sPitch = client.player.getPitch();
+                rotateBack = true;
             }
         }
     }
@@ -347,10 +344,8 @@ public class ExampleMod implements ModInitializer {
             ctx.drawText(textRenderer, "Range:", cx - 110, cy - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
             ctx.drawText(textRenderer, "SpeedAim:", cx + 10, cy - 72, -1, true);
-            
             drawBtn(ctx, cx - 110, cy - 10, "AresMine", isAres, mx, my);
             drawBtn(ctx, cx + 10, cy - 10, "MainBlaze", isBlaze, mx, my);
-            
             drawCheck(ctx, cx - 110, cy + 20, "Silent", silentRotations, mx, my);
             drawCheck(ctx, cx - 110, cy + 40, "AntiVel", antiVelocity, mx, my);
             drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
@@ -368,10 +363,10 @@ public class ExampleMod implements ModInitializer {
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
             if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { 
-                isAres = true; isBlaze = false; kaRange = 3.3; rF.setText("3.3"); smoothSpeed = 0.45f; sF.setText("0.45"); return true; 
+                isAres = true; isBlaze = false; kaRange = 3.2; rF.setText("3.2"); smoothSpeed = 0.5f; sF.setText("0.5"); return true; 
             }
             if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { 
-                isBlaze = true; isAres = false; kaRange = 3.6; rF.setText("3.6"); smoothSpeed = 0.78f; sF.setText("0.78"); return true; 
+                isBlaze = true; isAres = false; kaRange = 3.5; rF.setText("3.5"); smoothSpeed = 0.85f; sF.setText("0.85"); return true; 
             }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { silentRotations = !silentRotations; return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) { antiVelocity = !antiVelocity; return true; }
@@ -379,11 +374,7 @@ public class ExampleMod implements ModInitializer {
             return super.mouseClicked(mx, my, b);
         }
         public void close() {
-            try { 
-                kaRange = Double.parseDouble(rF.getText()); 
-                kawallsRange = Double.parseDouble(wF.getText()); 
-                smoothSpeed = Float.parseFloat(sF.getText());
-            } catch (Exception ignored) {}
+            try { kaRange = Double.parseDouble(rF.getText()); kawallsRange = Double.parseDouble(wF.getText()); smoothSpeed = Float.parseFloat(sF.getText()); } catch (Exception ignored) {}
             updateFriends(fF.getText()); saveConfig(); client.setScreen(parent);
         }
     }
