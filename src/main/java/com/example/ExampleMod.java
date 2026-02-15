@@ -42,7 +42,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean isAres = false, isBlaze = false;
 
     public static double kaRange = 3.8, kawallsRange = 3.0;
-    public static float smoothSpeed = 1.0f; 
+    public static float smoothSpeed = 0.78f; // Теперь настраивается через AimSpeed
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_V, keyES = GLFW.GLFW_KEY_C;
@@ -325,7 +325,7 @@ public class ExampleMod implements ModInitializer {
 
     public static class KillAuraSettings extends Screen {
         private final Screen parent;
-        private TextFieldWidget rF, wF, fF;
+        private TextFieldWidget rF, wF, fF, sF; // sF - AimSpeed
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
         protected void init() {
             int cx = width / 2, cy = height / 2;
@@ -333,9 +333,11 @@ public class ExampleMod implements ModInitializer {
             rF.setText(String.valueOf(kaRange));
             wF = new TextFieldWidget(textRenderer, cx - 40, cy - 55, 40, 14, Text.literal(""));
             wF.setText(String.valueOf(kawallsRange));
+            sF = new TextFieldWidget(textRenderer, cx + 65, cy - 55, 40, 14, Text.literal(""));
+            sF.setText(String.valueOf(smoothSpeed));
             fF = new TextFieldWidget(textRenderer, cx + 15, cy - 75, 100, 14, Text.literal("Friends"));
             fF.setText(friendsRaw);
-            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
+            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF); addDrawableChild(sF);
         }
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
@@ -343,6 +345,7 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(cx - 120, cy - 90, cx + 130, cy + 65, 0xDD101010);
             ctx.drawText(textRenderer, "Range:", cx - 115, cy - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", cx - 115, cy - 52, -1, true);
+            ctx.drawText(textRenderer, "AimSpeed:", cx + 10, cy - 52, -1, true);
             
             drawBtnServer(ctx, cx - 115, cy - 20, "AresMine", isAres, mx, my);
             drawBtnServer(ctx, cx - 30, cy - 20, "MainBlaze", isBlaze, mx, my);
@@ -362,20 +365,18 @@ public class ExampleMod implements ModInitializer {
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            // AresMine - наводка 0.78f
             if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { 
                 isAres = !isAres;
                 if (isAres) {
-                    isBlaze = false; kaRange = 3.8; rF.setText("3.8"); smoothSpeed = 0.78f;
-                } else { smoothSpeed = 1.0f; }
+                    isBlaze = false; kaRange = 3.8; rF.setText("3.8"); smoothSpeed = 0.78f; sF.setText("0.78");
+                } else { smoothSpeed = 1.0f; sF.setText("1.0"); }
                 return true; 
             }
-            // MainBlaze - наводка 0.78f
             if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { 
                 isBlaze = !isBlaze;
                 if (isBlaze) {
-                    isAres = false; kaRange = 4.0; rF.setText("4.0"); smoothSpeed = 0.78f;
-                } else { smoothSpeed = 1.0f; }
+                    isAres = false; kaRange = 4.0; rF.setText("4.0"); smoothSpeed = 0.78f; sF.setText("0.78");
+                } else { smoothSpeed = 1.0f; sF.setText("1.0"); }
                 return true; 
             }
             if (mx >= cx - 95 && mx <= cx - 10 && my >= cy + 10 && my <= cy + 25) { autoRun = !autoRun; return true; }
@@ -383,7 +384,11 @@ public class ExampleMod implements ModInitializer {
             return super.mouseClicked(mx, my, b);
         }
         public void close() {
-            try { kaRange = Double.parseDouble(rF.getText()); kawallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {}
+            try { 
+                kaRange = Double.parseDouble(rF.getText()); 
+                kawallsRange = Double.parseDouble(wF.getText()); 
+                smoothSpeed = Float.parseFloat(sF.getText()); 
+            } catch (Exception ignored) {}
             updateFriends(fF.getText()); saveConfig(); client.setScreen(parent);
         }
     }
