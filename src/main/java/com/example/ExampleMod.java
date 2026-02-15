@@ -41,7 +41,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
 
     public static double kaRange = 3.8, kawallsRange = 3.0;
-    public static float smoothSpeed = 1.0f; // 1.0 = мгновенно, меньше = плавнее
+    public static float smoothSpeed = 1.0f; // Коэффициент плавности
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_V, keyES = GLFW.GLFW_KEY_C;
@@ -158,19 +158,18 @@ public class ExampleMod implements ModInitializer {
 
         if (target != null) {
             if (autoRun) client.player.setSprinting(true);
-            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.7, 0).subtract(client.player.getEyePos());
+            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.75, 0).subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавная наводка (Smooth)
-            client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 0.7f * smoothSpeed));
-            client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 0.7f * smoothSpeed));
+            // Плавность наводки с использованием lerp
+            client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 0.75f * smoothSpeed));
+            client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 0.75f * smoothSpeed));
 
-            // Умные криты: бьем только если падаем
-            boolean isFalling = client.player.fallDistance > 0.05f && !client.player.isOnGround() && !client.player.isClimbing();
+            // Умные криты: ожидание падения для максимального урона
+            boolean isFalling = client.player.fallDistance > 0.08f && !client.player.isOnGround() && !client.player.isClimbing();
             
-            if (client.getAttackCooldownProgress(0) >= 0.92f) {
-                // Если мы в прыжке, ждем падения. Если на земле и не прыгаем - бьем просто так.
+            if (client.getAttackCooldownProgress(0) >= 0.93f) {
                 if (isFalling || client.player.isOnGround()) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
@@ -266,7 +265,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange + ":" + kawallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity);
+            w.println(kaRange + ":" + kawallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity + ":" + smoothSpeed);
         } catch (Exception ignored) {}
     }
 
@@ -274,14 +273,14 @@ public class ExampleMod implements ModInitializer {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":", -1);
-            if (p.length >= 13) {
+            if (p.length >= 14) {
                 kaRange = Double.parseDouble(p[0]); kawallsRange = Double.parseDouble(p[1]);
                 autoRun = Boolean.parseBoolean(p[2]); keyKA = Integer.parseInt(p[3]);
                 keyTB = Integer.parseInt(p[4]); keyFB = Integer.parseInt(p[5]);
                 keyAT = Integer.parseInt(p[6]); updateFriends(p[7]);
                 esp = Boolean.parseBoolean(p[8]); keyESP = Integer.parseInt(p[9]);
                 keyFP = Integer.parseInt(p[10]); keyES = Integer.parseInt(p[11]);
-                antiVelocity = Boolean.parseBoolean(p[12]);
+                antiVelocity = Boolean.parseBoolean(p[12]); smoothSpeed = Float.parseFloat(p[13]);
             }
         } catch (Exception ignored) {}
     }
@@ -347,8 +346,7 @@ public class ExampleMod implements ModInitializer {
             ctx.drawText(textRenderer, "Walls:", cx - 115, cy - 52, -1, true);
             drawBtn(ctx, cx - 115, cy - 20, "AresMine", mx, my);
             drawBtn(ctx, cx - 30, cy - 20, "MainBlaze", mx, my);
-            drawBtn(ctx, cx - 95, cy + 10, "AutoRun", mx, my);
-            drawBtn(ctx, cx + 10, cy + 10, "MixerGrief", mx, my); // Кнопка миксера
+            drawBtn(ctx, cx + 55, cy - 20, "Mixer", mx, my);
             drawCheck(ctx, cx - 95, cy + 10, "AutoRun", autoRun, mx, my);
             drawCheck(ctx, cx + 10, cy + 10, "AntiVel", antiVelocity, mx, my);
         }
@@ -364,11 +362,14 @@ public class ExampleMod implements ModInitializer {
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { kaRange = 3.8; rF.setText("3.8"); smoothSpeed = 1.0f; return true; }
-            if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { kaRange = 4.0; rF.setText("4.0"); smoothSpeed = 1.0f; return true; }
-            // ЛОГИКА MIXERGRIEF
-            if (mx >= cx + 10 && mx <= cx + 85 && my >= cy - 20 && my <= cy - 5) { 
-                kaRange = 3.0; kawallsRange = 0.0; smoothSpeed = 0.45f;
+            if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { 
+                kaRange = 3.8; rF.setText("3.8"); smoothSpeed = 0.70f; return true; 
+            }
+            if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { 
+                kaRange = 4.0; rF.setText("4.0"); smoothSpeed = 0.70f; return true; 
+            }
+            if (mx >= cx + 55 && mx <= cx + 130 && my >= cy - 20 && my <= cy - 5) { 
+                kaRange = 3.0; kawallsRange = 0.0; smoothSpeed = 0.53f;
                 rF.setText("3.0"); wF.setText("0.0"); return true; 
             }
             if (mx >= cx - 95 && mx <= cx - 10 && my >= cy + 10 && my <= cy + 25) { autoRun = !autoRun; return true; }
