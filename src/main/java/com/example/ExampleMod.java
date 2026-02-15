@@ -52,7 +52,6 @@ public class ExampleMod implements ModInitializer {
 
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
-    private final Random random = new Random();
 
     @Override
     public void onInitialize() {
@@ -90,7 +89,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void renderESP(WorldRenderContext context) {
-        if (!esp) return;
+        if (!esp && !chestESP) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
@@ -105,26 +104,28 @@ public class ExampleMod implements ModInitializer {
         RenderSystem.defaultBlendFunc();
 
         // ESP НА ИГРОКОВ
-        for (PlayerEntity p : client.world.getPlayers()) {
-            if (p == client.player || !p.isAlive()) continue;
-            ms.push();
-            double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
-            double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
-            double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
-            ms.translate(x, y, z);
-            ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 0.0f, 0.7f, 1.0f);
-            ms.pop();
+        if (esp) {
+            for (PlayerEntity p : client.world.getPlayers()) {
+                if (p == client.player || !p.isAlive()) continue;
+                ms.push();
+                double x = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevX, p.getX()) - camPos.x;
+                double y = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevY, p.getY()) - camPos.y;
+                double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
+                ms.translate(x, y, z);
+                ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
+                drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 0.0f, 0.7f, 1.0f);
+                ms.pop();
+            }
         }
 
-        // ESP НА СУНДУКИ (ИСПРАВЛЕННЫЙ ЦИКЛ)
+        // ESP НА СУНДУКИ (ИСПРАВЛЕННЫЙ МЕТОД ДЛЯ 1.21.4)
         if (chestESP) {
-            int renderDist = client.options.getClampedViewDistance();
-            int chunkX = client.player.getChunkPos().x;
-            int chunkZ = client.player.getChunkPos().z;
+            int dist = client.options.getClampedViewDistance();
+            int pCX = client.player.getChunkPos().x;
+            int pCZ = client.player.getChunkPos().z;
 
-            for (int x = chunkX - renderDist; x <= chunkX + renderDist; x++) {
-                for (int z = chunkZ - renderDist; z <= chunkZ + renderDist; z++) {
+            for (int x = pCX - dist; x <= pCX + dist; x++) {
+                for (int z = pCZ - dist; z <= pCZ + dist; z++) {
                     WorldChunk chunk = client.world.getChunk(x, z);
                     if (chunk != null) {
                         for (BlockEntity be : chunk.getBlockEntities().values()) {
@@ -135,9 +136,9 @@ public class ExampleMod implements ModInitializer {
                                 double bz = be.getPos().getZ() - camPos.z;
                                 ms.translate(bx, by, bz);
                                 
-                                float r = 1.0f, g = 0.8f, b = 0.0f; 
-                                if (be instanceof EnderChestBlockEntity) { r = 0.2f; g = 1.0f; b = 0.6f; }
-                                if (be instanceof ShulkerBoxBlockEntity) { r = 0.8f; g = 0.2f; b = 1.0f; }
+                                float r = 1.0f, g = 0.8f, b = 0.0f; // Обычный сундук (Золотистый)
+                                if (be instanceof EnderChestBlockEntity) { r = 0.2f; g = 1.0f; b = 0.6f; } // Эндер (Бирюзовый)
+                                if (be instanceof ShulkerBoxBlockEntity) { r = 0.8f; g = 0.2f; b = 1.0f; } // Шалкер (Фиолетовый)
 
                                 drawBox(buffer, ms.peek().getPositionMatrix(), 0.51f, 1.01f, r, g, b);
                                 ms.pop();
@@ -154,6 +155,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl) {
+        // Отрисовка каркаса (12 линий)
         line(b, m, -w, 0, -w, w, 0, -w, r, g, bl);
         line(b, m, w, 0, -w, w, 0, w, r, g, bl);
         line(b, m, w, 0, w, -w, 0, w, r, g, bl);
@@ -275,6 +277,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // --- GUI СЕКЦИЯ ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
