@@ -25,6 +25,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.chunk.WorldChunk;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -104,7 +105,7 @@ public class ExampleMod implements ModInitializer {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
 
-        // ИГРОКИ
+        // ESP НА ИГРОКОВ
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive()) continue;
 
@@ -122,27 +123,35 @@ public class ExampleMod implements ModInitializer {
             ms.pop();
         }
 
-        // СУНДУКИ (ИСПРАВЛЕННЫЙ ЦИКЛ)
+        // ESP НА СУНДУКИ (ИСПРАВЛЕНО ДЛЯ 1.21.4)
         if (chestESP) {
-            // В 1.21.4 используем world.blockEntities перебором через chunks или специальный итератор, 
-            // но в Fabric проще всего использовать client.world.getLoadedEntities() для блоков не получится, 
-            // используем правильный доступ к списку сущностей блоков через встроенный список ClientWorld:
-            client.world.blockEntities.forEach((pos, be) -> {
-                if (be instanceof ChestBlockEntity || be instanceof EnderChestBlockEntity || be instanceof ShulkerBoxBlockEntity) {
-                    ms.push();
-                    double x = be.getPos().getX() - camPos.x;
-                    double y = be.getPos().getY() - camPos.y;
-                    double z = be.getPos().getZ() - camPos.z;
-                    ms.translate(x, y, z);
+            int renderDistance = client.options.getClampedViewDistance();
+            int playerChunkX = client.player.getChunkPos().x;
+            int playerChunkZ = client.player.getChunkPos().z;
 
-                    float r = 1.0f, g = 0.8f, b = 0.0f;
-                    if (be instanceof ShulkerBoxBlockEntity) { r = 0.8f; g = 0.0f; b = 1.0f; }
-                    if (be instanceof EnderChestBlockEntity) { r = 0.0f; g = 0.5f; b = 0.5f; }
+            for (int x = playerChunkX - renderDistance; x <= playerChunkX + renderDistance; x++) {
+                for (int z = playerChunkZ - renderDistance; z <= playerChunkZ + renderDistance; z++) {
+                    WorldChunk chunk = client.world.getChunk(x, z);
+                    if (chunk != null) {
+                        for (BlockEntity be : chunk.getBlockEntities().values()) {
+                            if (be instanceof ChestBlockEntity || be instanceof EnderChestBlockEntity || be instanceof ShulkerBoxBlockEntity) {
+                                ms.push();
+                                double bx = be.getPos().getX() - camPos.x;
+                                double by = be.getPos().getY() - camPos.y;
+                                double bz = be.getPos().getZ() - camPos.z;
+                                ms.translate(bx, by, bz);
 
-                    drawBox(buffer, ms.peek().getPositionMatrix(), 0.5f, 1.0f, r, g, b);
-                    ms.pop();
+                                float r = 1.0f, g = 0.8f, b = 0.0f;
+                                if (be instanceof ShulkerBoxBlockEntity) { r = 0.8f; g = 0.0f; b = 1.0f; }
+                                if (be instanceof EnderChestBlockEntity) { r = 0.0f; g = 0.5f; b = 0.5f; }
+
+                                drawBox(buffer, ms.peek().getPositionMatrix(), 0.5f, 1.0f, r, g, b);
+                                ms.pop();
+                            }
+                        }
+                    }
                 }
-            });
+            }
         }
 
         consumers.draw(RenderLayer.getLines());
