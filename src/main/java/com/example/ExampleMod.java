@@ -123,14 +123,14 @@ public class ExampleMod implements ModInitializer {
             ms.pop();
         }
 
-        // ESP НА СУНДУКИ (ИСПРАВЛЕНО ДЛЯ 1.21.4)
+        // ESP НА СУНДУКИ (ИСПРАВЛЕННЫЙ ЦИКЛ ПО ВСЕМ ЧАНКАМ)
         if (chestESP) {
-            int renderDistance = client.options.getClampedViewDistance();
-            int playerChunkX = client.player.getChunkPos().x;
-            int playerChunkZ = client.player.getChunkPos().z;
+            int dist = client.options.getClampedViewDistance();
+            int pX = client.player.getChunkPos().x;
+            int pZ = client.player.getChunkPos().z;
 
-            for (int x = playerChunkX - renderDistance; x <= playerChunkX + renderDistance; x++) {
-                for (int z = playerChunkZ - renderDistance; z <= playerChunkZ + renderDistance; z++) {
+            for (int x = pX - dist; x <= pX + dist; x++) {
+                for (int z = pZ - dist; z <= pZ + dist; z++) {
                     WorldChunk chunk = client.world.getChunk(x, z);
                     if (chunk != null) {
                         for (BlockEntity be : chunk.getBlockEntities().values()) {
@@ -141,9 +141,9 @@ public class ExampleMod implements ModInitializer {
                                 double bz = be.getPos().getZ() - camPos.z;
                                 ms.translate(bx, by, bz);
 
-                                float r = 1.0f, g = 0.8f, b = 0.0f;
-                                if (be instanceof ShulkerBoxBlockEntity) { r = 0.8f; g = 0.0f; b = 1.0f; }
-                                if (be instanceof EnderChestBlockEntity) { r = 0.0f; g = 0.5f; b = 0.5f; }
+                                float r = 1.0f, g = 0.8f, b = 0.0f; // Обычный - желтый
+                                if (be instanceof ShulkerBoxBlockEntity) { r = 0.8f; g = 0.0f; b = 1.0f; } // Шалкер - фиолетовый
+                                if (be instanceof EnderChestBlockEntity) { r = 0.0f; g = 1.0f; b = 1.0f; } // Эндер - голубой
 
                                 drawBox(buffer, ms.peek().getPositionMatrix(), 0.5f, 1.0f, r, g, b);
                                 ms.pop();
@@ -224,19 +224,17 @@ public class ExampleMod implements ModInitializer {
 
     private void throwPearl(MinecraftClient client) {
         int ps = -1;
-        for (int i = 9; i < 36; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; } }
-        if (ps == -1) for (int i = 0; i < 9; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; } }
-        if (ps != -1) {
-            int old = client.player.getInventory().selectedSlot;
-            if (ps < 9) {
-                client.player.getInventory().selectedSlot = ps;
-                client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-                client.player.getInventory().selectedSlot = old;
-            } else {
-                client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, ps, old, SlotActionType.SWAP, client.player);
-                client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-                client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, ps, old, SlotActionType.SWAP, client.player);
-            }
+        for (int i = 0; i < 36; i++) { if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; } }
+        if (ps == -1) return;
+        int old = client.player.getInventory().selectedSlot;
+        if (ps < 9) {
+            client.player.getInventory().selectedSlot = ps;
+            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+            client.player.getInventory().selectedSlot = old;
+        } else {
+            client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, ps, old, SlotActionType.SWAP, client.player);
+            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+            client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, ps, old, SlotActionType.SWAP, client.player);
         }
     }
 
@@ -336,7 +334,6 @@ public class ExampleMod implements ModInitializer {
             for (int i = 0; i < 8; i++) {
                 int iy = cy - 85 + i * 25;
                 if (mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 22) {
-                    if (b == 1) { client.setScreen(new BindScreen(this, i)); return true; }
                     if (b == 0) {
                         if (i == 0) client.setScreen(new KillAuraSettings(this));
                         else if (i == 1) triggerbot = !triggerbot;
@@ -348,12 +345,13 @@ public class ExampleMod implements ModInitializer {
                         else if (i == 7) elytraSwap = !elytraSwap;
                         saveConfig(); return true;
                     }
+                    if (b == 1) { client.setScreen(new BindScreen(this, i)); return true; }
                 }
             }
             return super.mouseClicked(mx, my, b);
         }
     }
-
+    // [Остальные настройки KillAuraSettings и BindScreen остаются без изменений]
     public static class KillAuraSettings extends Screen {
         private final Screen parent; private TextFieldWidget rF, wF, fF;
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
