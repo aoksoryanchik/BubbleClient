@@ -39,7 +39,7 @@ import java.util.Random;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
-    public static boolean isAres = false, isBlaze = false; // Состояния кнопок серверов
+    public static boolean isAres = false, isBlaze = false;
 
     public static double kaRange = 3.8, kawallsRange = 3.0;
     public static float smoothSpeed = 1.0f; 
@@ -344,7 +344,6 @@ public class ExampleMod implements ModInitializer {
             ctx.drawText(textRenderer, "Range:", cx - 115, cy - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", cx - 115, cy - 52, -1, true);
             
-            // Кнопки серверов
             drawBtnServer(ctx, cx - 115, cy - 20, "AresMine", isAres, mx, my);
             drawBtnServer(ctx, cx - 30, cy - 20, "MainBlaze", isBlaze, mx, my);
             
@@ -363,19 +362,19 @@ public class ExampleMod implements ModInitializer {
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            // AresMine
+            // AresMine - наводка 0.78f
             if (mx >= cx - 115 && mx <= cx - 40 && my >= cy - 20 && my <= cy - 5) { 
                 isAres = !isAres;
                 if (isAres) {
-                    isBlaze = false; kaRange = 3.8; rF.setText("3.8"); smoothSpeed = 0.70f;
+                    isBlaze = false; kaRange = 3.8; rF.setText("3.8"); smoothSpeed = 0.78f;
                 } else { smoothSpeed = 1.0f; }
                 return true; 
             }
-            // MainBlaze
+            // MainBlaze - наводка 0.78f
             if (mx >= cx - 30 && mx <= cx + 45 && my >= cy - 20 && my <= cy - 5) { 
                 isBlaze = !isBlaze;
                 if (isBlaze) {
-                    isAres = false; kaRange = 4.0; rF.setText("4.0"); smoothSpeed = 0.70f;
+                    isAres = false; kaRange = 4.0; rF.setText("4.0"); smoothSpeed = 0.78f;
                 } else { smoothSpeed = 1.0f; }
                 return true; 
             }
@@ -406,4 +405,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
