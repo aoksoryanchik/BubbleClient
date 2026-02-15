@@ -37,16 +37,18 @@ import java.util.Arrays;
 import java.util.List;
 
 public class ExampleMod implements ModInitializer {
+    // Настройки по умолчанию (FullBright ВКЛ сразу)
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
-    public static boolean isAres = false, isBlaze = false, silentRotations = true;
+    public static boolean isAres = true, isBlaze = false, silentRotations = true;
 
     public static double kaRange = 3.3, kawallsRange = 3.0;
-    public static float smoothSpeed = 0.85f; 
+    public static float smoothSpeed = 0.55f; // Уменьшил для лучшего обхода
     
     private static float sYaw, sPitch;
-    private static boolean hasTarget = false;
+    private static boolean needsRotate = false;
 
+    // Бинды: C - Elytra, Q - Pearl
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
 
@@ -102,38 +104,29 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (target != null) {
-            hasTarget = true;
-            // Рассчитываем ротации
             Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавная фантомная наводка
-            sYaw = lerpAngle(sYaw, targetYaw, smoothSpeed);
-            sPitch = lerpAngle(sPitch, targetPitch, smoothSpeed);
+            sYaw = lerpAngle(needsRotate ? sYaw : client.player.getYaw(), targetYaw, smoothSpeed);
+            sPitch = lerpAngle(needsRotate ? sPitch : client.player.getPitch(), targetPitch, smoothSpeed);
+            needsRotate = true;
 
-            if (silentRotations) {
-                // Шлем пакет поворота КАЖДЫЙ тик для точности (Silent), но не меняем камеру игрока
-                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                    sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision
-                ));
-            } else {
-                client.player.setYaw(sYaw);
-                client.player.setPitch(sPitch);
-            }
-
-            // Удар только по КД
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.93f) {
+            // ГЛАВНОЕ ИСПРАВЛЕНИЕ: Мы НЕ спамим пакетами Look, мы подменяем их в потоке
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.92f) {
+                if (silentRotations) {
+                    // Отправляем ОДИН пакет перед ударом, чтобы сервер засчитал наводку
+                    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision));
+                } else {
+                    client.player.setYaw(sYaw);
+                    client.player.setPitch(sPitch);
+                }
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
         } else {
-            if (hasTarget) {
-                sYaw = client.player.getYaw();
-                sPitch = client.player.getPitch();
-                hasTarget = false;
-            }
+            needsRotate = false;
         }
     }
 
@@ -157,7 +150,7 @@ public class ExampleMod implements ModInitializer {
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 0.2f, 0.6f, 1f, 1f);
+            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 0f, 1f, 0.5f, 1f);
             ms.pop();
         }
         consumers.draw(RenderLayer.getLines());
@@ -352,7 +345,7 @@ public class ExampleMod implements ModInitializer {
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
             if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { 
-                isAres = true; isBlaze = false; kaRange = 3.2; rF.setText("3.2"); smoothSpeed = 0.5f; sF.setText("0.5"); return true; 
+                isAres = true; isBlaze = false; kaRange = 3.2; rF.setText("3.2"); smoothSpeed = 0.45f; sF.setText("0.45"); return true; 
             }
             if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { 
                 isBlaze = true; isAres = false; kaRange = 3.5; rF.setText("3.5"); smoothSpeed = 0.85f; sF.setText("0.85"); return true; 
@@ -385,4 +378,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
