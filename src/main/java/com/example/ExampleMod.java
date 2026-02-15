@@ -161,30 +161,47 @@ public class ExampleMod implements ModInitializer {
 
         if (target != null) {
             if (autoRun) client.player.setSprinting(true);
-            Vec3d diff = target.getPos().add(0, target.getHeight() * 0.75, 0).subtract(client.player.getEyePos());
+            Vec3d targetBox = target.getPos().add(0, target.getHeight() * 0.65, 0);
+            Vec3d diff = targetBox.subtract(client.player.getEyePos());
+            
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
+            // Плавность только если Silent выключен
             if (!silentRotations) {
                 client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 0.75f * smoothSpeed));
                 client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 0.75f * smoothSpeed));
             }
 
-            boolean isFalling = client.player.fallDistance > 0.08f && !client.player.isOnGround() && !client.player.isClimbing();
+            // Рандомизация кулдауна для обхода
+            float cooldownRequirement = 0.92f + random.nextFloat() * 0.05f;
             
-            if (client.player.getAttackCooldownProgress(0) >= 0.93f) {
-                if (isFalling || client.player.isOnGround()) {
+            if (client.player.getAttackCooldownProgress(0) >= cooldownRequirement) {
+                // Если мы в воздухе или на земле (криты)
+                if (client.player.fallDistance > 0 || client.player.isOnGround()) {
+                    
                     if (silentRotations) {
-                        // ИСПРАВЛЕНИЕ: Добавлен 4-й аргумент (horizontalCollision) для 1.21.4
+                        // ФИКС ТЕППАНИЯ: Отправляем пакет перед ударом
                         client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
                             targetYaw, 
                             targetPitch, 
-                            client.player.isOnGround(), 
+                            client.player.isOnGround(),
                             client.player.horizontalCollision
                         ));
                     }
+                    
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
+                    
+                    if (silentRotations) {
+                        // Возвращаем серверный взгляд назад, чтобы античит не дергал за резкий поворот
+                        client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+                            client.player.getYaw(),
+                            client.player.getPitch(),
+                            client.player.isOnGround(),
+                            client.player.horizontalCollision
+                        ));
+                    }
                 }
             }
         }
@@ -238,7 +255,7 @@ public class ExampleMod implements ModInitializer {
 
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
-            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) == 1.0f) {
+            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) >= 1.0f) {
                 c.interactionManager.attackEntity(c.player, p);
                 c.player.swingHand(Hand.MAIN_HAND);
             }
@@ -259,7 +276,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void notify(MinecraftClient c, String m, boolean v) {
-        c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (v ? "§aВКЛ" : "§cВЫКЛ")), true);
+        if (c.player != null) c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (v ? "§aВКЛ" : "§cВЫКЛ")), true);
     }
 
     private boolean isPressed(long h, int k) {
