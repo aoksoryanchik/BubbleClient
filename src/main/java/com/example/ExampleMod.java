@@ -41,10 +41,10 @@ public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = false, esp = false;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
     public static boolean isAres = false, isBlaze = false;
-    public static boolean silentRotations = false; // Новая функция
+    public static boolean silentRotations = false;
 
     public static double kaRange = 3.8, kawallsRange = 3.0;
-    public static float smoothSpeed = 0.78f; 
+    public static float smoothSpeed = 0.78f;
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_V, keyES = GLFW.GLFW_KEY_C;
@@ -165,10 +165,7 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            if (silentRotations) {
-                // Silent Logic: Отправляем пакет поворота, но не крутим камеру
-            } else {
-                // Normal Logic: Крутим камеру плавно
+            if (!silentRotations) {
                 client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 0.75f * smoothSpeed));
                 client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 0.75f * smoothSpeed));
             }
@@ -178,8 +175,13 @@ public class ExampleMod implements ModInitializer {
             if (client.player.getAttackCooldownProgress(0) >= 0.93f) {
                 if (isFalling || client.player.isOnGround()) {
                     if (silentRotations) {
-                        // Отправляем пакет поворота ПЕРЕД ударом
-                        client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(targetYaw, targetPitch, client.player.isOnGround()));
+                        // ИСПРАВЛЕНИЕ: Добавлен 4-й аргумент (horizontalCollision) для 1.21.4
+                        client.player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+                            targetYaw, 
+                            targetPitch, 
+                            client.player.isOnGround(), 
+                            client.player.horizontalCollision
+                        ));
                     }
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
@@ -364,7 +366,7 @@ public class ExampleMod implements ModInitializer {
             
             drawCheck(ctx, cx - 95, cy + 10, "AutoRun", autoRun, mx, my);
             drawCheck(ctx, cx + 10, cy + 10, "AntiVel", antiVelocity, mx, my);
-            drawCheck(ctx, cx - 42, cy + 30, "Silent", silentRotations, mx, my); // Кнопка Silent
+            drawCheck(ctx, cx - 42, cy + 30, "Silent", silentRotations, mx, my);
         }
         private void drawBtnServer(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 75 && my >= y && my <= y + 15;
