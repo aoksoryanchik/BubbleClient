@@ -117,7 +117,7 @@ public class ExampleMod implements ModInitializer {
             ms.pop();
         }
 
-        // ESP НА СУНДУКИ (FIXED)
+        // ESP НА СУНДУКИ (ИСПРАВЛЕННЫЙ ЦИКЛ)
         if (chestESP) {
             int renderDist = client.options.getClampedViewDistance();
             int chunkX = client.player.getChunkPos().x;
@@ -135,7 +135,7 @@ public class ExampleMod implements ModInitializer {
                                 double bz = be.getPos().getZ() - camPos.z;
                                 ms.translate(bx, by, bz);
                                 
-                                float r = 1.0f, g = 0.8f, b = 0.0f; // Обычный - желтый
+                                float r = 1.0f, g = 0.8f, b = 0.0f; 
                                 if (be instanceof EnderChestBlockEntity) { r = 0.2f; g = 1.0f; b = 0.6f; }
                                 if (be instanceof ShulkerBoxBlockEntity) { r = 0.8f; g = 0.2f; b = 1.0f; }
 
