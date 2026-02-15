@@ -41,7 +41,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
 
     public static double kaRange = 3.8, kawallsRange = 3.0;
-    public static float smoothSpeed = 1.0f; // Коэффициент плавности
+    public static float smoothSpeed = 1.0f; 
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_V, keyES = GLFW.GLFW_KEY_C;
@@ -162,14 +162,13 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавность наводки с использованием lerp
             client.player.setYaw(lerpAngle(client.player.getYaw(), targetYaw, 0.75f * smoothSpeed));
             client.player.setPitch(lerpAngle(client.player.getPitch(), targetPitch, 0.75f * smoothSpeed));
 
-            // Умные криты: ожидание падения для максимального урона
             boolean isFalling = client.player.fallDistance > 0.08f && !client.player.isOnGround() && !client.player.isClimbing();
             
-            if (client.getAttackCooldownProgress(0) >= 0.93f) {
+            // ИСПРАВЛЕННАЯ СТРОКА ТУТ (client.player вместо client)
+            if (client.player.getAttackCooldownProgress(0) >= 0.93f) {
                 if (isFalling || client.player.isOnGround()) {
                     client.interactionManager.attackEntity(client.player, target);
                     client.player.swingHand(Hand.MAIN_HAND);
