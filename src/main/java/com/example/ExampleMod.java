@@ -42,6 +42,9 @@ public class ExampleMod implements ModInitializer {
     public static boolean isAres = true, isBlaze = false;
 
     public static double kaRange = 3.4, kawallsRange = 3.0;
+    
+    private static float serverYaw, serverPitch;
+    private static boolean targetFound = false;
     private static PlayerEntity currentTarget = null;
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
@@ -102,19 +105,17 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (currentTarget != null) {
+            targetFound = true;
+            // Рассчитываем углы только для визуала (ESP) и логики
             Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
-            float sYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
-            float sPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            serverYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
+            serverPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // ТЕ САМЫЕ РОТАЦИИ (Без кнопки, работают всегда)
-            if (client.player.input.movementForward != 0 || client.player.input.movementSideways != 0) {
-                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                        sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision
-                ));
-            }
+            // ПАКЕТЫ ПОВОРОТА УДАЛЕНЫ (Это и есть режим выключенного Silent Rotations)
+            // Персонаж не дергается, античит не тепает.
 
-            // Умные криты (Прыжок)
+            // Smart Crits
             if (smartCrits && client.player.isOnGround() && client.player.getAttackCooldownProgress(0) > 0.9f) {
                 client.player.jump();
             }
@@ -125,6 +126,8 @@ public class ExampleMod implements ModInitializer {
                 client.player.swingHand(Hand.MAIN_HAND);
                 if (autoRun) client.player.setSprinting(true);
             }
+        } else {
+            targetFound = false;
         }
     }
 
@@ -181,6 +184,7 @@ public class ExampleMod implements ModInitializer {
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.world == null) return;
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         RenderSystem.disableDepthTest();
@@ -197,7 +201,7 @@ public class ExampleMod implements ModInitializer {
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            boolean isTarget = (p == currentTarget);
+            boolean isTarget = targetFound && (p == currentTarget);
             drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 
                     isTarget ? 0f : 1f, isTarget ? 1f : 1f, isTarget ? 1f : 1f, 1f);
             ms.pop();
