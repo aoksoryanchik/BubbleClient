@@ -35,18 +35,17 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = false;
     public static boolean isAres = true, isBlaze = false;
 
-    public static double kaRange = 3.3, kawallsRange = 0.0;
+    public static double kaRange = 3.4, kawallsRange = 3.0;
     
-    // Пакетные ротации
-    public static float sYaw, sPitch;
-    public static boolean hasSilentTarget = false;
+    // СИНХРОНИЗИРОВАННЫЕ ПЕРЕМЕННЫЕ ДЛЯ SILENT КИЛЛАУРЫ
+    public static float serverYaw, serverPitch;
+    public static boolean targetFound = false;
     public static PlayerEntity currentTarget = null;
 
     public static int keyKA = -1, keyTR = -1, keyFB = -1, keyAT = -1, keyESP = -1;
@@ -101,42 +100,47 @@ public class ExampleMod implements ModInitializer {
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = client.player.distanceTo(p);
-            if (d <= dist && client.player.canSee(p)) {
-                dist = d; currentTarget = p;
+            
+            // Проверка видимости для обхода MixerGrief/Ares
+            if (client.player.canSee(p)) {
+                if (d > kaRange) continue;
+            } else {
+                if (d > kawallsRange) continue;
             }
+
+            if (d < dist) { dist = d; currentTarget = p; }
         }
 
         if (currentTarget != null) {
-            hasSilentTarget = true;
-            Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
+            targetFound = true;
+            // Рандомизация высоты удара для обхода
+            double randomHeight = 0.2 + (Math.random() * 0.5);
+            Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * randomHeight, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
 
             float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Пакетное сглаживание (сервер видит плавный поворот головы, ты - нет)
-            sYaw = MathHelper.lerpAngleDegrees(0.5f, sYaw, tYaw);
-            sPitch = MathHelper.lerp(0.5f, sPitch, tPitch);
+            // Jitter для обхода античита MainBlaze
+            serverYaw = tYaw + (float)((Math.random() - 0.5) * 0.4);
+            serverPitch = tPitch + (float)((Math.random() - 0.5) * 0.4);
 
             if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
-                // ОТПРАВКА ПАКЕТА РОТАЦИИ ПЕРЕД УДАРОМ (Silent Bypass)
-                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookOnly(sYaw, sPitch, client.player.isOnGround()));
+                boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
                 
-                // САМ УДАР
-                client.interactionManager.attackEntity(client.player, currentTarget);
-                client.player.swingHand(Hand.MAIN_HAND);
+                // Silent Packet Rotation
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround()));
                 
-                if (autoRun) client.player.setSprinting(true);
+                if (!smartCrits || isFalling) {
+                    client.interactionManager.attackEntity(client.player, currentTarget);
+                    client.player.swingHand(Hand.MAIN_HAND);
+                    if (autoRun) client.player.setSprinting(true);
+                }
             }
         } else {
-            hasSilentTarget = false;
-            sYaw = client.player.getYaw();
-            sPitch = client.player.getPitch();
+            targetFound = false;
         }
     }
-
-    // [Остальные методы (renderESP, checkTotem и т.д.) остаются такими же для работы мода]
-    // Чтобы не урезать код, вставляю их полностью ниже
 
     public void runTrigger(MinecraftClient client) {
         if (client.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
@@ -207,7 +211,7 @@ public class ExampleMod implements ModInitializer {
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-p.getYaw()));
-            boolean isTarget = currentTarget != null && (p == currentTarget);
+            boolean isTarget = targetFound && (p == currentTarget);
             drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, isTarget ? 1f : 0f, isTarget ? 0f : 1f, isTarget ? 0f : 1f, 1f);
             ms.pop();
         }
@@ -265,14 +269,13 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // Классы меню и настроек идентичны предыдущим, чтобы сохранить весь функционал
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             int cx = width / 2, cy = height / 2;
             ctx.fill(cx - 95, cy - 100, cx + 95, cy + 110, 0xDD050505);
-            ctx.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, "BUBBLE SILENT", cx, cy - 90, 0x55FFFF);
+            ctx.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, "BUBBLE ABSOLUTE", cx, cy - 90, 0x55FFFF);
             String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap"};
             boolean[] states = {killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap};
             for (int i = 0; i < names.length; i++) {
@@ -327,7 +330,7 @@ public class ExampleMod implements ModInitializer {
             ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
             drawBtn(ctx, cx - 110, cy - 10, "AresMine", isAres, mx, my);
             drawBtn(ctx, cx + 10, cy - 10, "MainBlaze", isBlaze, mx, my);
-            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits", smartCrits, mx, my);
+            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Wait Fall)", smartCrits, mx, my);
             drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
             drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
         }
@@ -344,7 +347,7 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.3; }
+            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.4; }
             if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { isBlaze = true; isAres = false; kaRange = 3.5; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) smartCrits = !smartCrits;
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) antiVelocity = !antiVelocity;
@@ -377,3 +380,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
