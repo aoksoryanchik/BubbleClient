@@ -42,7 +42,6 @@ public class ExampleMod implements ModInitializer {
     public static boolean isAres = true, isBlaze = false;
 
     public static double kaRange = 3.4, kawallsRange = 0.0;
-
     public static float serverYaw, serverPitch;
     public static boolean targetFound = false;
     public static PlayerEntity currentTarget = null;
@@ -64,7 +63,7 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // ИСПРАВЛЕНО: Теперь меню на клавишу "0" (ноль над буквами)
+            // Кнопка меню теперь "0" (над буквами)
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -93,14 +92,14 @@ public class ExampleMod implements ModInitializer {
         if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
     }
 
-    // НОВЫЙ МЕТОД: Проверка FOV для обхода MixerGrief
+    // Проверка FOV для MixerGrief
     public boolean isInFOV(PlayerEntity player, Entity target, float maxAngle) {
         Vec3d diff = target.getPos().add(0, target.getHeight() * 0.5, 0).subtract(player.getEyePos());
         float targetYaw = (float) MathHelper.wrapDegrees(Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0);
         float currentYaw = MathHelper.wrapDegrees(player.getYaw());
         float diffYaw = Math.abs(targetYaw - currentYaw) % 360;
         if (diffYaw > 180) diffYaw = 360 - diffYaw;
-        return diffYaw <= (maxAngle / 2.0f); // Если FOV 90, то отклонение 45 в каждую сторону
+        return diffYaw <= (maxAngle / 2.0f);
     }
 
     public void runAura(MinecraftClient client) {
@@ -110,11 +109,10 @@ public class ExampleMod implements ModInitializer {
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             
-            // ИСПРАВЛЕНО: Добавлена проверка FOV 90 градусов для MixerGrief
+            // Фильтр MixerGrief: бьем только тех, кто в FOV 90
             if (!isInFOV(client.player, p, 90.0f)) continue;
 
             double d = client.player.distanceTo(p);
-            
             if (client.player.canSee(p)) {
                 if (d > kaRange) continue;
             } else {
@@ -132,7 +130,6 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Летируем ротации (плавность помогает против MixerGrief)
             serverYaw = MathHelper.lerpAngleDegrees(0.4f, serverYaw, targetYaw);
             serverPitch = MathHelper.lerp(0.4f, serverPitch, targetPitch);
 
@@ -151,9 +148,8 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // ... (Остальной код без изменений: runTrigger, swapElytra, throwPearl, checkTotem, renderESP, drawBox, line, notify, isPressed, saveConfig, loadConfig, Menu классы)
-    // Оставил их такими же, чтобы не раздувать ответ, просто сохрани их из своего исходника.
-    
+    // --- Дальше идут твои стандартные функции без изменений ---
+
     public void runTrigger(MinecraftClient client) {
         if (client.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
             if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
@@ -392,3 +388,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
