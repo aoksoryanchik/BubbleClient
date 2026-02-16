@@ -112,22 +112,22 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавная доводка (0.88f)
-            float step = isMixer ? 35.0f : 180.0f;
+            // Плавная доводка 0.88f
+            float step = isMixer ? 30.0f : 180.0f;
             serverYaw = updateRotation(serverYaw, targetYaw, step);
             serverPitch = updateRotation(serverPitch, targetPitch, step);
 
-            // ИСПРАВЛЕННЫЙ КОНСТРУКТОР ПАКЕТОВ:
-            // Шлем сначала Look (фантомный поворот), а потом OnGround, чтобы не сбивать движение игрока
-            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround()));
+            // ФИКС ДЛЯ 1.21.4: Используем LookAndOnGround с 4 аргументами (yaw, pitch, onGround, horizontalCollision)
+            // Это исправляет ошибку со скрина 3 (actual and formal argument lists differ in length)
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround(), client.player.horizontalCollision));
 
             // Удар
-            float cooldownRequirement = isMixer ? 0.94f : 0.92f;
-            if (client.player.getAttackCooldownProgress(0.0f) >= (cooldownRequirement + random.nextFloat() * 0.04f)) {
+            float cooldownRequirement = isMixer ? 0.95f : 0.92f;
+            if (client.player.getAttackCooldownProgress(0.0f) >= (cooldownRequirement + random.nextFloat() * 0.03f)) {
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
                 float yawDiff = Math.abs(MathHelper.wrapDegrees(serverYaw - targetYaw));
                 
-                if (yawDiff < 25.0f && (!smartCrits || isFalling || client.player.isSubmergedInWater())) {
+                if (yawDiff < 20.0f && (!smartCrits || isFalling || client.player.isSubmergedInWater())) {
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                     if (autoRun) client.player.setSprinting(true);
@@ -146,6 +146,8 @@ public class ExampleMod implements ModInitializer {
         if (f < -maxStep) f = -maxStep;
         return current + f;
     }
+
+    // --- Логика без изменений (GUI, ESP, Utils) ---
 
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
