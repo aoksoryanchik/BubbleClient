@@ -46,6 +46,7 @@ public class ExampleMod implements ModInitializer {
     private static boolean targetFound = false;
     private static PlayerEntity currentTarget = null;
     private static final Random random = new Random();
+    private static int attackDelay = 0;
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
@@ -107,20 +108,18 @@ public class ExampleMod implements ModInitializer {
         if (currentTarget != null) {
             targetFound = true;
             
-            // 1. Улучшенная ротация с рандомизацией точки удара (AresMine Fix)
-            Vec3d targetVec = currentTarget.getPos().add(0, currentTarget.getHeight() * (0.35 + random.nextDouble() * 0.3), 0);
+            Vec3d targetVec = currentTarget.getPos().add(0, currentTarget.getHeight() * (0.38 + random.nextDouble() * 0.25), 0);
             Vec3d diff = targetVec.subtract(client.player.getEyePos());
             
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // 2. GCD Fix для плавности
             double sens = client.options.getMouseSensitivity().getValue() * 0.6 + 0.2;
             double multiplier = sens * sens * sens * 8.0;
             serverYaw = (float) (Math.round(targetYaw / multiplier) * multiplier);
             serverPitch = (float) (Math.round(targetPitch / multiplier) * multiplier);
 
-            // 3. COMPLETE MOVEMENT FIX (W, A, S, D)
+            // Movement Fix
             float f = client.player.input.movementForward;
             float s = client.player.input.movementSideways;
             if (f != 0 || s != 0) {
@@ -131,17 +130,23 @@ public class ExampleMod implements ModInitializer {
                 client.player.input.movementSideways = (s * cos - f * sin);
             }
 
-            // 4. Проверка кулдауна и отправка удара
-            if (client.player.getAttackCooldownProgress(0.0f) >= (0.93f + random.nextFloat() * 0.05f)) {
-                if (!smartCrits || (client.player.fallDistance > 0.05 && !client.player.isOnGround())) {
-                    // Отправляем пакет ротации ПЕРЕД ударом, чтобы AresMine засчитал хит
-                    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround(), true));
-                    client.interactionManager.attackEntity(client.player, currentTarget);
-                    client.player.swingHand(Hand.MAIN_HAND);
+            // AresMine/Blaze Bypass: Сначала поворот, потом удар через 1 тик
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround(), true));
+
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
+                if (attackDelay <= 0) {
+                    if (!smartCrits || (client.player.fallDistance > 0.05 && !client.player.isOnGround())) {
+                        client.interactionManager.attackEntity(client.player, currentTarget);
+                        client.player.swingHand(Hand.MAIN_HAND);
+                        attackDelay = 1; // Ждем 1 тик до следующей проверки для легитности
+                    }
+                } else {
+                    attackDelay--;
                 }
             }
         } else {
             targetFound = false;
+            attackDelay = 0;
         }
     }
 
@@ -154,7 +159,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // Вспомогательные функции (Elytra, Pearl, Totem) - Полные
     private void swapElytra(MinecraftClient client) {
         int slot = -1;
         ItemStack chest = client.player.getInventory().getArmorStack(2);
@@ -279,12 +283,9 @@ public class ExampleMod implements ModInitializer {
             int cx = width / 2, cy = height / 2;
             ctx.fill(cx - 100, cy - 115, cx + 100, cy + 125, 0xEE050505);
             ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE ABSOLUTE", cx, cy - 105, 0x55FFFF);
-            
-            // Кнопки Пресетов
             drawBtn(ctx, cx - 90, cy - 90, 55, "Mixer", mx, my);
             drawBtn(ctx, cx - 30, cy - 90, 60, "AresMine", mx, my);
             drawBtn(ctx, cx + 35, cy - 90, 55, "Blaze", mx, my);
-
             String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap"};
             boolean[] states = {killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap};
             for (int i = 0; i < names.length; i++) {
@@ -302,14 +303,12 @@ public class ExampleMod implements ModInitializer {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            // Клики по пресетам
             if (my >= cy - 90 && my <= cy - 74) {
-                if (mx >= cx - 90 && mx <= cx - 35) { kaRange = 3.1; kawallsRange = 0.0; antiVelocity = true; smartCrits = false; notify(client, "Preset", true); }
-                if (mx >= cx - 30 && mx <= cx + 30) { kaRange = 3.0; kawallsRange = 0.0; antiVelocity = false; smartCrits = true; notify(client, "Preset", true); }
-                if (mx >= cx + 35 && mx <= cx + 90) { kaRange = 3.2; kawallsRange = 3.0; antiVelocity = true; smartCrits = true; notify(client, "Preset", true); }
+                if (mx >= cx - 90 && mx <= cx - 35) { kaRange = 3.1; kawallsRange = 0.0; antiVelocity = true; smartCrits = false; notify(client, "Preset Applied", true); }
+                if (mx >= cx - 30 && mx <= cx + 30) { kaRange = 3.0; kawallsRange = 0.0; antiVelocity = false; smartCrits = true; notify(client, "Preset Applied", true); }
+                if (mx >= cx + 35 && mx <= cx + 90) { kaRange = 3.2; kawallsRange = 3.0; antiVelocity = true; smartCrits = true; notify(client, "Preset Applied", true); }
                 saveConfig(); return true;
             }
-            // Остальные кнопки
             for (int i = 0; i < 7; i++) {
                 int iy = cy - 65 + i * 22;
                 if (mx >= cx - 90 && mx <= cx + 90 && my >= iy && my <= iy + 18) {
@@ -391,3 +390,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
