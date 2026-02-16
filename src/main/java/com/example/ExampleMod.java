@@ -37,20 +37,18 @@ import java.util.Arrays;
 import java.util.List;
 
 public class ExampleMod implements ModInitializer {
-    // Состояния функций
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
-    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = true;
+    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = false;
     public static boolean isAres = true, isBlaze = false;
 
-    // Настройки
-    public static double kaRange = 3.5, kawallsRange = 3.0;
+    public static double kaRange = 3.4, kawallsRange = 3.0;
+    private static PlayerEntity currentTarget = null;
+
+    public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
+    public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
+
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
-    
-    // Бинды
-    public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1, keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
-    
-    private static PlayerEntity currentTarget = null;
     private static final boolean[] keyStates = new boolean[512];
     private static final String CONFIG_FILE = "bubble_config.txt";
 
@@ -63,31 +61,32 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // Открытие меню на '0'
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Обработка всех биндов
-            if (client.currentScreen == null) {
-                if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
-                if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
-                if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
-                if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
-                if (isPressed(win, keyFB)) { fullbright = !fullbright; notify(client, "FullBright", fullbright); }
-                if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
-                if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
-            }
+            handleBinds(client, win);
 
-            // Логика функций
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
+
             if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(client.player.getVelocity().multiply(0, 1.0, 0)); // Полный стоп горизонтального откидывания
+                client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
             }
         });
+    }
+
+    private void handleBinds(MinecraftClient client, long win) {
+        if (client.currentScreen != null) return;
+        if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
+        if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
+        if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
+        if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
+        if (isPressed(win, keyFB)) { fullbright = !fullbright; notify(client, "FullBright", fullbright); }
+        if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
+        if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
     }
 
     private void runAura(MinecraftClient client) {
@@ -97,7 +96,7 @@ public class ExampleMod implements ModInitializer {
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = client.player.distanceTo(p);
-            if (d <= kaRange && (client.player.canSee(p) || d <= kawallsRange)) {
+            if (d <= kaRange) {
                 if (d < dist) { dist = d; currentTarget = p; }
             }
         }
@@ -108,19 +107,20 @@ public class ExampleMod implements ModInitializer {
             float sYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float sPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Smart Crits
-            if (smartCrits && client.player.isOnGround() && !client.player.isSubmergedInWater()) {
-                if (client.player.getAttackCooldownProgress(0) > 0.9f) client.player.jump();
+            // ТЕ САМЫЕ РОТАЦИИ (Без кнопки, работают всегда)
+            if (client.player.input.movementForward != 0 || client.player.input.movementSideways != 0) {
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+                        sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision
+                ));
             }
 
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.92f) {
-                if (smartCrits && client.player.isOnGround()) return; // Ждем прыжка
+            // Умные криты (Прыжок)
+            if (smartCrits && client.player.isOnGround() && client.player.getAttackCooldownProgress(0) > 0.9f) {
+                client.player.jump();
+            }
 
-                // SILENT ROTATION ПАКЕТ
-                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                    sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision
-                ));
-
+            // Удар
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
                 client.interactionManager.attackEntity(client.player, currentTarget);
                 client.player.swingHand(Hand.MAIN_HAND);
                 if (autoRun) client.player.setSprinting(true);
@@ -184,6 +184,7 @@ public class ExampleMod implements ModInitializer {
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
         RenderSystem.enableBlend();
         VertexConsumerProvider.Immediate consumers = client.getBufferBuilders().getEntityVertexConsumers();
         VertexConsumer buffer = consumers.getBuffer(RenderLayer.getLines());
@@ -196,8 +197,9 @@ public class ExampleMod implements ModInitializer {
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            float r = (p == currentTarget) ? 0f : 1f, g = 1f, b = (p == currentTarget) ? 1f : 1f;
-            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.1f, p.getHeight() + 0.1f, r, g, b, 1f);
+            boolean isTarget = (p == currentTarget);
+            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 
+                    isTarget ? 0f : 1f, isTarget ? 1f : 1f, isTarget ? 1f : 1f, 1f);
             ms.pop();
         }
         consumers.draw(RenderLayer.getLines());
@@ -209,8 +211,6 @@ public class ExampleMod implements ModInitializer {
         line(b, m, -w, 0, -w, -w, h, -w, r, g, bl, a); line(b, m, w, 0, -w, w, h, -w, r, g, bl, a);
         line(b, m, -w, 0, w, w, 0, w, r, g, bl, a); line(b, m, -w, h, w, w, h, w, r, g, bl, a);
         line(b, m, -w, 0, w, -w, h, w, r, g, bl, a); line(b, m, w, 0, w, w, h, w, r, g, bl, a);
-        line(b, m, -w, 0, -w, -w, 0, w, r, g, bl, a); line(b, m, w, 0, -w, w, 0, w, r, g, bl, a);
-        line(b, m, -w, h, -w, -w, h, w, r, g, bl, a); line(b, m, w, h, -w, w, h, w, r, g, bl, a);
     }
 
     private void line(VertexConsumer b, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float bl, float a) {
@@ -232,7 +232,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange + ":" + kawallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity + ":" + smartCrits + ":" + fullbright);
+            w.println(kaRange + ":" + kawallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity + ":" + fullbright + ":" + smartCrits);
         } catch (Exception ignored) {}
     }
 
@@ -247,33 +247,33 @@ public class ExampleMod implements ModInitializer {
                 keyAT = Integer.parseInt(p[6]); friendsRaw = p[7];
                 esp = Boolean.parseBoolean(p[8]); keyESP = Integer.parseInt(p[9]);
                 keyFP = Integer.parseInt(p[10]); keyES = Integer.parseInt(p[11]);
-                antiVelocity = Boolean.parseBoolean(p[12]); smartCrits = Boolean.parseBoolean(p[13]); fullbright = Boolean.parseBoolean(p[14]);
+                antiVelocity = Boolean.parseBoolean(p[12]); fullbright = Boolean.parseBoolean(p[13]); 
+                smartCrits = Boolean.parseBoolean(p[14]);
             }
         } catch (Exception ignored) {}
     }
 
-    // МЕНЮ
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 95, cy - 110, cx + 95, cy + 135, 0xEE050505);
-            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE FULL", cx, cy - 100, 0x00FFFF);
-            String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap", "SmartCrits"};
-            boolean[] states = {killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap, smartCrits};
+            ctx.fill(cx - 95, cy - 100, cx + 95, cy + 110, 0xDD050505);
+            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE ABSOLUTE", cx, cy - 90, 0x55FFFF);
+            String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap"};
+            boolean[] states = {killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap};
             for (int i = 0; i < names.length; i++) {
-                int iy = cy - 80 + i * 24;
+                int iy = cy - 70 + i * 24;
                 boolean h = mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20;
-                ctx.fill(cx - 85, iy, cx + 85, iy + 20, h ? 0xEE444444 : 0xEE202020);
+                ctx.fill(cx - 85, iy, cx + 85, iy + 20, h ? 0xEE303030 : 0xEE151515);
                 ctx.drawText(textRenderer, names[i], cx - 80, iy + 6, states[i] ? 0x00FF00 : 0xFFFFFF, true);
             }
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            for (int i = 0; i < 8; i++) {
-                int iy = cy - 80 + i * 24;
+            for (int i = 0; i < 7; i++) {
+                int iy = cy - 70 + i * 24;
                 if (mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20) {
                     if (b == 1) { client.setScreen(new BindScreen(this, i)); return true; }
                     if (b == 0) {
@@ -284,7 +284,6 @@ public class ExampleMod implements ModInitializer {
                         else if (i == 4) esp = !esp;
                         else if (i == 5) fastPearl = !fastPearl;
                         else if (i == 6) elytraSwap = !elytraSwap;
-                        else if (i == 7) smartCrits = !smartCrits;
                         saveConfig(); return true;
                     }
                 }
@@ -310,31 +309,32 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 120, cy - 95, cx + 120, cy + 95, 0xEE050505);
+            ctx.fill(cx - 120, cy - 90, cx + 120, cy + 90, 0xEE050505);
             ctx.drawText(textRenderer, "Range:", cx - 110, cy - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
             drawBtn(ctx, cx - 110, cy - 10, "AresMine", isAres, mx, my);
             drawBtn(ctx, cx + 10, cy - 10, "MainBlaze", isBlaze, mx, my);
-            drawCheck(ctx, cx - 110, cy + 20, "AntiVelocity", antiVelocity, mx, my);
-            drawCheck(ctx, cx - 110, cy + 40, "AutoRun", autoRun, mx, my);
-            ctx.drawCenteredTextWithShadow(textRenderer, "ESC to Save", cx, cy + 70, 0xAAAAAA);
+            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Jump)", smartCrits, mx, my);
+            drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
+            drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
         }
         private void drawBtn(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 100 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 100, y + 15, h ? 0x444444 : 0x222222);
+            ctx.fill(x, y, x + 100, y + 15, h ? 0x404040 : 0x202020);
             ctx.drawCenteredTextWithShadow(textRenderer, n, x + 50, y + 4, s ? 0x00FF00 : 0xFFFFFF);
         }
         private void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 220 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 220, y + 15, h ? 0x444444 : 0x222222);
+            ctx.fill(x, y, x + 220, y + 15, h ? 0x404040 : 0x202020);
             ctx.drawText(textRenderer, n + ": " + (s ? "§aON" : "§cOFF"), x + 5, y + 4, 0xFFFFFF, true);
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.5; rF.setText("3.5"); return true; }
+            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.4; rF.setText("3.4"); return true; }
             if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { isBlaze = true; isAres = false; kaRange = 3.6; rF.setText("3.6"); return true; }
-            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { antiVelocity = !antiVelocity; return true; }
-            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) { autoRun = !autoRun; return true; }
+            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { smartCrits = !smartCrits; return true; }
+            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) { antiVelocity = !antiVelocity; return true; }
+            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 60 && my <= cy + 75) { autoRun = !autoRun; return true; }
             return super.mouseClicked(mx, my, b);
         }
         public void close() {
@@ -352,14 +352,13 @@ public class ExampleMod implements ModInitializer {
         public boolean keyPressed(int k, int s, int n) {
             int v = (k == GLFW.GLFW_KEY_ESCAPE) ? -1 : k;
             if (id == 0) keyKA = v; else if (id == 1) keyTB = v; else if (id == 2) keyFB = v;
-            else if (id == 3) keyAT = v; else if (id == 4) keyESP = v; else if (id == 5) keyFP = v; 
-            else if (id == 6) keyES = v;
+            else if (id == 3) keyAT = v; else if (id == 4) keyESP = v; else if (id == 5) keyFP = v; else if (id == 6) keyES = v;
             saveConfig(); client.setScreen(parent); return true;
         }
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
-            ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ (ESC - СБРОС)", width / 2, height / 2, 0x00CCFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, "НАЖМИ КЛАВИШУ", width / 2, height / 2, 0x00CCFF);
         }
     }
 }
