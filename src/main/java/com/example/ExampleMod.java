@@ -36,13 +36,14 @@ import java.util.Arrays;
 import java.util.List;
 
 public class ExampleMod implements ModInitializer {
+    // Все настройки должны быть public, чтобы их видели меню и миксины
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = false;
     public static boolean isAres = true, isBlaze = false;
 
     public static double kaRange = 3.4, kawallsRange = 3.0;
     
-    // Переменные теперь PUBLIC, чтобы миксины могли их использовать
+    // ЭТИ ПЕРЕМЕННЫЕ ОБЯЗАТЕЛЬНО PUBLIC STATIC ДЛЯ SILENT КИЛЛАУРЫ
     public static float serverYaw, serverPitch;
     public static boolean targetFound = false;
     public static PlayerEntity currentTarget = null;
@@ -52,8 +53,8 @@ public class ExampleMod implements ModInitializer {
 
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
-    private static final boolean[] keyStates = new boolean[512];
-    private static final String CONFIG_FILE = "bubble_config.txt";
+    public static final boolean[] keyStates = new boolean[512];
+    public static final String CONFIG_FILE = "bubble_config.txt";
 
     @Override
     public void onInitialize() {
@@ -81,7 +82,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void handleBinds(MinecraftClient client, long win) {
+    public void handleBinds(MinecraftClient client, long win) {
         if (client.currentScreen != null) return;
         if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
         if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
@@ -92,7 +93,7 @@ public class ExampleMod implements ModInitializer {
         if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
     }
 
-    private void runAura(MinecraftClient client) {
+    public void runAura(MinecraftClient client) {
         currentTarget = null;
         double dist = kaRange;
 
@@ -101,7 +102,7 @@ public class ExampleMod implements ModInitializer {
             
             double d = client.player.distanceTo(p);
             
-            // Проверка видимости (RayTrace)
+            // Проверка видимости для обхода MixerGrief
             if (!client.player.canSee(p)) {
                 if (d > kawallsRange) continue;
             } else {
@@ -114,25 +115,21 @@ public class ExampleMod implements ModInitializer {
         if (currentTarget != null) {
             targetFound = true;
             
-            // Рандомизация точки на теле врага (от 0.3 до 0.7 высоты)
-            double randomHeight = 0.3 + (Math.random() * 0.4);
+            // Наводка в рандомную точку тела (античит меньше палит)
+            double randomHeight = 0.2 + (Math.random() * 0.5);
             Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * randomHeight, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             
-            // Вычисление базовых углов
             float rawYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float rawPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Добавление Jitter (микро-тряски) для обхода проверок на идеальные ротации
+            // Jitter (микро-тряска прицела)
             serverYaw = rawYaw + (float)((Math.random() - 0.5) * 0.4);
             serverPitch = rawPitch + (float)((Math.random() - 0.5) * 0.4);
 
-            // Удар по кулдауну
             if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
-                boolean isInWater = client.player.isSubmergedInWater() || client.player.isInLava();
-
-                if (!smartCrits || isFalling || isInWater) {
+                if (!smartCrits || isFalling) {
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                     if (autoRun) client.player.setSprinting(true);
@@ -143,7 +140,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void runTrigger(MinecraftClient c) {
+    public void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
             if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) >= 1.0f) {
                 c.interactionManager.attackEntity(c.player, p);
@@ -152,7 +149,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void swapElytra(MinecraftClient client) {
+    public void swapElytra(MinecraftClient client) {
         int slot = -1;
         ItemStack chest = client.player.getInventory().getArmorStack(2);
         boolean isElytra = chest.isOf(Items.ELYTRA);
@@ -169,7 +166,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void throwPearl(MinecraftClient client) {
+    public void throwPearl(MinecraftClient client) {
         int ps = -1;
         for (int i = 0; i < 9; i++) if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; }
         if (ps != -1) {
@@ -180,7 +177,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void checkTotem(MinecraftClient client) {
+    public void checkTotem(MinecraftClient client) {
         if (client.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) return;
         for (int i = 0; i < 45; i++) {
             if (client.player.getInventory().getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
@@ -193,7 +190,7 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    private void renderESP(WorldRenderContext context) {
+    public void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
@@ -222,23 +219,23 @@ public class ExampleMod implements ModInitializer {
         RenderSystem.enableDepthTest();
     }
 
-    private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
+    public void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
         line(b, m, -w, 0, -w, w, 0, -w, r, g, bl, a); line(b, m, -w, h, -w, w, h, -w, r, g, bl, a);
         line(b, m, -w, 0, -w, -w, h, -w, r, g, bl, a); line(b, m, w, 0, -w, w, h, -w, r, g, bl, a);
         line(b, m, -w, 0, w, w, 0, w, r, g, bl, a); line(b, m, -w, h, w, w, h, w, r, g, bl, a);
         line(b, m, -w, 0, w, -w, h, w, r, g, bl, a); line(b, m, w, 0, w, w, h, w, r, g, bl, a);
     }
 
-    private void line(VertexConsumer b, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float bl, float a) {
+    public void line(VertexConsumer b, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float bl, float a) {
         b.vertex(m, x1, y1, z1).color(r, g, bl, a).normal(0, 1, 0);
         b.vertex(m, x2, y2, z2).color(r, g, bl, a).normal(0, 1, 0);
     }
 
-    private void notify(MinecraftClient c, String m, boolean v) {
+    public void notify(MinecraftClient c, String m, boolean v) {
         if (c.player != null) c.player.sendMessage(Text.literal("§b[Bubble] §f" + m + ": " + (v ? "§aON" : "§cOFF")), true);
     }
 
-    private boolean isPressed(long h, int k) {
+    public boolean isPressed(long h, int k) {
         if (k == -1) return false;
         boolean p = InputUtil.isKeyPressed(h, k);
         if (p && !keyStates[k]) { keyStates[k] = true; return true; }
@@ -269,6 +266,8 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // ВНУТРЕННИЕ КЛАССЫ МЕНЮ (BubbleMenu и др.) оставляем без изменений, 
+    // но убеждаемся, что они внутри ExampleMod
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -334,16 +333,17 @@ public class ExampleMod implements ModInitializer {
             drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
             drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
         }
-        private void drawBtn(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
+        public void drawBtn(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 100 && my >= y && my <= y + 15;
             ctx.fill(x, y, x + 100, y + 15, h ? 0x404040 : 0x202020);
             ctx.drawCenteredTextWithShadow(textRenderer, n, x + 50, y + 4, s ? 0x00FF00 : 0xFFFFFF);
         }
-        private void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
+        public void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 220 && my >= y && my <= y + 15;
             ctx.fill(x, y, x + 220, y + 15, h ? 0x404040 : 0x202020);
             ctx.drawText(textRenderer, n + ": " + (s ? "§aON" : "§cOFF"), x + 5, y + 4, 0xFFFFFF, true);
         }
+        @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
             if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.4; rF.setText("3.4"); return true; }
@@ -353,6 +353,7 @@ public class ExampleMod implements ModInitializer {
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 60 && my <= cy + 75) { autoRun = !autoRun; return true; }
             return super.mouseClicked(mx, my, b);
         }
+        @Override
         public void close() {
             try { kaRange = Double.parseDouble(rF.getText()); kawallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {}
             friendsRaw = fF.getText(); friendsList.clear();
