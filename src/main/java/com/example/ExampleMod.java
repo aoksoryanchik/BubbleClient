@@ -134,17 +134,25 @@ public class ExampleMod implements ModInitializer {
             serverYaw = tYaw + (float)((Math.random() - 0.5) * 0.4);
             serverPitch = tPitch + (float)((Math.random() - 0.5) * 0.4);
 
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
-                boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
-                
-                // ИСПРАВЛЕННЫЙ ПАКЕТ: Теперь передает и Yaw, и Pitch
-                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround()));
-                
-                if (!smartCrits || isFalling) {
-                    client.interactionManager.attackEntity(client.player, currentTarget);
-                    client.player.swingHand(Hand.MAIN_HAND);
-                    if (autoRun) client.player.setSprinting(true);
-                }
+            // ... внутри метода runAura, где идет атака:
+if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
+    boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
+    
+    // ИСПРАВЛЕНО ПОД 1.21.4: Добавлен 4-й аргумент (false для horizontalCollision)
+    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+        serverYaw, 
+        serverPitch, 
+        client.player.isOnGround(), 
+        client.player.horizontalCollision // Добавляем этот параметр
+    ));
+    
+    if (!smartCrits || isFalling) {
+        client.interactionManager.attackEntity(client.player, currentTarget);
+        client.player.swingHand(Hand.MAIN_HAND);
+        if (autoRun) client.player.setSprinting(true);
+    }
+}
+
             }
         } else {
             targetFound = false;
