@@ -106,25 +106,26 @@ public class ExampleMod implements ModInitializer {
 
         if (currentTarget != null) {
             targetFound = true;
-            // Рассчитываем углы только для визуала (ESP) и логики
             Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             serverYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             serverPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // ПАКЕТЫ ПОВОРОТА УДАЛЕНЫ (Это и есть режим выключенного Silent Rotations)
-            // Персонаж не дергается, античит не тепает.
-
-            // Smart Crits
-            if (smartCrits && client.player.isOnGround() && client.player.getAttackCooldownProgress(0) > 0.9f) {
-                client.player.jump();
+            // Улучшенная логика Smart Crits (Удары только при падении)
+            boolean canCrit = !client.player.isSubmergedInWater() && !client.player.isClimbing();
+            
+            if (smartCrits && canCrit && client.player.isOnGround()) {
+                client.player.jump(); // Подпрыгиваем, если на земле
             }
 
             // Удар
             if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
-                client.interactionManager.attackEntity(client.player, currentTarget);
-                client.player.swingHand(Hand.MAIN_HAND);
-                if (autoRun) client.player.setSprinting(true);
+                // Если включены криты, бьем только когда падаем (fallDistance > 0)
+                if (!smartCrits || client.player.fallDistance > 0 || !canCrit) {
+                    client.interactionManager.attackEntity(client.player, currentTarget);
+                    client.player.swingHand(Hand.MAIN_HAND);
+                    if (autoRun) client.player.setSprinting(true);
+                }
             }
         } else {
             targetFound = false;
@@ -318,7 +319,7 @@ public class ExampleMod implements ModInitializer {
             ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
             drawBtn(ctx, cx - 110, cy - 10, "AresMine", isAres, mx, my);
             drawBtn(ctx, cx + 10, cy - 10, "MainBlaze", isBlaze, mx, my);
-            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Jump)", smartCrits, mx, my);
+            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Fix)", smartCrits, mx, my);
             drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
             drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
         }
@@ -366,4 +367,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
