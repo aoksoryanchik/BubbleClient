@@ -16,10 +16,10 @@ import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
-import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
@@ -37,18 +37,21 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
+    // Состояния модулей
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = true;
     public static boolean isAres = false, isBlaze = false, isMixer = true;
 
-    public static double kaRange = 3.3, kawallsRange = 3.0;
-    private static float fakeYaw, fakePitch;
+    // Настройки
+    public static double kaRange = 3.4, kawallsRange = 0.0;
     private static PlayerEntity currentTarget = null;
     private static final Random random = new Random();
-
+    
+    // Бинды
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
 
+    // Списки и конфиг
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
     private static final boolean[] keyStates = new boolean[512];
@@ -63,7 +66,7 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
+            if (isPressed(win, GLFW.GLFW_KEY_RIGHT_SHIFT) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
@@ -71,8 +74,11 @@ public class ExampleMod implements ModInitializer {
 
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
+            if (autoRun && client.player.forwardSpeed > 0 && !client.player.isSneaking() && !client.player.horizontalCollision) {
+                client.player.setSprinting(true);
+            }
             
-            runAuraFinal(client);
+            runSilentAura(client);
             
             if (triggerbot) runTrigger(client);
             if (antiVelocity && client.player.hurtTime > 0) {
@@ -81,18 +87,7 @@ public class ExampleMod implements ModInitializer {
         });
     }
 
-    private void handleBinds(MinecraftClient client, long win) {
-        if (client.currentScreen != null) return;
-        if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
-        if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
-        if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
-        if (isPressed(win, keyTB)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
-        if (isPressed(win, keyFB)) { fullbright = !fullbright; notify(client, "FullBright", fullbright); }
-        if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
-        if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
-    }
-
-    private void runAuraFinal(MinecraftClient client) {
+    private void runSilentAura(MinecraftClient client) {
         if (!killaura) return;
         
         currentTarget = null;
@@ -101,50 +96,42 @@ public class ExampleMod implements ModInitializer {
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = client.player.distanceTo(p);
-            boolean canSee = client.player.canSee(p);
-            double currentMax = canSee ? kaRange : kawallsRange;
-            
+            double currentMax = client.player.canSee(p) ? kaRange : kawallsRange;
             if (d <= currentMax && d < dist) { dist = d; currentTarget = p; }
         }
 
         if (currentTarget != null) {
-            // Пакетные ротации с легит-смещением
-            Vec3d targetVec = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.52, 0);
-            targetVec = targetVec.add((random.nextDouble()-0.5)*0.11, (random.nextDouble()-0.5)*0.08, (random.nextDouble()-0.5)*0.11);
-            
-            Vec3d diff = targetVec.subtract(client.player.getEyePos());
-            float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
-            float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-
-            float rotSpeed = isMixer ? 35.0f : 180.0f;
-            fakeYaw = updateRotation(fakeYaw, tYaw, rotSpeed);
-            fakePitch = updateRotation(fakePitch, tPitch, rotSpeed);
-
-            float oldY = client.player.getYaw();
-            float oldP = client.player.getPitch();
             float cooldown = client.player.getAttackCooldownProgress(0.0f);
+            // Рандомное КД для обхода статики
+            float nextAttackThreshold = 0.92f + random.nextFloat() * 0.07f;
 
-            // Режим ручных критов: если ты в воздухе, бьем только при падении (> 0.01f)
-            boolean canCritHit = !smartCrits || client.player.isOnGround() || client.player.fallDistance > 0.01f || client.player.isSubmergedInWater();
+            if (cooldown >= nextAttackThreshold) {
+                // SmartCrits: бьем только в нужной фазе
+                boolean canCritHit = !smartCrits || client.player.fallDistance > 0.01f || client.player.isOnGround() || client.player.isSubmergedInWater();
 
-            if (cooldown >= (isMixer ? 0.96f : 0.93f) && canCritHit) {
-                client.player.setYaw(fakeYaw);
-                client.player.setPitch(fakePitch);
+                if (canCritHit) {
+                    // Генерируем пакетное дрожание (Jitter)
+                    double jX = (random.nextDouble() - 0.5) * 0.14;
+                    double jY = (random.nextDouble() - 0.5) * 0.14;
+                    double jZ = (random.nextDouble() - 0.5) * 0.14;
+                    
+                    Vec3d targetVec = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.55, 0).add(jX, jY, jZ);
+                    Vec3d diff = targetVec.subtract(client.player.getEyePos());
+                    float sYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
+                    float sPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-                if (Math.abs(MathHelper.wrapDegrees(fakeYaw - tYaw)) < 20.0f) {
+                    // Отправляем пакет поворота
+                    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(sYaw, sPitch, client.player.isOnGround(), client.player.horizontalCollision));
+                    
+                    // Удар
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
+                    
+                    // Возвращаем взгляд назад пакетом, чтобы камера не дергалась
+                    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(client.player.getYaw(), client.player.getPitch(), client.player.isOnGround(), client.player.horizontalCollision));
                 }
-                
-                client.player.setYaw(oldY);
-                client.player.setPitch(oldP);
             }
         }
-    }
-
-    private float updateRotation(float current, float target, float maxStep) {
-        float f = MathHelper.wrapDegrees(target - current);
-        return current + MathHelper.clamp(f, -maxStep, maxStep);
     }
 
     private void runTrigger(MinecraftClient c) {
@@ -217,22 +204,20 @@ public class ExampleMod implements ModInitializer {
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 1f, 1f, 1f, 1f);
+            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 0f, 1f, 1f, 1f);
             ms.pop();
         }
-        consumers.draw(RenderLayer.getLines());
+        consumers.draw();
         RenderSystem.enableDepthTest();
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
-        line(b, m, -w, 0, -w, w, 0, -w, r, g, bl, a);
-        line(b, m, -w, h, -w, w, h, -w, r, g, bl, a);
-        line(b, m, -w, 0, -w, -w, h, -w, r, g, bl, a);
-        line(b, m, w, 0, -w, w, h, -w, r, g, bl, a);
-        line(b, m, -w, 0, w, w, 0, w, r, g, bl, a);
-        line(b, m, -w, h, w, w, h, w, r, g, bl, a);
-        line(b, m, -w, 0, w, -w, h, w, r, g, bl, a);
-        line(b, m, w, 0, w, w, h, w, r, g, bl, a);
+        line(b, m, -w, 0, -w, w, 0, -w, r, g, bl, a); line(b, m, w, 0, -w, w, 0, w, r, g, bl, a);
+        line(b, m, w, 0, w, -w, 0, w, r, g, bl, a); line(b, m, -w, 0, w, -w, 0, -w, r, g, bl, a);
+        line(b, m, -w, h, -w, w, h, -w, r, g, bl, a); line(b, m, w, h, -w, w, h, w, r, g, bl, a);
+        line(b, m, w, h, w, -w, h, w, r, g, bl, a); line(b, m, -w, h, w, -w, h, -w, r, g, bl, a);
+        line(b, m, -w, 0, -w, -w, h, -w, r, g, bl, a); line(b, m, w, 0, -w, w, h, -w, r, g, bl, a);
+        line(b, m, w, 0, w, w, h, w, r, g, bl, a); line(b, m, -w, 0, w, -w, h, w, r, g, bl, a);
     }
 
     private void line(VertexConsumer b, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float bl, float a) {
@@ -272,11 +257,12 @@ public class ExampleMod implements ModInitializer {
                 antiVelocity = Boolean.parseBoolean(p[12]); fullbright = Boolean.parseBoolean(p[13]); 
                 smartCrits = Boolean.parseBoolean(p[14]); 
                 isMixer = Boolean.parseBoolean(p[15]); isAres = Boolean.parseBoolean(p[16]); isBlaze = Boolean.parseBoolean(p[17]);
+                friendsList.clear(); if(!friendsRaw.isEmpty()) friendsList.addAll(Arrays.asList(friendsRaw.split(",")));
             }
         } catch (Exception ignored) {}
     }
 
-    // --- GUI ---
+    // --- GUI СЕКЦИЯ ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -339,7 +325,7 @@ public class ExampleMod implements ModInitializer {
             drawBtn(ctx, cx - 110, cy - 10, "Mixer", isMixer, mx, my);
             drawBtn(ctx, cx - 35, cy - 10, "Ares", isAres, mx, my);
             drawBtn(ctx, cx + 40, cy - 10, "Blaze", isBlaze, mx, my);
-            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Manual)", smartCrits, mx, my);
+            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits", smartCrits, mx, my);
             drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
             drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
         }
@@ -356,13 +342,13 @@ public class ExampleMod implements ModInitializer {
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
             if (mx >= cx - 110 && mx <= cx - 40 && my >= cy - 10 && my <= cy + 5) { 
-                isMixer = true; isAres = false; isBlaze = false; kaRange = 3.3; kawallsRange = 0.0; return true; 
+                isMixer = true; isAres = false; isBlaze = false; kaRange = 3.3; return true; 
             }
             if (mx >= cx - 35 && mx <= cx + 35 && my >= cy - 10 && my <= cy + 5) { 
-                isAres = true; isMixer = false; isBlaze = false; kaRange = 3.4; kawallsRange = 3.0; return true; 
+                isAres = true; isMixer = false; isBlaze = false; kaRange = 3.4; return true; 
             }
             if (mx >= cx + 40 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { 
-                isBlaze = true; isMixer = false; isAres = false; kaRange = 3.6; kawallsRange = 0.0; return true; 
+                isBlaze = true; isMixer = false; isAres = false; kaRange = 3.6; return true; 
             }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { smartCrits = !smartCrits; return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) { antiVelocity = !antiVelocity; return true; }
@@ -372,7 +358,7 @@ public class ExampleMod implements ModInitializer {
         public void close() {
             try { kaRange = Double.parseDouble(rF.getText()); kawallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {}
             friendsRaw = fF.getText(); friendsList.clear();
-            if (!friendsRaw.isEmpty()) Arrays.stream(friendsRaw.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
+            if (!friendsRaw.isEmpty()) friendsList.addAll(Arrays.asList(friendsRaw.split(",")));
             saveConfig(); client.setScreen(parent);
         }
     }
