@@ -16,7 +16,6 @@ import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -35,17 +34,20 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
-    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, onlyCrits = false;
-    public static boolean isAres = true, isBlaze = false;
-
-    public static double kaRange = 3.4, kawallsRange = 3.0;
+    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = false;
     
-    private static float serverYaw, serverPitch;
-    private static boolean targetFound = false;
+    // Режимы серверов
+    public static boolean isAres = false, isBlaze = false, isMixer = true;
+
+    public static double kaRange = 3.0, kawallsRange = 0.0;
+    private static final Random random = new Random();
+    
     private static PlayerEntity currentTarget = null;
+    private static boolean targetFound = false;
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
@@ -76,6 +78,7 @@ public class ExampleMod implements ModInitializer {
             if (triggerbot) runTrigger(client);
 
             if (antiVelocity && client.player.hurtTime > 0) {
+                // На MixerGrief лучше не обнулять полностью, а слегка гасить
                 client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
             }
         });
@@ -97,31 +100,31 @@ public class ExampleMod implements ModInitializer {
         double dist = Double.MAX_VALUE;
 
         for (PlayerEntity p : client.world.getPlayers()) {
-            if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
+            if (p == client.player || !p.isAlive() || p.isInvisible() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
+            
             double d = client.player.distanceTo(p);
-            if (d <= kaRange) {
+            double currentMaxRange = (client.player.canSee(p)) ? kaRange : kawallsRange;
+
+            if (d <= currentMaxRange) {
                 if (d < dist) { dist = d; currentTarget = p; }
             }
         }
 
         if (currentTarget != null) {
             targetFound = true;
-            Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
-            Vec3d diff = tPos.subtract(client.player.getEyePos());
-            serverYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
-            serverPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            
+            // ЛОГИКА ПОВОРОТА (Silent Rotations)
+            lookAtEntity(client, currentTarget);
 
-            // Удар
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
-                // LOGIC: Only Crits
-                // Проверяем, что игрок не на земле и его вертикальная скорость отрицательна (падает)
-                boolean isFalling = client.player.fallDistance > 0.05 && !client.player.isOnGround();
-                boolean isInLiquid = client.player.isSubmergedInWater() || client.player.isInLava();
-                
-                if (!onlyCrits || isFalling || isInLiquid) {
-                    // SILENT ROTATION PACKET
-                    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround(), true));
-                    
+            // Кулдаун удара с небольшой рандомизацией для обхода MixerGrief
+            float cooldownRequirement = isMixer ? 0.92f + random.nextFloat(0.06f) : 0.95f;
+
+            if (client.player.getAttackCooldownProgress(0.0f) >= cooldownRequirement) {
+                boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
+                boolean isInWater = client.player.isSubmergedInWater() || client.player.isInLava();
+
+                // MixerGrief Check: Если Mixer, то бьем всегда (криты по желанию в коде, но ты просил выкл)
+                if (!smartCrits || isFalling || isInWater) {
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                     if (autoRun) client.player.setSprinting(true);
@@ -132,6 +135,24 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
+    private void lookAtEntity(MinecraftClient client, PlayerEntity target) {
+        Vec3d ePos = target.getPos().add(0, target.getHeight() * 0.7, 0);
+        Vec3d dPos = ePos.subtract(client.player.getEyePos());
+        
+        double diffX = dPos.x;
+        double diffY = dPos.y;
+        double diffZ = dPos.z;
+        double diffXZ = Math.sqrt(diffX * diffX + diffZ * diffZ);
+
+        float targetYaw = (float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90.0f;
+        float targetPitch = (float) -Math.toDegrees(Math.atan2(diffY, diffXZ));
+
+        // Если Ares/Blaze — можно мгновенно. Если Mixer — лучше плавно (но тут для простоты оставляем синхрон с сервером)
+        client.player.setYaw(targetYaw);
+        client.player.setPitch(targetPitch);
+    }
+
+    // --- Остальные вспомогательные функции (ESP, Pearl, Totem и т.д.) без изменений ---
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
             if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) >= 1.0f) {
@@ -237,7 +258,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange + ":" + kawallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity + ":" + fullbright + ":" + onlyCrits);
+            w.println(kaRange + ":" + kawallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity + ":" + fullbright + ":" + smartCrits + ":" + isAres + ":" + isBlaze + ":" + isMixer);
         } catch (Exception ignored) {}
     }
 
@@ -245,7 +266,7 @@ public class ExampleMod implements ModInitializer {
         if (!Files.exists(Paths.get(CONFIG_FILE))) return;
         try {
             String[] p = Files.readAllLines(Paths.get(CONFIG_FILE)).get(0).split(":", -1);
-            if (p.length >= 15) {
+            if (p.length >= 18) {
                 kaRange = Double.parseDouble(p[0]); kawallsRange = Double.parseDouble(p[1]);
                 autoRun = Boolean.parseBoolean(p[2]); keyKA = Integer.parseInt(p[3]);
                 keyTB = Integer.parseInt(p[4]); keyFB = Integer.parseInt(p[5]);
@@ -253,11 +274,13 @@ public class ExampleMod implements ModInitializer {
                 esp = Boolean.parseBoolean(p[8]); keyESP = Integer.parseInt(p[9]);
                 keyFP = Integer.parseInt(p[10]); keyES = Integer.parseInt(p[11]);
                 antiVelocity = Boolean.parseBoolean(p[12]); fullbright = Boolean.parseBoolean(p[13]); 
-                onlyCrits = Boolean.parseBoolean(p[14]);
+                smartCrits = Boolean.parseBoolean(p[14]);
+                isAres = Boolean.parseBoolean(p[15]); isBlaze = Boolean.parseBoolean(p[16]); isMixer = Boolean.parseBoolean(p[17]);
             }
         } catch (Exception ignored) {}
     }
 
+    // --- GUI SCREENS ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -303,25 +326,29 @@ public class ExampleMod implements ModInitializer {
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
         protected void init() {
             int cx = width / 2, cy = height / 2;
-            rF = new TextFieldWidget(textRenderer, cx - 40, cy - 75, 40, 14, Text.literal(""));
+            rF = new TextFieldWidget(textRenderer, cx - 40, cy - 82, 40, 14, Text.literal(""));
             rF.setText(String.valueOf(kaRange));
-            wF = new TextFieldWidget(textRenderer, cx - 40, cy - 55, 40, 14, Text.literal(""));
+            wF = new TextFieldWidget(textRenderer, cx - 40, cy - 65, 40, 14, Text.literal(""));
             wF.setText(String.valueOf(kawallsRange));
-            fF = new TextFieldWidget(textRenderer, cx - 60, cy - 35, 120, 14, Text.literal("Friends"));
+            fF = new TextFieldWidget(textRenderer, cx - 60, cy - 48, 120, 14, Text.literal("Friends"));
             fF.setText(friendsRaw);
             addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
         }
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 120, cy - 90, cx + 120, cy + 90, 0xEE050505);
-            ctx.drawText(textRenderer, "Range:", cx - 110, cy - 72, -1, true);
-            ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
-            drawBtn(ctx, cx - 110, cy - 10, "AresMine", isAres, mx, my);
-            drawBtn(ctx, cx + 10, cy - 10, "MainBlaze", isBlaze, mx, my);
-            drawCheck(ctx, cx - 110, cy + 20, "Only Crits (Wait Fall)", onlyCrits, mx, my);
-            drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
-            drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
+            ctx.fill(cx - 120, cy - 100, cx + 120, cy + 105, 0xEE050505);
+            ctx.drawText(textRenderer, "Range:", cx - 110, cy - 79, -1, true);
+            ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 62, -1, true);
+            
+            // Кнопки пресетов
+            drawBtn(ctx, cx - 110, cy - 25, "AresMine", isAres, mx, my);
+            drawBtn(ctx, cx + 10, cy - 25, "MainBlaze", isBlaze, mx, my);
+            drawBtn(ctx, cx - 50, cy - 5, "MixerGrief", isMixer, mx, my);
+
+            drawCheck(ctx, cx - 110, cy + 25, "Smart Crits (Wait Fall)", smartCrits, mx, my);
+            drawCheck(ctx, cx - 110, cy + 45, "AntiVelocity", antiVelocity, mx, my);
+            drawCheck(ctx, cx - 110, cy + 65, "AutoRun", autoRun, mx, my);
         }
         private void drawBtn(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 100 && my >= y && my <= y + 15;
@@ -335,11 +362,24 @@ public class ExampleMod implements ModInitializer {
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.4; rF.setText("3.4"); return true; }
-            if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { isBlaze = true; isAres = false; kaRange = 3.1; rF.setText("3.1"); kawallsRange = 0.0; wF.setText("0.0"); return true; }
-            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { onlyCrits = !onlyCrits; return true; }
-            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) { antiVelocity = !antiVelocity; return true; }
-            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 60 && my <= cy + 75) { autoRun = !autoRun; return true; }
+            // Ares
+            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 25 && my <= cy - 10) { 
+                isAres = true; isBlaze = false; isMixer = false; kaRange = 3.4; kawallsRange = 3.0; rF.setText("3.4"); wF.setText("3.0"); return true; 
+            }
+            // Blaze
+            if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 25 && my <= cy - 10) { 
+                isBlaze = true; isAres = false; isMixer = false; kaRange = 3.6; kawallsRange = 0.0; rF.setText("3.6"); wF.setText("0.0"); return true; 
+            }
+            // MixerGrief (Твои настройки)
+            if (mx >= cx - 50 && mx <= cx + 50 && my >= cy - 5 && my <= cy + 10) { 
+                isMixer = true; isAres = false; isBlaze = false; 
+                kaRange = 3.0; kawallsRange = 0.0; smartCrits = false; autoRun = true; antiVelocity = false;
+                rF.setText("3.0"); wF.setText("0.0"); return true; 
+            }
+            
+            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 25 && my <= cy + 40) { smartCrits = !smartCrits; return true; }
+            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 45 && my <= cy + 60) { antiVelocity = !antiVelocity; return true; }
+            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 65 && my <= cy + 80) { autoRun = !autoRun; return true; }
             return super.mouseClicked(mx, my, b);
         }
         public void close() {
@@ -367,4 +407,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
