@@ -66,7 +66,6 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // ИСПРАВЛЕНО: Теперь на клавишу 0 (над буквами)
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -116,20 +115,19 @@ public class ExampleMod implements ModInitializer {
             float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // УЛУЧШЕННАЯ ПЛАВНОСТЬ (Человекоподобная наводка)
-            // Используем lerp 0.65 - это быстро, но оставляет промежуточные кадры для античита
-            float speed = 0.65f;
+            // ПЛАВНОСТЬ И РАНДОМИЗАЦИЯ
+            float speed = 0.75f; // Ускорил наводку
             serverYaw = MathHelper.lerpAngleDegrees(speed, serverYaw, tYaw);
             serverPitch = MathHelper.lerp(speed, serverPitch, tPitch);
 
-            // Рандомизация для обхода эвристики (микро-движения)
-            serverYaw += (ThreadLocalRandom.current().nextFloat() - 0.5f) * 0.4f;
-            serverPitch += (ThreadLocalRandom.current().nextFloat() - 0.5f) * 0.4f;
+            // Микро-шейк для обхода статических проверок
+            serverYaw += (ThreadLocalRandom.current().nextFloat() - 0.5f) * 0.3f;
+            serverPitch += (ThreadLocalRandom.current().nextFloat() - 0.5f) * 0.3f;
 
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.96f) {
-                // Проверка угла: бьем только если "довели" прицел достаточно близко
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
+                // ИСПРАВЛЕНО: Угол атаки расширен до 90 градусов (FOV 180 суммарно)
                 float delta = Math.abs(MathHelper.wrapDegrees(serverYaw - tYaw));
-                if (delta < 15.0f) {
+                if (delta <= 90.0f) { 
                     boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
                     if (!smartCrits || isFalling) {
                         client.interactionManager.attackEntity(client.player, currentTarget);
