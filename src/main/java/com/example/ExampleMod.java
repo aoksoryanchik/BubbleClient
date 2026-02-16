@@ -34,18 +34,21 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = false;
     public static boolean isAres = true, isBlaze = false;
 
-    public static double kaRange = 3.4, kawallsRange = 0.0;
+    public static double kaRange = 3.3, kawallsRange = 0.0;
 
+    // Ротации
     public static float serverYaw, serverPitch;
     public static boolean targetFound = false;
     public static PlayerEntity currentTarget = null;
 
+    // Бинды
     public static int keyKA = -1, keyTR = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
 
@@ -57,14 +60,14 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
-        // Исправлено: используем WorldRenderContext
         WorldRenderEvents.BEFORE_DEBUG_RENDER.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            if (isPressed(win, GLFW.GLFW_KEY_O) && client.currentScreen == null) {
+            // ИСПРАВЛЕНО: Теперь на клавишу 0 (над буквами)
+            if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
@@ -94,20 +97,15 @@ public class ExampleMod implements ModInitializer {
 
     public void runAura(MinecraftClient client) {
         currentTarget = null;
-        double dist = kaRange;
+        double dist = 100.0;
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = client.player.distanceTo(p);
-            
-            // Настройки видимости Ares/Blaze
-            if (client.player.canSee(p)) {
-                if (d > kaRange) continue;
-            } else {
-                if (d > kawallsRange) continue;
-            }
+            boolean canSee = client.player.canSee(p);
+            double limit = canSee ? kaRange : kawallsRange;
 
-            if (d < dist) { dist = d; currentTarget = p; }
+            if (d <= limit && d < dist) { dist = d; currentTarget = p; }
         }
 
         if (currentTarget != null) {
@@ -115,19 +113,29 @@ public class ExampleMod implements ModInitializer {
             Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
 
-            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
-            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
+            float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Silent Rotation
-            serverYaw = MathHelper.lerpAngleDegrees(0.4f, serverYaw, targetYaw);
-            serverPitch = MathHelper.lerp(0.4f, serverPitch, targetPitch);
+            // УЛУЧШЕННАЯ ПЛАВНОСТЬ (Человекоподобная наводка)
+            // Используем lerp 0.65 - это быстро, но оставляет промежуточные кадры для античита
+            float speed = 0.65f;
+            serverYaw = MathHelper.lerpAngleDegrees(speed, serverYaw, tYaw);
+            serverPitch = MathHelper.lerp(speed, serverPitch, tPitch);
 
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
-                boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
-                if (!smartCrits || isFalling) {
-                    client.interactionManager.attackEntity(client.player, currentTarget);
-                    client.player.swingHand(Hand.MAIN_HAND);
-                    if (autoRun) client.player.setSprinting(true);
+            // Рандомизация для обхода эвристики (микро-движения)
+            serverYaw += (ThreadLocalRandom.current().nextFloat() - 0.5f) * 0.4f;
+            serverPitch += (ThreadLocalRandom.current().nextFloat() - 0.5f) * 0.4f;
+
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.96f) {
+                // Проверка угла: бьем только если "довели" прицел достаточно близко
+                float delta = Math.abs(MathHelper.wrapDegrees(serverYaw - tYaw));
+                if (delta < 15.0f) {
+                    boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
+                    if (!smartCrits || isFalling) {
+                        client.interactionManager.attackEntity(client.player, currentTarget);
+                        client.player.swingHand(Hand.MAIN_HAND);
+                        if (autoRun) client.player.setSprinting(true);
+                    }
                 }
             }
         } else {
@@ -139,7 +147,7 @@ public class ExampleMod implements ModInitializer {
 
     public void runTrigger(MinecraftClient client) {
         if (client.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
-            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
+            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && client.player.getAttackCooldownProgress(0.0f) >= 0.98f) {
                 client.interactionManager.attackEntity(client.player, p);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -337,13 +345,12 @@ public class ExampleMod implements ModInitializer {
         public void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 220 && my >= y && my <= y + 15;
             ctx.fill(x, y, x + 220, y + 15, h ? 0x40404040 : 0x20202020);
-            // Исправлено: заменяем getTextRenderer() на прямое обращение к MinecraftClient
             ctx.drawText(MinecraftClient.getInstance().textRenderer, n + ": " + (s ? "§aON" : "§cOFF"), x + 5, y + 4, 0xFFFFFF, true);
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.2; kawallsRange = 0.0; }
+            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.2; }
             if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { isBlaze = true; isAres = false; kaRange = 3.4; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) smartCrits = !smartCrits;
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) antiVelocity = !antiVelocity;
