@@ -9,11 +9,12 @@
   "license": "MIT",
   "icon": "assets/modid/icon.png",
   "environment": "*",
-  "entrypoints": {
-    "client": [
+    "entrypoints": {
+    "main": [
       "com.example.ExampleMod"
     ]
   },
+
   "mixins": [
     "modid.mixins.json"
   ],
