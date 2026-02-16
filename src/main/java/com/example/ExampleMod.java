@@ -37,24 +37,20 @@ import java.util.Arrays;
 import java.util.List;
 
 public class ExampleMod implements ModInitializer {
-    // Основные модули
+    // Настройки
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = false;
-    public static boolean isAres = true, isBlaze = false;
-
-    // Настройки дистанции
-    public static double kaRange = 3.4, kawallsRange = 3.0;
     
-    // Переменные для Silent ротаций (используются в миксинах)
+    // Дистанции и ротации
+    public static double kaRange = 3.4, kawallsRange = 3.0;
     public static float serverYaw, serverPitch;
     public static boolean targetFound = false;
     public static PlayerEntity currentTarget = null;
 
-    // Бинды клавиш
+    // Бинды
     public static int keyKA = -1, keyTR = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
 
-    // Список друзей
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
     public static final boolean[] keyStates = new boolean[512];
@@ -63,27 +59,23 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
-        // Регистрация рендера ESP
         WorldRenderEvents.BEFORE_DEBUG_RENDER.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // Открытие меню на клавишу '0'
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
             handleBinds(client, win);
 
-            // Работа пассивных функций
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
-            if (killaura) runSilentAura(client);
+            if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // AntiVelocity (уменьшение отдачи)
             if (antiVelocity && client.player.hurtTime > 0) {
                 client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
             }
@@ -102,7 +94,7 @@ public class ExampleMod implements ModInitializer {
         if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
     }
 
-    public void runSilentAura(MinecraftClient client) {
+    public void runAura(MinecraftClient client) {
         currentTarget = null;
         double dist = kaRange;
 
@@ -110,19 +102,16 @@ public class ExampleMod implements ModInitializer {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = client.player.distanceTo(p);
             
-            // Проверка видимости для обхода AresMine / MainBlaze
             if (client.player.canSee(p)) {
                 if (d > kaRange) continue;
             } else {
                 if (d > kawallsRange) continue;
             }
-
             if (d < dist) { dist = d; currentTarget = p; }
         }
 
         if (currentTarget != null) {
             targetFound = true;
-            // Рандомизация точки удара
             double randomHeight = 0.2 + (Math.random() * 0.5);
             Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * randomHeight, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
@@ -130,29 +119,22 @@ public class ExampleMod implements ModInitializer {
             float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Jitter для обхода античита
             serverYaw = tYaw + (float)((Math.random() - 0.5) * 0.4);
             serverPitch = tPitch + (float)((Math.random() - 0.5) * 0.4);
 
-            // ... внутри метода runAura, где идет атака:
-if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
-    boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
-    
-    // ИСПРАВЛЕНО ПОД 1.21.4: Добавлен 4-й аргумент (false для horizontalCollision)
-    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-        serverYaw, 
-        serverPitch, 
-        client.player.isOnGround(), 
-        client.player.horizontalCollision // Добавляем этот параметр
-    ));
-    
-    if (!smartCrits || isFalling) {
-        client.interactionManager.attackEntity(client.player, currentTarget);
-        client.player.swingHand(Hand.MAIN_HAND);
-        if (autoRun) client.player.setSprinting(true);
-    }
-}
-
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
+                boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
+                
+                // ПАКЕТ ДЛЯ 1.21.4 (4 аргумента)
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+                    serverYaw, serverPitch, client.player.isOnGround(), client.player.horizontalCollision
+                ));
+                
+                if (!smartCrits || isFalling) {
+                    client.interactionManager.attackEntity(client.player, currentTarget);
+                    client.player.swingHand(Hand.MAIN_HAND);
+                    if (autoRun) client.player.setSprinting(true);
+                }
             }
         } else {
             targetFound = false;
@@ -286,7 +268,7 @@ if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
         } catch (Exception ignored) {}
     }
 
-    // ВНУТРЕННИЕ КЛАССЫ МЕНЮ (Не урезаны)
+    // ВНУТРЕННИЕ КЛАССЫ ЭКРАНОВ
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -346,16 +328,9 @@ if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
             ctx.fill(cx - 120, cy - 90, cx + 120, cy + 90, 0xEE050505);
             ctx.drawText(textRenderer, "Range:", cx - 110, cy - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
-            drawBtn(ctx, cx - 110, cy - 10, "AresMine", isAres, mx, my);
-            drawBtn(ctx, cx + 10, cy - 10, "MainBlaze", isBlaze, mx, my);
-            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Wait Fall)", smartCrits, mx, my);
+            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits", smartCrits, mx, my);
             drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
             drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
-        }
-        public void drawBtn(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 100 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 100, y + 15, h ? 0x40404040 : 0x20202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 50, y + 4, s ? 0x00FF00 : 0xFFFFFF);
         }
         public void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 220 && my >= y && my <= y + 15;
@@ -365,8 +340,6 @@ if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.4; }
-            if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { isBlaze = true; isAres = false; kaRange = 3.5; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) smartCrits = !smartCrits;
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) antiVelocity = !antiVelocity;
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 60 && my <= cy + 75) autoRun = !autoRun;
@@ -398,4 +371,3 @@ if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
         }
     }
 }
-
