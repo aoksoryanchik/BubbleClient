@@ -1,11 +1,10 @@
 {
   "required": true,
-  "minVersion": "0.8",
   "package": "com.example.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-  ],
-  "client": [
+    "PlayerMoveC2SPacketAccessor",
+    "ClientPlayNetworkHandlerMixin"
   ],
   "injectors": {
     "defaultRequire": 1
