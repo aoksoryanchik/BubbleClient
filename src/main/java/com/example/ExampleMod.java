@@ -72,7 +72,7 @@ public class ExampleMod implements ModInitializer {
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             
-            runAuraStealth(client);
+            runAuraFinal(client);
             
             if (triggerbot) runTrigger(client);
             if (antiVelocity && client.player.hurtTime > 0) {
@@ -92,7 +92,7 @@ public class ExampleMod implements ModInitializer {
         if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
     }
 
-    private void runAuraStealth(MinecraftClient client) {
+    private void runAuraFinal(MinecraftClient client) {
         if (!killaura) return;
         
         currentTarget = null;
@@ -108,37 +108,30 @@ public class ExampleMod implements ModInitializer {
         }
 
         if (currentTarget != null) {
-            // Пакетные ротации с рандомным смещением
-            Vec3d targetVec = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
-            targetVec = targetVec.add((random.nextDouble()-0.5)*0.1, (random.nextDouble()-0.5)*0.1, (random.nextDouble()-0.5)*0.1);
+            // Пакетные ротации с легит-смещением
+            Vec3d targetVec = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.52, 0);
+            targetVec = targetVec.add((random.nextDouble()-0.5)*0.11, (random.nextDouble()-0.5)*0.08, (random.nextDouble()-0.5)*0.11);
             
             Vec3d diff = targetVec.subtract(client.player.getEyePos());
             float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            float rotSpeed = isMixer ? 38.0f : 180.0f;
+            float rotSpeed = isMixer ? 35.0f : 180.0f;
             fakeYaw = updateRotation(fakeYaw, tYaw, rotSpeed);
             fakePitch = updateRotation(fakePitch, tPitch, rotSpeed);
 
             float oldY = client.player.getYaw();
             float oldP = client.player.getPitch();
-
             float cooldown = client.player.getAttackCooldownProgress(0.0f);
 
-            // Условие удара: если SmartCrits включен, ждем пока ты сам подпрыгнешь и начнешь падать
-            boolean shouldAttack = true;
-            if (smartCrits) {
-                // Если ты в воздухе, бьем только при падении. Если на земле - бьем обычно.
-                if (!client.player.isOnGround() && !client.player.isSubmergedInWater()) {
-                    shouldAttack = client.player.fallDistance > 0.01f;
-                }
-            }
+            // Режим ручных критов: если ты в воздухе, бьем только при падении (> 0.01f)
+            boolean canCritHit = !smartCrits || client.player.isOnGround() || client.player.fallDistance > 0.01f || client.player.isSubmergedInWater();
 
-            if (cooldown >= (isMixer ? 0.95f : 0.92f) && shouldAttack) {
+            if (cooldown >= (isMixer ? 0.96f : 0.93f) && canCritHit) {
                 client.player.setYaw(fakeYaw);
                 client.player.setPitch(fakePitch);
 
-                if (Math.abs(MathHelper.wrapDegrees(fakeYaw - tYaw)) < 22.0f) {
+                if (Math.abs(MathHelper.wrapDegrees(fakeYaw - tYaw)) < 20.0f) {
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                 }
@@ -154,7 +147,6 @@ public class ExampleMod implements ModInitializer {
         return current + MathHelper.clamp(f, -maxStep, maxStep);
     }
 
-    // --- ВСЕ ОСТАЛЬНОЕ БЕЗ ИЗМЕНЕНИЙ ---
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
             if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) >= 1.0f) {
@@ -233,15 +225,19 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
-        line(b, m, -w, 0, -w, w, 0, -w, r, g, bl, a); line(b, m, -w, h, -w, w, h, -w, r, g, bl, a);
-        line(b, m, -w, 0, -w, -w, h, -w, r, g, bl, a); line(b, m, w, 0, w, h, -w, r, g, bl, a);
-        line(b, m, -w, 0, w, w, 0, w, r, g, bl, a); line(b, m, -w, h, w, w, h, w, r, g, bl, a);
-        line(b, m, -w, 0, w, -w, h, w, r, g, bl, a); line(b, m, w, 0, w, w, h, w, r, g, bl, a);
+        line(b, m, -w, 0, -w, w, 0, -w, r, g, bl, a);
+        line(b, m, -w, h, -w, w, h, -w, r, g, bl, a);
+        line(b, m, -w, 0, -w, -w, h, -w, r, g, bl, a);
+        line(b, m, w, 0, -w, w, h, -w, r, g, bl, a);
+        line(b, m, -w, 0, w, w, 0, w, r, g, bl, a);
+        line(b, m, -w, h, w, w, h, w, r, g, bl, a);
+        line(b, m, -w, 0, w, -w, h, w, r, g, bl, a);
+        line(b, m, w, 0, w, w, h, w, r, g, bl, a);
     }
 
     private void line(VertexConsumer b, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float bl, float a) {
-        b.vertex(m, x1, y1, z1).color(r, g, bl, a).normal(0, 1, 0);
-        b.vertex(m, x2, y2, z2).color(r, g, bl, a).normal(0, 1, 0);
+        b.vertex(m, x1, y1, z1).color(r, g, bl, a).normal(0f, 1f, 0f);
+        b.vertex(m, x2, y2, z2).color(r, g, bl, a).normal(0f, 1f, 0f);
     }
 
     private void notify(MinecraftClient c, String m, boolean v) {
