@@ -37,20 +37,24 @@ import java.util.Arrays;
 import java.util.List;
 
 public class ExampleMod implements ModInitializer {
+    // Основные модули
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = false;
     public static boolean isAres = true, isBlaze = false;
 
+    // Настройки дистанции
     public static double kaRange = 3.4, kawallsRange = 3.0;
     
-    // СИНХРОНИЗИРОВАННЫЕ ПЕРЕМЕННЫЕ ДЛЯ SILENT КИЛЛАУРЫ
+    // Переменные для Silent ротаций (используются в миксинах)
     public static float serverYaw, serverPitch;
     public static boolean targetFound = false;
     public static PlayerEntity currentTarget = null;
 
+    // Бинды клавиш
     public static int keyKA = -1, keyTR = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
 
+    // Список друзей
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
     public static final boolean[] keyStates = new boolean[512];
@@ -59,23 +63,27 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
+        // Регистрация рендера ESP
         WorldRenderEvents.BEFORE_DEBUG_RENDER.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
+            // Открытие меню на клавишу '0'
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
             handleBinds(client, win);
 
+            // Работа пассивных функций
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (killaura) runSilentAura(client);
             if (triggerbot) runTrigger(client);
 
+            // AntiVelocity (уменьшение отдачи)
             if (antiVelocity && client.player.hurtTime > 0) {
                 client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
             }
@@ -86,6 +94,7 @@ public class ExampleMod implements ModInitializer {
         if (client.currentScreen != null) return;
         if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
         if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
+        
         if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
         if (isPressed(win, keyTR)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
         if (isPressed(win, keyFB)) { fullbright = !fullbright; notify(client, "FullBright", fullbright); }
@@ -101,7 +110,7 @@ public class ExampleMod implements ModInitializer {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = client.player.distanceTo(p);
             
-            // Проверка видимости для обхода MixerGrief/Ares
+            // Проверка видимости для обхода AresMine / MainBlaze
             if (client.player.canSee(p)) {
                 if (d > kaRange) continue;
             } else {
@@ -113,7 +122,7 @@ public class ExampleMod implements ModInitializer {
 
         if (currentTarget != null) {
             targetFound = true;
-            // Рандомизация высоты удара для обхода
+            // Рандомизация точки удара
             double randomHeight = 0.2 + (Math.random() * 0.5);
             Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * randomHeight, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
@@ -121,14 +130,14 @@ public class ExampleMod implements ModInitializer {
             float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Jitter для обхода античита MainBlaze
+            // Jitter для обхода античита
             serverYaw = tYaw + (float)((Math.random() - 0.5) * 0.4);
             serverPitch = tPitch + (float)((Math.random() - 0.5) * 0.4);
 
             if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
                 
-                // Silent Packet Rotation
+                // ИСПРАВЛЕННЫЙ ПАКЕТ: Теперь передает и Yaw, и Pitch
                 client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround()));
                 
                 if (!smartCrits || isFalling) {
@@ -269,6 +278,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // ВНУТРЕННИЕ КЛАССЫ МЕНЮ (Не урезаны)
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
