@@ -12,9 +12,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
 
-    @Inject(method = "sendPacket", at = @At("HEAD"))
+    @Inject(method = "sendPacket(Lnet/minecraft/network/packet/Packet;)V", at = @At("HEAD"))
     private void onSendPacket(Packet<?> packet, CallbackInfo ci) {
-        // Если киллаура включена и цель найдена, подменяем углы в пакете перед отправкой
         if (ExampleMod.killaura && ExampleMod.targetFound && packet instanceof PlayerMoveC2SPacket movePacket) {
             PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
             accessor.setYaw(ExampleMod.serverYaw);
@@ -22,4 +21,3 @@ public class ClientPlayNetworkHandlerMixin {
         }
     }
 }
-
