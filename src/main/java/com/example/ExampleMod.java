@@ -77,9 +77,10 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
+            // Мягкий AntiVelocity (Vertical не трогаем, чтобы не банило за Fly)
             if (antiVelocity && client.player.hurtTime > 0) {
-                // Более мягкий AntiVelocity для обхода
-                client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
+                Vec3d vel = client.player.getVelocity();
+                client.player.setVelocity(vel.x * 0.6, vel.y, vel.z * 0.6);
             }
         });
     }
@@ -110,29 +111,41 @@ public class ExampleMod implements ModInitializer {
         if (currentTarget != null) {
             targetFound = true;
             
-            // Расчет ротаций с небольшим рандомом (те самые "хвосты" в числах)
-            Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * (0.5 + (random.nextDouble() * 0.1)), 0);
-            Vec3d diff = tPos.subtract(client.player.getEyePos());
+            // PREDICTION LOGIC (Предсказание позиции)
+            Vec3d targetPos = currentTarget.getPos();
+            Vec3d prevPos = new Vec3d(currentTarget.prevX, currentTarget.prevY, currentTarget.prevZ);
+            Vec3d velocity = targetPos.subtract(prevPos);
+            
+            // Смещаем точку удара на вектор движения цели
+            Vec3d predictedPos = targetPos.add(velocity.multiply(1.5)).add(0, currentTarget.getHeight() * 0.5, 0);
+            Vec3d diff = predictedPos.subtract(client.player.getEyePos());
             
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавность и обход: шлем пакет поворота ПЕРЕД ударом
-            serverYaw = targetYaw + (random.nextFloat() * 0.2f - 0.1f);
-            serverPitch = targetPitch + (random.nextFloat() * 0.2f - 0.1f);
+            // Фикс рваных движений: используем "Silent" ротации только в момент удара
+            serverYaw = targetYaw;
+            serverPitch = targetPitch;
 
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.92f) { // 0.92 для легкого запаса по времени
-                boolean isFalling = client.player.fallDistance > 0.05 && !client.player.isOnGround();
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
+                boolean isFalling = client.player.fallDistance > 0.08 && !client.player.isOnGround();
                 boolean isInWater = client.player.isSubmergedInWater() || client.player.isInLava();
 
                 if (!smartCrits || isFalling || isInWater) {
-                    // SILENT ROTATION PACKET
-                    // Отправляем серверу инфу, что мы повернулись, чтобы удар не был "в бок"
-                    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround(), true));
+                    // ROTATION PACKET SYNC
+                    // Отправляем пакет поворота непосредственно перед ударом в ту же миллисекунду
+                    float yawToSend = serverYaw + (random.nextFloat() * 0.1f);
+                    float pitchToSend = serverPitch + (random.nextFloat() * 0.1f);
+                    
+                    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(yawToSend, pitchToSend, client.player.isOnGround(), true));
                     
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
-                    if (autoRun) client.player.setSprinting(true);
+                    
+                    // Обход рваных прыжков: не включаем спринт, если мы уже в прыжке и атакуем
+                    if (autoRun && client.player.isOnGround()) {
+                        client.player.setSprinting(true);
+                    }
                 }
             }
         } else {
@@ -140,7 +153,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // ... (остальные методы swapElytra, throwPearl, checkTotem, renderESP остаются без изменений)
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
             if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && c.player.getAttackCooldownProgress(0) >= 1.0f) {
@@ -213,7 +225,7 @@ public class ExampleMod implements ModInitializer {
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
             boolean isTarget = targetFound && (p == currentTarget);
             drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 
-                    isTarget ? 0f : 1f, isTarget ? 1f : 1f, isTarget ? 1f : 1f, 1f);
+                    isTarget ? 1f : 1f, isTarget ? 0f : 1f, isTarget ? 0f : 1f, 1f); // Красный если таргет
             ms.pop();
         }
         consumers.draw(RenderLayer.getLines());
@@ -326,12 +338,9 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(cx - 120, cy - 90, cx + 120, cy + 115, 0xEE050505);
             ctx.drawText(textRenderer, "Range:", cx - 110, cy - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
-            
-            // Кнопки серверов
             drawBtn(ctx, cx - 110, cy - 10, "Ares", isAres, mx, my, 70);
             drawBtn(ctx, cx - 35, cy - 10, "Blaze", isBlaze, mx, my, 70);
             drawBtn(ctx, cx + 40, cy - 10, "Mixer", isMixer, mx, my, 70);
-
             drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Wait Fall)", smartCrits, mx, my);
             drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
             drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
@@ -348,21 +357,12 @@ public class ExampleMod implements ModInitializer {
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            // Ares
-            if (mx >= cx - 110 && mx <= cx - 40 && my >= cy - 10 && my <= cy + 5) { 
-                isAres = true; isBlaze = false; isMixer = false; kaRange = 3.4; rF.setText("3.4"); return true; 
-            }
-            // Blaze
-            if (mx >= cx - 35 && mx <= cx + 35 && my >= cy - 10 && my <= cy + 5) { 
-                isBlaze = true; isAres = false; isMixer = false; kaRange = 3.6; rF.setText("3.6"); return true; 
-            }
-            // Mixer
+            if (mx >= cx - 110 && mx <= cx - 40 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; isMixer = false; kaRange = 3.4; rF.setText("3.4"); return true; }
+            if (mx >= cx - 35 && mx <= cx + 35 && my >= cy - 10 && my <= cy + 5) { isBlaze = true; isAres = false; isMixer = false; kaRange = 3.6; rF.setText("3.6"); return true; }
             if (mx >= cx + 40 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { 
-                isMixer = true; isAres = false; isBlaze = false; 
-                kaRange = 3.0; kawallsRange = 0.0; smartCrits = false; autoRun = true; antiVelocity = false;
+                isMixer = true; isAres = false; isBlaze = false; kaRange = 3.0; kawallsRange = 0.0; smartCrits = false; autoRun = true; antiVelocity = false;
                 rF.setText("3.0"); wF.setText("0.0"); return true; 
             }
-            
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { smartCrits = !smartCrits; return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) { antiVelocity = !antiVelocity; return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 60 && my <= cy + 75) { autoRun = !autoRun; return true; }
@@ -375,8 +375,7 @@ public class ExampleMod implements ModInitializer {
             saveConfig(); client.setScreen(parent);
         }
     }
-    
-    // ... (BindScreen остается без изменений)
+
     public static class BindScreen extends Screen {
         private final Screen parent; private final int id;
         public BindScreen(Screen parent, int id) { super(Text.literal("Bind")); this.parent = parent; this.id = id; }
@@ -394,3 +393,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
