@@ -12,14 +12,22 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
 
-    // Используем универсальное имя метода для 1.21
-    @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true)
+    @Inject(
+        method = "sendPacket(Lnet/minecraft/network/packet/Packet;)V", 
+        at = @At("HEAD"), 
+        cancellable = true
+    )
     private void onSendPacket(Packet<?> packet, CallbackInfo ci) {
+        // Проверяем, включена ли киллаура и найден ли таргет в ExampleMod [cite: 2026-02-08]
         if (ExampleMod.killaura && ExampleMod.targetFound && packet instanceof PlayerMoveC2SPacket movePacket) {
-            PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
-            accessor.setYaw(ExampleMod.serverYaw);
-            accessor.setPitch(ExampleMod.serverPitch);
+            try {
+                PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
+                // Подменяем углы обзора в пакете на те, что вычислила аура [cite: 2026-02-08]
+                accessor.setYaw(ExampleMod.serverYaw);
+                accessor.setPitch(ExampleMod.serverPitch);
+            } catch (Exception ignored) {
+                // Игнорируем ошибки, чтобы игра не вылетала при неудачной попытке
+            }
         }
     }
 }
-
