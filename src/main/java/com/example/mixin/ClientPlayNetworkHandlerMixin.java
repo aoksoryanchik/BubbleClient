@@ -12,16 +12,19 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
 
-    // Используем универсальный селектор для 1.21.4
-    @Inject(method = "*", at = @At("HEAD"), cancellable = true)
-    private void onAnyPacket(Packet<?> packet, CallbackInfo ci) {
-        // Проверяем, что это именно пакет движения и аура включена [cite: 2026-02-08]
-        if (packet instanceof PlayerMoveC2SPacket movePacket && ExampleMod.killaura && ExampleMod.targetFound) {
+    // Внедряемся в любой метод, который принимает пакет. 
+    // На 1.21.4 это самый безопасный способ избежать InvalidInjectionException.
+    @Inject(method = "sendPacket(Lnet/minecraft/network/packet/Packet;)V", at = @At("HEAD"), cancellable = true)
+    private void onSendPacket(Packet<?> packet, CallbackInfo ci) {
+        if (ExampleMod.killaura && ExampleMod.targetFound && packet instanceof PlayerMoveC2SPacket movePacket) {
             try {
+                // Используем наш аксессор для подмены углов [cite: 2026-02-08]
                 PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
                 accessor.setYaw(ExampleMod.serverYaw);
                 accessor.setPitch(ExampleMod.serverPitch);
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // Игнорируем ошибки, чтобы не крашить игру
+            }
         }
     }
 }
