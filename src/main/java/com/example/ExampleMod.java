@@ -16,7 +16,6 @@ import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -37,20 +36,16 @@ import java.util.Arrays;
 import java.util.List;
 
 public class ExampleMod implements ModInitializer {
-    // === НАСТРОЙКИ ===
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true;
     public static boolean isAres = true, isBlaze = false, silentRotations = true;
 
-    // Настройки для AresMine (GrimAC)
-    public static double kaRange = 3.3; 
-    public static double kawallsRange = 3.0;
+    public static double kaRange = 3.2, kawallsRange = 3.0;
     
-    // Переменные ротации
-    private static float sYaw, sPitch;
-    private static int packetClock = 0;
+    // Храним фантомные углы
+    private static float serverYaw, serverPitch;
+    private static boolean isAttacking = false;
 
-    // Бинды
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
 
@@ -68,12 +63,10 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
-            // Меню на '0'
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
-            // Бинды
             if (client.currentScreen == null) {
                 if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
                 if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
@@ -89,9 +82,8 @@ public class ExampleMod implements ModInitializer {
             if (killaura) runAura(client);
             if (triggerbot) runTrigger(client);
 
-            // AntiVelocity
             if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
+                client.player.setVelocity(client.player.getVelocity().multiply(0.5, 1.0, 0.5));
             }
         });
     }
@@ -100,59 +92,53 @@ public class ExampleMod implements ModInitializer {
         PlayerEntity target = null;
         double dist = Double.MAX_VALUE;
 
-        // 1. Поиск цели (строгий приоритет по дистанции)
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = client.player.distanceTo(p);
-            if (d <= kaRange && (client.player.canSee(p) || d <= kawallsRange)) {
+            if (d <= kaRange) {
                 if (d < dist) { dist = d; target = p; }
             }
         }
 
         if (target != null) {
-            // 2. Математика ротации (без сглаживания для точности)
-            Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
+            // 1. Считаем углы
+            Vec3d tPos = target.getPos().add(0, target.getHeight() * 0.75, 0); // Целимся чуть выше центра
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            sYaw = targetYaw;
-            sPitch = targetPitch;
+            serverYaw = targetYaw;
+            serverPitch = targetPitch;
+            isAttacking = true;
 
-            if (autoRun && client.player.input.movementForward > 0) client.player.setSprinting(true);
-
-            // 3. SILENT LOGIC (Исправленная)
-            if (silentRotations) {
-                // Мы отправляем пакет движения с координатами игрока, НО с ротацией на врага.
-                // Это заставляет сервер думать, что мы смотрим на врага, пока мы двигаемся.
-                // Чтобы избежать коллизии пакетов, мы делаем это только если атакуем или раз в тик.
+            // 2. Бьем только когда кулдаун готов
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
                 
-                boolean isMoving = client.player.getVelocity().lengthSquared() > 0.0001;
-                double x = client.player.getX();
-                double y = client.player.getY();
-                double z = client.player.getZ();
-                boolean onGround = client.player.isOnGround();
+                // ЭТО СЕКРЕТ ИСПРАВЛЕНИЯ: 
+                // Перед ударом мы временно меняем ротацию самого игрока, 
+                // вызываем удар, и возвращаем назад. Minecraft сам отправит нужный пакет.
+                float oldYaw = client.player.getYaw();
+                float oldPitch = client.player.getPitch();
 
-                // FIX: Отправляем Full пакет (Pos + Rot), чтобы синхронизировать движение и взгляд.
-                // Это убирает rubberband, так как сервер получает консистентные данные.
-                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.Full(
-                    x, y, z, sYaw, sPitch, onGround, client.player.horizontalCollision
-                ));
-            } else {
-                // Обычная наводка (дергает экран)
-                client.player.setYaw(sYaw);
-                client.player.setPitch(sPitch);
-            }
+                if (silentRotations) {
+                    client.player.setYaw(serverYaw);
+                    client.player.setPitch(serverPitch);
+                }
 
-            // 4. Удар (Теперь не зависит от прицела, только от дистанции и кулдауна)
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.92f) {
                 client.interactionManager.attackEntity(client.player, target);
                 client.player.swingHand(Hand.MAIN_HAND);
+
+                if (silentRotations) {
+                    client.player.setYaw(oldYaw);
+                    client.player.setPitch(oldPitch);
+                }
             }
+        } else {
+            isAttacking = false;
         }
     }
 
-    // === VISUALS ===
+    // Рендер ESP (без изменений)
     private void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -173,8 +159,7 @@ public class ExampleMod implements ModInitializer {
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            // Красная коробка для врагов
-            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.1f, p.getHeight() + 0.1f, 1f, 0f, 0f, 1f);
+            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.1f, p.getHeight() + 0.1f, 1f, 0.2f, 0.2f, 1f);
             ms.pop();
         }
         consumers.draw(RenderLayer.getLines());
@@ -193,12 +178,9 @@ public class ExampleMod implements ModInitializer {
         b.vertex(m, x2, y2, z2).color(r, g, bl, a).normal(0, 1, 0);
     }
 
-    // === UTILS ===
     private void throwPearl(MinecraftClient client) {
         int ps = -1;
-        for (int i = 0; i < 9; i++) {
-            if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; }
-        }
+        for (int i = 0; i < 9; i++) if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) { ps = i; break; }
         if (ps != -1) {
             int old = client.player.getInventory().selectedSlot;
             client.player.getInventory().selectedSlot = ps;
@@ -213,11 +195,8 @@ public class ExampleMod implements ModInitializer {
         boolean isElytra = chest.isOf(Items.ELYTRA);
         for (int i = 0; i < 36; i++) {
             ItemStack s = client.player.getInventory().getStack(i);
-            if (isElytra) {
-                if (s.getItem().toString().contains("chestplate")) { slot = i; break; }
-            } else if (s.isOf(Items.ELYTRA)) {
-                slot = i; break;
-            }
+            if (isElytra) { if (s.getItem().toString().contains("chestplate")) { slot = i; break; } }
+            else if (s.isOf(Items.ELYTRA)) { slot = i; break; }
         }
         if (slot != -1) {
             int invS = slot < 9 ? slot + 36 : slot;
@@ -261,7 +240,6 @@ public class ExampleMod implements ModInitializer {
         return false;
     }
 
-    // === CONFIG & MENU ===
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
             w.println(kaRange + ":" + kawallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity + ":" + "0.0" + ":" + silentRotations + ":" + fullbright);
@@ -279,19 +257,19 @@ public class ExampleMod implements ModInitializer {
                 keyAT = Integer.parseInt(p[6]); friendsRaw = p[7];
                 esp = Boolean.parseBoolean(p[8]); keyESP = Integer.parseInt(p[9]);
                 keyFP = Integer.parseInt(p[10]); keyES = Integer.parseInt(p[11]);
-                antiVelocity = Boolean.parseBoolean(p[12]); 
-                silentRotations = Boolean.parseBoolean(p[14]); fullbright = Boolean.parseBoolean(p[15]);
+                antiVelocity = Boolean.parseBoolean(p[12]); silentRotations = Boolean.parseBoolean(p[14]); fullbright = Boolean.parseBoolean(p[15]);
             }
         } catch (Exception ignored) {}
     }
 
+    // МЕНЮ
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             int cx = width / 2, cy = height / 2;
             ctx.fill(cx - 95, cy - 105, cx + 95, cy + 120, 0xDD101010);
-            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE GODMODE", cx, cy - 95, 0xFF0000);
+            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE FIX", cx, cy - 95, 0x00FFCC);
             String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap"};
             boolean[] states = {killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap};
             for (int i = 0; i < names.length; i++) {
@@ -362,12 +340,8 @@ public class ExampleMod implements ModInitializer {
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { 
-                isAres = true; isBlaze = false; kaRange = 3.3; rF.setText("3.3"); return true; 
-            }
-            if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { 
-                isBlaze = true; isAres = false; kaRange = 3.6; rF.setText("3.6"); return true; 
-            }
+            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.2; rF.setText("3.2"); return true; }
+            if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { isBlaze = true; isAres = false; kaRange = 3.6; rF.setText("3.6"); return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { silentRotations = !silentRotations; return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) { antiVelocity = !antiVelocity; return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 60 && my <= cy + 75) { autoRun = !autoRun; return true; }
