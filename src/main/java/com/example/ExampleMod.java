@@ -111,17 +111,15 @@ public class ExampleMod implements ModInitializer {
             serverYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             serverPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Улучшенная логика Smart Crits (Удары только при падении)
-            boolean canCrit = !client.player.isSubmergedInWater() && !client.player.isClimbing();
-            
-            if (smartCrits && canCrit && client.player.isOnGround()) {
-                client.player.jump(); // Подпрыгиваем, если на земле
-            }
-
             // Удар
             if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
-                // Если включены криты, бьем только когда падаем (fallDistance > 0)
-                if (!smartCrits || client.player.fallDistance > 0 || !canCrit) {
+                // ЛОГИКА SMART CRITS:
+                // Если включено, ждем когда игрок будет в воздухе и падать. 
+                // Если выключено — бьем сразу как обычно.
+                boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
+                boolean isInWater = client.player.isSubmergedInWater() || client.player.isInLava();
+
+                if (!smartCrits || isFalling || isInWater) {
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                     if (autoRun) client.player.setSprinting(true);
@@ -319,7 +317,7 @@ public class ExampleMod implements ModInitializer {
             ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
             drawBtn(ctx, cx - 110, cy - 10, "AresMine", isAres, mx, my);
             drawBtn(ctx, cx + 10, cy - 10, "MainBlaze", isBlaze, mx, my);
-            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Fix)", smartCrits, mx, my);
+            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Wait Fall)", smartCrits, mx, my);
             drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
             drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
         }
@@ -367,3 +365,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
