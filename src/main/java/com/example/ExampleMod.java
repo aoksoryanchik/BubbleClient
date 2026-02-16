@@ -3,6 +3,7 @@ package com.example;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -57,6 +58,7 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
+        // Исправлено: WorldRenderEvents использует WorldRenderContext
         WorldRenderEvents.BEFORE_DEBUG_RENDER.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -112,23 +114,19 @@ public class ExampleMod implements ModInitializer {
 
         if (currentTarget != null) {
             targetFound = true;
-
-            // Расчет целевых углов
             Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
 
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // ПЛАВНАЯ НАВОДКА (0.4f - скорость, можно снизить до 0.2f если банит)
+            // ПЛАВНАЯ НАВОДКА ДЛЯ ОБХОДА [cite: 2026-02-08]
             serverYaw = MathHelper.lerpAngleDegrees(0.4f, serverYaw, targetYaw);
             serverPitch = MathHelper.lerp(0.4f, serverPitch, targetPitch);
 
-            // Добавляем микро-джиттер для обхода Ares/MainBlaze [cite: 2026-02-08]
             serverYaw += (float)((Math.random() - 0.5) * 0.2);
             serverPitch += (float)((Math.random() - 0.5) * 0.2);
 
-            // Удар только если кулдаун прошел и мы почти довернулись к цели
             float delta = Math.abs(MathHelper.wrapDegrees(serverYaw - targetYaw));
             if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f && delta < 35) {
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
@@ -140,7 +138,6 @@ public class ExampleMod implements ModInitializer {
             }
         } else {
             targetFound = false;
-            // Возвращаем голову в нормальное положение, когда цели нет
             serverYaw = client.player.getYaw();
             serverPitch = client.player.getPitch();
         }
@@ -196,7 +193,8 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    public void renderESP(WorldRenderEvents.Context context) {
+    // ИСПРАВЛЕНО: WorldRenderContext вместо Context
+    public void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
@@ -384,3 +382,4 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
+
