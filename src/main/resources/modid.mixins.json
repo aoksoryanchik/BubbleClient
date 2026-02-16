@@ -4,8 +4,8 @@
   "package": "com.example.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "PlayerMoveC2SPacketAccessor",
-    "ClientPlayNetworkHandlerMixin"
+    "ClientPlayNetworkHandlerMixin",
+    "PlayerMoveC2SPacketAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
