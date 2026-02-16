@@ -12,4 +12,3 @@ public interface PlayerMoveC2SPacketAccessor {
     @Accessor("pitch")
     void setPitch(float pitch);
 }
-
