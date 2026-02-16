@@ -5,6 +5,9 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "ClientPlayNetworkHandlerMixin",
+    "ExampleMixin"
+  ],
+  "client": [
     "PlayerMoveC2SPacketAccessor"
   ],
   "injectors": {
