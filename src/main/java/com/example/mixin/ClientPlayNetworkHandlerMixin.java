@@ -12,18 +12,19 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
 
-    // Убираем дескриптор, оставляем только имя. 
-    // Если маппинги Yarn/Intermediary на месте, Fabric сам поймет.
-    @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true)
+    // Мы используем сигнатуру (Lnet/minecraft/network/packet/Packet;)V 
+    // Это заставит Mixin искать метод, который принимает любой Пакет, 
+    // даже если его название (method_...) изменилось.
+    @Inject(method = "sendPacket(Lnet/minecraft/network/packet/Packet;)V", at = @At("HEAD"), cancellable = true)
     private void onSendPacket(Packet<?> packet, CallbackInfo ci) {
         if (ExampleMod.killaura && ExampleMod.targetFound && packet instanceof PlayerMoveC2SPacket movePacket) {
             try {
-                // Пакетная наводка для обхода AresMine и MainBlaze [cite: 2026-02-08]
+                // Подмена углов для обхода AresMine/MainBlaze [cite: 2026-02-08]
                 PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
                 accessor.setYaw(ExampleMod.serverYaw);
                 accessor.setPitch(ExampleMod.serverPitch);
             } catch (Exception ignored) {
-                // Чтобы точно не вылетело, если что-то пойдет не так
+                // Безопасность, чтобы не крашнуло если пакет "кривой"
             }
         }
     }
