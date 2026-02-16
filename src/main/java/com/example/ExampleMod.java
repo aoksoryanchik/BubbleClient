@@ -48,7 +48,7 @@ public class ExampleMod implements ModInitializer {
     
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
-    public static int keyMenu = GLFW.GLFW_KEY_0; // Меню на 0
+    public static int keyMenu = GLFW.GLFW_KEY_0; // Меню на клавишу 0
 
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
@@ -103,7 +103,7 @@ public class ExampleMod implements ModInitializer {
 
             if (cooldown >= threshold) {
                 if (!smartCrits || client.player.fallDistance > 0.01f || client.player.isOnGround()) {
-                    // Адаптивный джиттер
+                    // Jitter наводка
                     double jX = (random.nextDouble() - 0.5) * 0.15;
                     double jY = (random.nextDouble() - 0.5) * 0.15;
                     double jZ = (random.nextDouble() - 0.5) * 0.15;
@@ -113,7 +113,7 @@ public class ExampleMod implements ModInitializer {
                     float sYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
                     float sPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-                    // Пакетная подмена взгляда
+                    // Исправленные пакеты под 1.21.4 (3 аргумента)
                     client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(sYaw, sPitch, client.player.isOnGround()));
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
@@ -150,7 +150,7 @@ public class ExampleMod implements ModInitializer {
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 0.3f, 1f, 1f, 1f);
+            drawBox(buffer, ms.peek().getPositionMatrix(), (float)(p.getWidth()/2 + 0.05), (float)(p.getHeight() + 0.05), 0.3f, 1f, 1f, 1f);
             ms.pop();
         }
         consumers.draw();
@@ -258,7 +258,6 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // --- GUI ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
