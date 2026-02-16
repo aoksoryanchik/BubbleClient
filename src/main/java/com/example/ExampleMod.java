@@ -42,7 +42,6 @@ public class ExampleMod implements ModInitializer {
 
     public static double kaRange = 3.4, kawallsRange = 0.0;
 
-    // ПЕРЕМЕННЫЕ ДЛЯ SILENT КИЛЛАУРЫ [cite: 2026-02-08]
     public static float serverYaw, serverPitch;
     public static boolean targetFound = false;
     public static PlayerEntity currentTarget = null;
@@ -58,7 +57,7 @@ public class ExampleMod implements ModInitializer {
     @Override
     public void onInitialize() {
         loadConfig();
-        // Исправлено: WorldRenderEvents использует WorldRenderContext
+        // Исправлено: используем WorldRenderContext
         WorldRenderEvents.BEFORE_DEBUG_RENDER.register(this::renderESP);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -99,10 +98,9 @@ public class ExampleMod implements ModInitializer {
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
-
             double d = client.player.distanceTo(p);
             
-            // Проверка видимости для MixerGrief [cite: 2026-02-08]
+            // Настройки видимости Ares/Blaze
             if (client.player.canSee(p)) {
                 if (d > kaRange) continue;
             } else {
@@ -120,15 +118,11 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // ПЛАВНАЯ НАВОДКА ДЛЯ ОБХОДА [cite: 2026-02-08]
+            // Silent Rotation
             serverYaw = MathHelper.lerpAngleDegrees(0.4f, serverYaw, targetYaw);
             serverPitch = MathHelper.lerp(0.4f, serverPitch, targetPitch);
 
-            serverYaw += (float)((Math.random() - 0.5) * 0.2);
-            serverPitch += (float)((Math.random() - 0.5) * 0.2);
-
-            float delta = Math.abs(MathHelper.wrapDegrees(serverYaw - targetYaw));
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f && delta < 35) {
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
                 if (!smartCrits || isFalling) {
                     client.interactionManager.attackEntity(client.player, currentTarget);
@@ -193,7 +187,6 @@ public class ExampleMod implements ModInitializer {
         }
     }
 
-    // ИСПРАВЛЕНО: WorldRenderContext вместо Context
     public void renderESP(WorldRenderContext context) {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -277,14 +270,14 @@ public class ExampleMod implements ModInitializer {
         public void render(DrawContext ctx, int mx, int my, float delta) {
             int cx = width / 2, cy = height / 2;
             ctx.fill(cx - 95, cy - 100, cx + 95, cy + 110, 0xDD050505);
-            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE ABSOLUTE", cx, cy - 90, 0x55FFFF);
+            ctx.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, "BUBBLE ABSOLUTE", cx, cy - 90, 0x55FFFF);
             String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap"};
             boolean[] states = {killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap};
             for (int i = 0; i < names.length; i++) {
                 int iy = cy - 70 + i * 24;
                 boolean h = mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20;
                 ctx.fill(cx - 85, iy, cx + 85, iy + 20, h ? 0xEE303030 : 0xEE151515);
-                ctx.drawText(textRenderer, names[i], cx - 80, iy + 6, states[i] ? 0x00FF00 : 0xFFFFFF, true);
+                ctx.drawText(MinecraftClient.getInstance().textRenderer, names[i], cx - 80, iy + 6, states[i] ? 0x00FF00 : 0xFFFFFF, true);
             }
         }
         @Override
@@ -344,7 +337,8 @@ public class ExampleMod implements ModInitializer {
         public void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 220 && my >= y && my <= y + 15;
             ctx.fill(x, y, x + 220, y + 15, h ? 0x40404040 : 0x20202020);
-            ctx.drawText(ctx.getTextRenderer(), n + ": " + (s ? "§aON" : "§cOFF"), x + 5, y + 4, 0xFFFFFF, true);
+            // Исправлено: заменяем getTextRenderer() на прямое обращение к MinecraftClient
+            ctx.drawText(MinecraftClient.getInstance().textRenderer, n + ": " + (s ? "§aON" : "§cOFF"), x + 5, y + 4, 0xFFFFFF, true);
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
