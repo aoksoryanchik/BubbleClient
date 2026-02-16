@@ -73,8 +73,8 @@ public class ExampleMod implements ModInitializer {
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             
-            // Основной цикл ауры
-            runAura(client);
+            // Основной цикл скрытой ауры
+            runAuraStealth(client);
             
             if (triggerbot) runTrigger(client);
             if (antiVelocity && client.player.hurtTime > 0) {
@@ -94,7 +94,7 @@ public class ExampleMod implements ModInitializer {
         if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
     }
 
-    private void runAura(MinecraftClient client) {
+    private void runAuraStealth(MinecraftClient client) {
         if (!killaura) { targetFound = false; return; }
         
         currentTarget = null;
@@ -109,43 +109,42 @@ public class ExampleMod implements ModInitializer {
 
         if (currentTarget != null) {
             targetFound = true;
-            Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
-            Vec3d diff = tPos.subtract(client.player.getEyePos());
+            // Рассчитываем идеальную точку удара (центр хитбокса с небольшим рандомом для легитности)
+            Vec3d targetVec = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5 + (random.nextDouble() * 0.1 - 0.05), 0);
+            Vec3d diff = targetVec.subtract(client.player.getEyePos());
             
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавная доводка без рывков
-            float rotationStep = isMixer ? 45.0f : 180.0f;
-            fakeYaw = updateRotation(fakeYaw, targetYaw, rotationStep);
-            fakePitch = updateRotation(fakePitch, targetPitch, rotationStep);
+            // Плавная доводка «невидимого» взгляда
+            float rotSpeed = isMixer ? 35.0f : 180.0f;
+            fakeYaw = updateRotation(fakeYaw, targetYaw, rotSpeed);
+            fakePitch = updateRotation(fakePitch, targetPitch, rotSpeed);
 
-            // КОРРЕКЦИЯ ДВИЖЕНИЯ: 
-            // Чтобы не было "ватности", мы временно подменяем углы поворота игрока
-            // прямо перед тем, как клиент отправит пакет на сервер.
-            float oldYaw = client.player.getYaw();
-            float oldPitch = client.player.getPitch();
-            
-            client.player.setYaw(fakeYaw);
-            client.player.setPitch(fakePitch);
+            // КОРРЕКЦИЯ: Сохраняем реальные углы, ставим фейковые, бьем и возвращаем
+            // Это обходит проверку на "угол атаки" без дерганья твоей камеры
+            float realYaw = client.player.getYaw();
+            float realPitch = client.player.getPitch();
 
-            // Проверка кулдауна и удар
-            float speedLimit = isMixer ? 0.92f : 0.90f;
-            if (client.player.getAttackCooldownProgress(0.0f) >= (speedLimit + random.nextFloat() * 0.05f)) {
+            // Рандомизация задержки для MixerGrief
+            float minCooldown = isMixer ? 0.94f : 0.91f;
+            if (client.player.getAttackCooldownProgress(0.0f) >= (minCooldown + random.nextFloat() * 0.04f)) {
+                // Временная подмена углов для легитного пакета
+                client.player.setYaw(fakeYaw);
+                client.player.setPitch(fakePitch);
+
+                boolean canHit = Math.abs(MathHelper.wrapDegrees(fakeYaw - targetYaw)) < 25.0f;
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
-                // Увеличиваем угол попадания для "ватных" ударов
-                if (Math.abs(MathHelper.wrapDegrees(fakeYaw - targetYaw)) < 30.0f) {
-                    if (!smartCrits || isFalling || client.player.isSubmergedInWater()) {
-                        client.interactionManager.attackEntity(client.player, currentTarget);
-                        client.player.swingHand(Hand.MAIN_HAND);
-                    }
+
+                if (canHit && (!smartCrits || isFalling || client.player.isSubmergedInWater())) {
+                    client.interactionManager.attackEntity(client.player, currentTarget);
+                    client.player.swingHand(Hand.MAIN_HAND);
                 }
+
+                // Возвращаем камеру назад мгновенно
+                client.player.setYaw(realYaw);
+                client.player.setPitch(realPitch);
             }
-            
-            // Возвращаем углы назад для визуальной части (чтобы у тебя камера не дергалась)
-            client.player.setYaw(oldYaw);
-            client.player.setPitch(oldPitch);
-            
         } else {
             targetFound = false;
             fakeYaw = client.player.getYaw();
@@ -158,7 +157,7 @@ public class ExampleMod implements ModInitializer {
         return current + MathHelper.clamp(f, -maxStep, maxStep);
     }
 
-    // --- ОСТАЛЬНОЙ КОД БЕЗ ИЗМЕНЕНИЙ (GUI, ESP, UTILS) ---
+    // --- ОСТАЛЬНАЯ ЛОГИКА (БЕЗ ИЗМЕНЕНИЙ) ---
 
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
@@ -405,4 +404,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
