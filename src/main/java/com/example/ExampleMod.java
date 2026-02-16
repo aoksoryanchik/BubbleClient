@@ -11,12 +11,12 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -37,17 +37,16 @@ import java.util.Arrays;
 import java.util.List;
 
 public class ExampleMod implements ModInitializer {
-    // Настройки
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = false;
-    
-    // Дистанции и ротации
-    public static double kaRange = 3.4, kawallsRange = 3.0;
+    public static boolean isAres = true, isBlaze = false;
+
+    public static double kaRange = 3.4, kawallsRange = 0.0;
+
     public static float serverYaw, serverPitch;
     public static boolean targetFound = false;
     public static PlayerEntity currentTarget = null;
 
-    // Бинды
     public static int keyKA = -1, keyTR = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
 
@@ -65,6 +64,7 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
+            // ИСПРАВЛЕНО: Теперь меню на клавишу "0" (ноль над буквами)
             if (isPressed(win, GLFW.GLFW_KEY_0) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
@@ -86,12 +86,21 @@ public class ExampleMod implements ModInitializer {
         if (client.currentScreen != null) return;
         if (fastPearl && isPressed(win, keyFP)) throwPearl(client);
         if (elytraSwap && isPressed(win, keyES)) swapElytra(client);
-        
         if (isPressed(win, keyKA)) { killaura = !killaura; notify(client, "KillAura", killaura); }
         if (isPressed(win, keyTR)) { triggerbot = !triggerbot; notify(client, "TriggerBot", triggerbot); }
         if (isPressed(win, keyFB)) { fullbright = !fullbright; notify(client, "FullBright", fullbright); }
         if (isPressed(win, keyAT)) { autoTotem = !autoTotem; notify(client, "AutoTotem", autoTotem); }
         if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
+    }
+
+    // НОВЫЙ МЕТОД: Проверка FOV для обхода MixerGrief
+    public boolean isInFOV(PlayerEntity player, Entity target, float maxAngle) {
+        Vec3d diff = target.getPos().add(0, target.getHeight() * 0.5, 0).subtract(player.getEyePos());
+        float targetYaw = (float) MathHelper.wrapDegrees(Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0);
+        float currentYaw = MathHelper.wrapDegrees(player.getYaw());
+        float diffYaw = Math.abs(targetYaw - currentYaw) % 360;
+        if (diffYaw > 180) diffYaw = 360 - diffYaw;
+        return diffYaw <= (maxAngle / 2.0f); // Если FOV 90, то отклонение 45 в каждую сторону
     }
 
     public void runAura(MinecraftClient client) {
@@ -100,6 +109,10 @@ public class ExampleMod implements ModInitializer {
 
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
+            
+            // ИСПРАВЛЕНО: Добавлена проверка FOV 90 градусов для MixerGrief
+            if (!isInFOV(client.player, p, 90.0f)) continue;
+
             double d = client.player.distanceTo(p);
             
             if (client.player.canSee(p)) {
@@ -107,29 +120,24 @@ public class ExampleMod implements ModInitializer {
             } else {
                 if (d > kawallsRange) continue;
             }
+
             if (d < dist) { dist = d; currentTarget = p; }
         }
 
         if (currentTarget != null) {
             targetFound = true;
-            double randomHeight = 0.2 + (Math.random() * 0.5);
-            Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * randomHeight, 0);
+            Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
 
-            float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
-            float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
+            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            serverYaw = tYaw + (float)((Math.random() - 0.5) * 0.4);
-            serverPitch = tPitch + (float)((Math.random() - 0.5) * 0.4);
+            // Летируем ротации (плавность помогает против MixerGrief)
+            serverYaw = MathHelper.lerpAngleDegrees(0.4f, serverYaw, targetYaw);
+            serverPitch = MathHelper.lerp(0.4f, serverPitch, targetPitch);
 
             if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
-                
-                // ПАКЕТ ДЛЯ 1.21.4 (4 аргумента)
-                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                    serverYaw, serverPitch, client.player.isOnGround(), client.player.horizontalCollision
-                ));
-                
                 if (!smartCrits || isFalling) {
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
@@ -138,12 +146,17 @@ public class ExampleMod implements ModInitializer {
             }
         } else {
             targetFound = false;
+            serverYaw = client.player.getYaw();
+            serverPitch = client.player.getPitch();
         }
     }
 
+    // ... (Остальной код без изменений: runTrigger, swapElytra, throwPearl, checkTotem, renderESP, drawBox, line, notify, isPressed, saveConfig, loadConfig, Menu классы)
+    // Оставил их такими же, чтобы не раздувать ответ, просто сохрани их из своего исходника.
+    
     public void runTrigger(MinecraftClient client) {
         if (client.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
-            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && client.player.getAttackCooldownProgress(0.0f) >= 0.98f) {
+            if (p.isAlive() && !friendsList.contains(p.getName().getString().toLowerCase()) && client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
                 client.interactionManager.attackEntity(client.player, p);
                 client.player.swingHand(Hand.MAIN_HAND);
             }
@@ -268,7 +281,6 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
-    // ВНУТРЕННИЕ КЛАССЫ ЭКРАНОВ
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -328,18 +340,27 @@ public class ExampleMod implements ModInitializer {
             ctx.fill(cx - 120, cy - 90, cx + 120, cy + 90, 0xEE050505);
             ctx.drawText(textRenderer, "Range:", cx - 110, cy - 72, -1, true);
             ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
-            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits", smartCrits, mx, my);
+            drawBtn(ctx, cx - 110, cy - 10, "AresMine", isAres, mx, my);
+            drawBtn(ctx, cx + 10, cy - 10, "MainBlaze", isBlaze, mx, my);
+            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Wait Fall)", smartCrits, mx, my);
             drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
             drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
+        }
+        public void drawBtn(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
+            boolean h = mx >= x && mx <= x + 100 && my >= y && my <= y + 15;
+            ctx.fill(x, y, x + 100, y + 15, h ? 0x40404040 : 0x20202020);
+            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 50, y + 4, s ? 0x00FF00 : 0xFFFFFF);
         }
         public void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
             boolean h = mx >= x && mx <= x + 220 && my >= y && my <= y + 15;
             ctx.fill(x, y, x + 220, y + 15, h ? 0x40404040 : 0x20202020);
-            ctx.drawText(textRenderer, n + ": " + (s ? "§aON" : "§cOFF"), x + 5, y + 4, 0xFFFFFF, true);
+            ctx.drawText(MinecraftClient.getInstance().textRenderer, n + ": " + (s ? "§aON" : "§cOFF"), x + 5, y + 4, 0xFFFFFF, true);
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
+            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.2; kawallsRange = 0.0; }
+            if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { isBlaze = true; isAres = false; kaRange = 3.4; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) smartCrits = !smartCrits;
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) antiVelocity = !antiVelocity;
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 60 && my <= cy + 75) autoRun = !autoRun;
