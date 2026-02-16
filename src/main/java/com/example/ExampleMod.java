@@ -38,7 +38,7 @@ import java.util.List;
 
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
-    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = false;
+    public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, critsOnly = false;
     public static boolean isAres = true, isBlaze = false;
 
     public static double kaRange = 3.4, kawallsRange = 3.0;
@@ -99,27 +99,32 @@ public class ExampleMod implements ModInitializer {
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = client.player.distanceTo(p);
-            if (d <= kaRange) {
+            
+            double currentMaxRange = client.player.canSee(p) ? kaRange : kawallsRange;
+            if (d <= currentMaxRange) {
                 if (d < dist) { dist = d; currentTarget = p; }
             }
         }
 
         if (currentTarget != null) {
             targetFound = true;
+            
+            // Расчет ротаций (Silent)
             Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             serverYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             serverPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
+            // Поворачиваем игрока к цели (для обхода проверки взгляда на MainBlaze)
+            client.player.setYaw(serverYaw);
+            client.player.setPitch(serverPitch);
+
             // Удар
             if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
-                // ЛОГИКА SMART CRITS:
-                // Если включено, ждем когда игрок будет в воздухе и падать. 
-                // Если выключено — бьем сразу как обычно.
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
                 boolean isInWater = client.player.isSubmergedInWater() || client.player.isInLava();
 
-                if (!smartCrits || isFalling || isInWater) {
+                if (!critsOnly || isFalling || isInWater) {
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                     if (autoRun) client.player.setSprinting(true);
@@ -235,7 +240,7 @@ public class ExampleMod implements ModInitializer {
 
     public static void saveConfig() {
         try (PrintWriter w = new PrintWriter(new FileWriter(CONFIG_FILE))) {
-            w.println(kaRange + ":" + kawallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity + ":" + fullbright + ":" + smartCrits);
+            w.println(kaRange + ":" + kawallsRange + ":" + autoRun + ":" + keyKA + ":" + keyTB + ":" + keyFB + ":" + keyAT + ":" + friendsRaw + ":" + esp + ":" + keyESP + ":" + keyFP + ":" + keyES + ":" + antiVelocity + ":" + fullbright + ":" + critsOnly);
         } catch (Exception ignored) {}
     }
 
@@ -251,7 +256,7 @@ public class ExampleMod implements ModInitializer {
                 esp = Boolean.parseBoolean(p[8]); keyESP = Integer.parseInt(p[9]);
                 keyFP = Integer.parseInt(p[10]); keyES = Integer.parseInt(p[11]);
                 antiVelocity = Boolean.parseBoolean(p[12]); fullbright = Boolean.parseBoolean(p[13]); 
-                smartCrits = Boolean.parseBoolean(p[14]);
+                critsOnly = Boolean.parseBoolean(p[14]);
             }
         } catch (Exception ignored) {}
     }
@@ -317,7 +322,7 @@ public class ExampleMod implements ModInitializer {
             ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
             drawBtn(ctx, cx - 110, cy - 10, "AresMine", isAres, mx, my);
             drawBtn(ctx, cx + 10, cy - 10, "MainBlaze", isBlaze, mx, my);
-            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Wait Fall)", smartCrits, mx, my);
+            drawCheck(ctx, cx - 110, cy + 20, "Crits Only (Wait)", critsOnly, mx, my);
             drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
             drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
         }
@@ -333,9 +338,21 @@ public class ExampleMod implements ModInitializer {
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { isAres = true; isBlaze = false; kaRange = 3.4; rF.setText("3.4"); return true; }
-            if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { isBlaze = true; isAres = false; kaRange = 3.6; rF.setText("3.6"); return true; }
-            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { smartCrits = !smartCrits; return true; }
+            if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { 
+                isAres = true; isBlaze = false; 
+                kaRange = 3.4; rF.setText("3.4"); 
+                kawallsRange = 3.0; wF.setText("3.0");
+                antiVelocity = true; autoRun = true;
+                return true; 
+            }
+            if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { 
+                isBlaze = true; isAres = false; 
+                kaRange = 3.1; rF.setText("3.1"); 
+                kawallsRange = 0.0; wF.setText("0.0");
+                antiVelocity = false; autoRun = true;
+                return true; 
+            }
+            if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { critsOnly = !critsOnly; return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) { antiVelocity = !antiVelocity; return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 60 && my <= cy + 75) { autoRun = !autoRun; return true; }
             return super.mouseClicked(mx, my, b);
@@ -365,4 +382,3 @@ public class ExampleMod implements ModInitializer {
         }
     }
 }
-
