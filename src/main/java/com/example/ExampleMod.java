@@ -38,17 +38,20 @@ import java.util.List;
 import java.util.Random;
 
 public class ExampleMod implements ModInitializer {
+    // Состояния модулей
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = true;
     public static boolean isAres = false, isBlaze = false, isMixer = true;
 
-    public static double kaRange = 3.4, kawallsRange = 0.0;
+    // Настройки
+    public static double kaRange = 3.3, kawallsRange = 0.0;
     private static PlayerEntity currentTarget = null;
     private static final Random random = new Random();
     
+    // Бинды
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
-    public static int keyMenu = GLFW.GLFW_KEY_0; // Меню на клавишу 0
+    public static int keyMenu = GLFW.GLFW_KEY_0; // Клавиша 0 (над буквами)
 
     public static String friendsRaw = "";
     public static List<String> friendsList = new ArrayList<>();
@@ -64,12 +67,14 @@ public class ExampleMod implements ModInitializer {
             if (client.player == null || client.world == null) return;
             long win = client.getWindow().getHandle();
 
+            // Открытие меню
             if (isPressed(win, keyMenu) && client.currentScreen == null) {
                 client.setScreen(new BubbleMenu());
             }
 
             handleBinds(client, win);
 
+            // Фоновые модули
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             if (autoRun && client.player.forwardSpeed > 0 && !client.player.isSneaking() && !client.player.horizontalCollision) {
@@ -99,26 +104,24 @@ public class ExampleMod implements ModInitializer {
 
         if (currentTarget != null) {
             float cooldown = client.player.getAttackCooldownProgress(0.0f);
-            float threshold = 0.92f + random.nextFloat() * 0.07f;
+            if (cooldown >= 0.92f) {
+                // Плавная доводка (jitter) для обхода MixerGrief
+                double jX = (random.nextDouble() - 0.5) * 0.12;
+                double jY = (random.nextDouble() - 0.5) * 0.12;
+                
+                Vec3d targetVec = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0).add(jX, jY, 0);
+                Vec3d diff = targetVec.subtract(client.player.getEyePos());
+                float sYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
+                float sPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            if (cooldown >= threshold) {
-                if (!smartCrits || client.player.fallDistance > 0.01f || client.player.isOnGround()) {
-                    // Jitter наводка
-                    double jX = (random.nextDouble() - 0.5) * 0.15;
-                    double jY = (random.nextDouble() - 0.5) * 0.15;
-                    double jZ = (random.nextDouble() - 0.5) * 0.15;
-                    
-                    Vec3d targetVec = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.6, 0).add(jX, jY, jZ);
-                    Vec3d diff = targetVec.subtract(client.player.getEyePos());
-                    float sYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
-                    float sPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
-
-                    // Исправленные пакеты под 1.21.4 (3 аргумента)
-                    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(sYaw, sPitch, client.player.isOnGround()));
-                    client.interactionManager.attackEntity(client.player, currentTarget);
-                    client.player.swingHand(Hand.MAIN_HAND);
-                    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(client.player.getYaw(), client.player.getPitch(), client.player.isOnGround()));
-                }
+                // ФИКС 1.21.4: LookAndOnGround теперь принимает 3 аргумента (yaw, pitch, onGround)
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(sYaw, sPitch, client.player.isOnGround()));
+                
+                client.interactionManager.attackEntity(client.player, currentTarget);
+                client.player.swingHand(Hand.MAIN_HAND);
+                
+                // Возврат ротаций, чтобы голову не дергало визуально
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(client.player.getYaw(), client.player.getPitch(), client.player.isOnGround()));
             }
         }
     }
@@ -136,6 +139,7 @@ public class ExampleMod implements ModInitializer {
         if (!esp) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
+        
         MatrixStack ms = context.matrixStack();
         Vec3d camPos = context.camera().getPos();
         RenderSystem.disableDepthTest();
@@ -150,7 +154,8 @@ public class ExampleMod implements ModInitializer {
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            drawBox(buffer, ms.peek().getPositionMatrix(), (float)(p.getWidth()/2 + 0.05), (float)(p.getHeight() + 0.05), 0.3f, 1f, 1f, 1f);
+            
+            drawBox(buffer, ms.peek().getPositionMatrix(), (float)p.getWidth()/2, (float)p.getHeight(), 0.0f, 1.0f, 1.0f, 1.0f);
             ms.pop();
         }
         consumers.draw();
@@ -158,6 +163,7 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void drawBox(VertexConsumer b, Matrix4f m, float w, float h, float r, float g, float bl, float a) {
+        // Линии бокса
         line(b, m, -w, 0, -w, w, 0, -w, r, g, bl, a); line(b, m, w, 0, -w, w, 0, w, r, g, bl, a);
         line(b, m, w, 0, w, -w, 0, w, r, g, bl, a); line(b, m, -w, 0, w, -w, 0, -w, r, g, bl, a);
         line(b, m, -w, h, -w, w, h, -w, r, g, bl, a); line(b, m, w, h, -w, w, h, w, r, g, bl, a);
@@ -258,76 +264,80 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // --- ИНТЕРФЕЙС (GUI) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
         public void render(DrawContext ctx, int mx, int my, float delta) {
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 95, cy - 100, cx + 95, cy + 110, 0xDD050505);
-            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE ABSOLUTE", cx, cy - 90, 0x55FFFF);
-            String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap"};
-            boolean[] states = {killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap};
+            ctx.fill(cx - 100, cy - 110, cx + 100, cy + 120, 0xDD000000); // Фон меню
+            ctx.drawCenteredTextWithShadow(textRenderer, "BUBBLE ABSOLUTE", cx, cy - 100, 0x00FFFF);
+            
+            String[] names = {"KillAura", "TriggerBot", "FullBright", "AutoTotem", "ESP", "FastPearl", "ElytraSwap", "Config"};
+            boolean[] states = {killaura, triggerbot, fullbright, autoTotem, esp, fastPearl, elytraSwap, false};
+            
             for (int i = 0; i < names.length; i++) {
-                int iy = cy - 70 + i * 24;
-                boolean h = mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20;
-                ctx.fill(cx - 85, iy, cx + 85, iy + 20, h ? 0xEE303030 : 0xEE151515);
-                ctx.drawText(textRenderer, names[i], cx - 80, iy + 6, states[i] ? 0x00FF00 : 0xFFFFFF, true);
+                int iy = cy - 80 + i * 24;
+                boolean h = mx >= cx - 90 && mx <= cx + 90 && my >= iy && my <= iy + 20;
+                ctx.fill(cx - 90, iy, cx + 90, iy + 20, h ? 0x66444444 : 0x66222222);
+                ctx.drawText(textRenderer, names[i], cx - 85, iy + 6, states[i] ? 0x00FF00 : 0xFFFFFF, true);
             }
         }
         @Override
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            for (int i = 0; i < 7; i++) {
-                int iy = cy - 70 + i * 24;
-                if (mx >= cx - 85 && mx <= cx + 85 && my >= iy && my <= iy + 20) {
-                    if (b == 0) {
-                        if (i == 0) client.setScreen(new KillAuraSettings(this));
-                        else if (i == 1) triggerbot = !triggerbot;
-                        else if (i == 2) fullbright = !fullbright;
-                        else if (i == 3) autoTotem = !autoTotem;
-                        else if (i == 4) esp = !esp;
-                        else if (i == 5) fastPearl = !fastPearl;
-                        else if (i == 6) elytraSwap = !elytraSwap;
-                        saveConfig(); return true;
-                    }
+            for (int i = 0; i < 8; i++) {
+                int iy = cy - 80 + i * 24;
+                if (mx >= cx - 90 && mx <= cx + 90 && my >= iy && my <= iy + 20) {
+                    if (i == 0) client.setScreen(new KillAuraSettings(this));
+                    else if (i == 1) triggerbot = !triggerbot;
+                    else if (i == 2) fullbright = !fullbright;
+                    else if (i == 3) autoTotem = !autoTotem;
+                    else if (i == 4) esp = !esp;
+                    else if (i == 5) fastPearl = !fastPearl;
+                    else if (i == 6) elytraSwap = !elytraSwap;
+                    saveConfig(); return true;
                 }
             }
             return super.mouseClicked(mx, my, b);
         }
+        @Override
+        public boolean shouldPause() { return false; }
     }
 
     public static class KillAuraSettings extends Screen {
         private final Screen parent;
         private TextFieldWidget rF, wF;
-        public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
+        public KillAuraSettings(Screen parent) { super(Text.literal("KA Settings")); this.parent = parent; }
         protected void init() {
             int cx = width / 2, cy = height / 2;
-            rF = new TextFieldWidget(textRenderer, cx - 40, cy - 75, 40, 14, Text.literal(""));
+            rF = new TextFieldWidget(textRenderer, cx - 40, cy - 60, 40, 14, Text.literal(""));
             rF.setText(String.valueOf(kaRange));
-            wF = new TextFieldWidget(textRenderer, cx - 40, cy - 55, 40, 14, Text.literal(""));
+            wF = new TextFieldWidget(textRenderer, cx - 40, cy - 40, 40, 14, Text.literal(""));
             wF.setText(String.valueOf(kawallsRange));
             addDrawableChild(rF); addDrawableChild(wF);
         }
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
-            ctx.fill(cx - 120, cy - 90, cx + 120, cy + 90, 0xEE050505);
-            ctx.drawText(textRenderer, "Range:", cx - 110, cy - 72, -1, true);
-            ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
-            drawBtn(ctx, cx - 110, cy - 10, "Mixer", isMixer, mx, my);
-            drawBtn(ctx, cx - 35, cy - 10, "Ares", isAres, mx, my);
-            drawBtn(ctx, cx + 40, cy - 10, "Blaze", isBlaze, mx, my);
+            ctx.fill(cx - 100, cy - 80, cx + 100, cy + 80, 0xEE000000);
+            ctx.drawText(textRenderer, "Range:", cx - 90, cy - 57, -1, true);
+            ctx.drawText(textRenderer, "Walls:", cx - 90, cy - 37, -1, true);
+            
+            drawCheck(ctx, cx - 90, cy, "Mixer", isMixer, mx, my);
+            drawCheck(ctx, cx - 20, cy, "Ares", isAres, mx, my);
+            drawCheck(ctx, cx + 50, cy, "Blaze", isBlaze, mx, my);
         }
-        private void drawBtn(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
-            boolean h = mx >= x && mx <= x + 70 && my >= y && my <= y + 15;
-            ctx.fill(x, y, x + 70, y + 15, h ? 0x404040 : 0x202020);
-            ctx.drawCenteredTextWithShadow(textRenderer, n, x + 35, y + 4, s ? 0x00FF00 : 0xFFFFFF);
+        private void drawCheck(DrawContext ctx, int x, int y, String n, boolean s, int mx, int my) {
+            ctx.drawText(textRenderer, n, x, y, s ? 0x00FF00 : 0xFFFFFF, true);
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
-            if (mx >= cx - 110 && mx <= cx - 40 && my >= cy - 10 && my <= cy + 5) { isMixer = true; isAres = false; isBlaze = false; return true; }
-            if (mx >= cx - 35 && mx <= cx + 35 && my >= cy - 10 && my <= cy + 5) { isAres = true; isMixer = false; isBlaze = false; return true; }
-            if (mx >= cx + 40 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { isBlaze = true; isMixer = false; isAres = false; return true; }
+            if (my >= cy && my <= cy + 10) {
+                if (mx >= cx - 90 && mx <= cx - 30) { isMixer = true; isAres = false; isBlaze = false; }
+                if (mx >= cx - 20 && mx <= cx + 40) { isAres = true; isMixer = false; isBlaze = false; }
+                if (mx >= cx + 50 && mx <= cx + 110) { isBlaze = true; isMixer = false; isAres = false; }
+            }
             return super.mouseClicked(mx, my, b);
         }
         public void close() {
