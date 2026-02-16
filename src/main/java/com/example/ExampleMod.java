@@ -100,31 +100,30 @@ public class ExampleMod implements ModInitializer {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = client.player.distanceTo(p);
             
-            double currentMaxRange = client.player.canSee(p) ? kaRange : kawallsRange;
-            if (d <= currentMaxRange) {
+            // Проверка видимости для Walls Range
+            double currentMax = client.player.canSee(p) ? kaRange : kawallsRange;
+            if (d <= currentMax) {
                 if (d < dist) { dist = d; currentTarget = p; }
             }
         }
 
         if (currentTarget != null) {
             targetFound = true;
-            
-            // Расчет ротаций (Silent)
+            // Вычисление углов для Silent Rotation
             Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             serverYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             serverPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Поворачиваем игрока к цели (для обхода проверки взгляда на MainBlaze)
-            client.player.setYaw(serverYaw);
-            client.player.setPitch(serverPitch);
-
-            // Удар
+            // Удар с использованием Silent Rotation (отправка пакета поворота серверу)
             if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
                 boolean isInWater = client.player.isSubmergedInWater() || client.player.isInLava();
 
                 if (!critsOnly || isFalling || isInWater) {
+                    // SILENT ROTATION: Шлем пакет поворота прямо перед ударом
+                    client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround(), true));
+                    
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                     if (autoRun) client.player.setSprinting(true);
@@ -338,19 +337,13 @@ public class ExampleMod implements ModInitializer {
         }
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
+            // Ares пресет
             if (mx >= cx - 110 && mx <= cx - 10 && my >= cy - 10 && my <= cy + 5) { 
-                isAres = true; isBlaze = false; 
-                kaRange = 3.4; rF.setText("3.4"); 
-                kawallsRange = 3.0; wF.setText("3.0");
-                antiVelocity = true; autoRun = true;
-                return true; 
+                isAres = true; isBlaze = false; kaRange = 3.4; rF.setText("3.4"); kawallsRange = 3.0; wF.setText("3.0"); antiVelocity = true; return true; 
             }
+            // MainBlaze пресет (ТВОИ НАСТРОЙКИ)
             if (mx >= cx + 10 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { 
-                isBlaze = true; isAres = false; 
-                kaRange = 3.1; rF.setText("3.1"); 
-                kawallsRange = 0.0; wF.setText("0.0");
-                antiVelocity = false; autoRun = true;
-                return true; 
+                isBlaze = true; isAres = false; kaRange = 3.1; rF.setText("3.1"); kawallsRange = 0.0; wF.setText("0.0"); antiVelocity = false; autoRun = true; return true; 
             }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { critsOnly = !critsOnly; return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) { antiVelocity = !antiVelocity; return true; }
