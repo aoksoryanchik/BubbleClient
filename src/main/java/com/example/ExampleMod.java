@@ -16,7 +16,6 @@ import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -43,7 +42,7 @@ public class ExampleMod implements ModInitializer {
     public static boolean isAres = true, isBlaze = false, isMixer = false;
 
     public static double kaRange = 3.4, kawallsRange = 3.0;
-    private static float serverYaw, serverPitch;
+    private static float fakeYaw, fakePitch;
     private static boolean targetFound = false;
     private static PlayerEntity currentTarget = null;
     private static final Random random = new Random();
@@ -73,9 +72,11 @@ public class ExampleMod implements ModInitializer {
 
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
-            if (killaura) runAura(client);
+            
+            // Основной цикл ауры
+            runAura(client);
+            
             if (triggerbot) runTrigger(client);
-
             if (antiVelocity && client.player.hurtTime > 0) {
                 client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
             }
@@ -94,6 +95,8 @@ public class ExampleMod implements ModInitializer {
     }
 
     private void runAura(MinecraftClient client) {
+        if (!killaura) { targetFound = false; return; }
+        
         currentTarget = null;
         double dist = Double.MAX_VALUE;
 
@@ -112,42 +115,50 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавная доводка 0.88f
-            float step = isMixer ? 30.0f : 180.0f;
-            serverYaw = updateRotation(serverYaw, targetYaw, step);
-            serverPitch = updateRotation(serverPitch, targetPitch, step);
+            // Плавная доводка без рывков
+            float rotationStep = isMixer ? 45.0f : 180.0f;
+            fakeYaw = updateRotation(fakeYaw, targetYaw, rotationStep);
+            fakePitch = updateRotation(fakePitch, targetPitch, rotationStep);
 
-            // ФИКС ДЛЯ 1.21.4: Используем LookAndOnGround с 4 аргументами (yaw, pitch, onGround, horizontalCollision)
-            // Это исправляет ошибку со скрина 3 (actual and formal argument lists differ in length)
-            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround(), client.player.horizontalCollision));
+            // КОРРЕКЦИЯ ДВИЖЕНИЯ: 
+            // Чтобы не было "ватности", мы временно подменяем углы поворота игрока
+            // прямо перед тем, как клиент отправит пакет на сервер.
+            float oldYaw = client.player.getYaw();
+            float oldPitch = client.player.getPitch();
+            
+            client.player.setYaw(fakeYaw);
+            client.player.setPitch(fakePitch);
 
-            // Удар
-            float cooldownRequirement = isMixer ? 0.95f : 0.92f;
-            if (client.player.getAttackCooldownProgress(0.0f) >= (cooldownRequirement + random.nextFloat() * 0.03f)) {
+            // Проверка кулдауна и удар
+            float speedLimit = isMixer ? 0.92f : 0.90f;
+            if (client.player.getAttackCooldownProgress(0.0f) >= (speedLimit + random.nextFloat() * 0.05f)) {
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
-                float yawDiff = Math.abs(MathHelper.wrapDegrees(serverYaw - targetYaw));
-                
-                if (yawDiff < 20.0f && (!smartCrits || isFalling || client.player.isSubmergedInWater())) {
-                    client.interactionManager.attackEntity(client.player, currentTarget);
-                    client.player.swingHand(Hand.MAIN_HAND);
-                    if (autoRun) client.player.setSprinting(true);
+                // Увеличиваем угол попадания для "ватных" ударов
+                if (Math.abs(MathHelper.wrapDegrees(fakeYaw - targetYaw)) < 30.0f) {
+                    if (!smartCrits || isFalling || client.player.isSubmergedInWater()) {
+                        client.interactionManager.attackEntity(client.player, currentTarget);
+                        client.player.swingHand(Hand.MAIN_HAND);
+                    }
                 }
             }
+            
+            // Возвращаем углы назад для визуальной части (чтобы у тебя камера не дергалась)
+            client.player.setYaw(oldYaw);
+            client.player.setPitch(oldPitch);
+            
         } else {
             targetFound = false;
-            serverYaw = client.player.getYaw();
-            serverPitch = client.player.getPitch();
+            fakeYaw = client.player.getYaw();
+            fakePitch = client.player.getPitch();
         }
     }
 
     private float updateRotation(float current, float target, float maxStep) {
         float f = MathHelper.wrapDegrees(target - current);
-        if (f > maxStep) f = maxStep;
-        if (f < -maxStep) f = -maxStep;
-        return current + f;
+        return current + MathHelper.clamp(f, -maxStep, maxStep);
     }
 
-    // --- Логика без изменений (GUI, ESP, Utils) ---
+    // --- ОСТАЛЬНОЙ КОД БЕЗ ИЗМЕНЕНИЙ (GUI, ESP, UTILS) ---
 
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
