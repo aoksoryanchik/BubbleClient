@@ -44,7 +44,6 @@ public class ExampleMod implements ModInitializer {
 
     public static double kaRange = 3.4, kawallsRange = 3.0;
     
-    // Фантомные ротации
     private static float serverYaw, serverPitch;
     private static boolean targetFound = false;
     private static PlayerEntity currentTarget = null;
@@ -114,22 +113,25 @@ public class ExampleMod implements ModInitializer {
             float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавная фантомная доводка (0.88f - 0.95f)
-            float step = isMixer ? 0.88f : 10.0f; // На Ares/Blaze можно быстрее
-            serverYaw = updateRotation(serverYaw, targetYaw, step * 40.0f); // Умножаем на 40 для нормальной скорости в тик
-            serverPitch = updateRotation(serverPitch, targetPitch, step * 20.0f);
+            // Плавная доводка
+            float step = isMixer ? 35.0f : 180.0f; // 0.88f эквивалент примерно 35-40 градусов в тик
+            serverYaw = updateRotation(serverYaw, targetYaw, step);
+            serverPitch = updateRotation(serverPitch, targetPitch, step);
 
-            // Всегда держим сервер в курсе наших фантомных ротаций, если есть цель
-            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround(), false));
+            // КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Отправляем FULL пакет (Координаты + Ротации)
+            // Это синхронизирует движение и не дает серверу тебя откатывать
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.Full(
+                client.player.getX(), client.player.getY(), client.player.getZ(),
+                serverYaw, serverPitch, client.player.isOnGround()
+            ));
 
             // Удар
             float cooldownRequirement = isMixer ? 0.94f : 0.92f;
             if (client.player.getAttackCooldownProgress(0.0f) >= (cooldownRequirement + random.nextFloat() * 0.04f)) {
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
-                
-                // Проверка: бьем только если доводка почти завершена (угол меньше 15 градусов), чтобы не забанили за удар спиной
                 float yawDiff = Math.abs(MathHelper.wrapDegrees(serverYaw - targetYaw));
-                if (yawDiff < 15.0f && (!smartCrits || isFalling || client.player.isSubmergedInWater())) {
+                
+                if (yawDiff < 20.0f && (!smartCrits || isFalling || client.player.isSubmergedInWater())) {
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
                     if (autoRun) client.player.setSprinting(true);
@@ -149,7 +151,7 @@ public class ExampleMod implements ModInitializer {
         return current + f;
     }
 
-    // --- Остальной код (GUI, ESP, Utils) без урезаний ---
+    // --- Остальной код без изменений ---
 
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
