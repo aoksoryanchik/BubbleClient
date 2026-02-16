@@ -12,12 +12,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
     
-    // В 1.21.4 используем упрощенный поиск метода
     @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true)
     private void onSendPacket(Packet<?> packet, CallbackInfo ci) {
+        // Проверяем, включена ли киллаура и найден ли таргет
         if (ExampleMod.killaura && ExampleMod.targetFound && packet instanceof PlayerMoveC2SPacket) {
-            // Используем твой Аксессор для подмены углов
             PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) packet;
+            // Устанавливаем Silent-ротации из главного класса
             accessor.setYaw(ExampleMod.serverYaw);
             accessor.setPitch(ExampleMod.serverPitch);
         }
