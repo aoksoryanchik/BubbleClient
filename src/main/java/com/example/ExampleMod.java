@@ -39,13 +39,13 @@ import java.util.Random;
 public class ExampleMod implements ModInitializer {
     public static boolean killaura = false, triggerbot = false, fullbright = true, esp = true;
     public static boolean autoTotem = true, autoRun = true, antiVelocity = true, elytraSwap = true, fastPearl = true, smartCrits = false;
-    public static boolean isAres = true, isBlaze = false, isMixer = false;
+    public static boolean isAres = true, isBlaze = false, isMixer = true;
 
-    public static double kaRange = 3.4, kawallsRange = 3.0;
+    public static double kaRange = 3.2, kawallsRange = 0.0;
     private static float fakeYaw, fakePitch;
-    private static boolean targetFound = false;
     private static PlayerEntity currentTarget = null;
     private static final Random random = new Random();
+    private static int attackDelay = 0;
 
     public static int keyKA = -1, keyTB = -1, keyFB = -1, keyAT = -1, keyESP = -1;
     public static int keyFP = GLFW.GLFW_KEY_Q, keyES = GLFW.GLFW_KEY_C;
@@ -73,12 +73,12 @@ public class ExampleMod implements ModInitializer {
             if (fullbright) client.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 1000, 0, false, false));
             if (autoTotem) checkTotem(client);
             
-            // Основной цикл скрытой ауры
-            runAuraStealth(client);
+            // Запуск легитной ауры
+            runStealthAura(client);
             
             if (triggerbot) runTrigger(client);
             if (antiVelocity && client.player.hurtTime > 0) {
-                client.player.setVelocity(client.player.getVelocity().multiply(0.6, 1.0, 0.6));
+                client.player.setVelocity(client.player.getVelocity().multiply(0.65, 1.0, 0.65));
             }
         });
     }
@@ -94,8 +94,8 @@ public class ExampleMod implements ModInitializer {
         if (isPressed(win, keyESP)) { esp = !esp; notify(client, "ESP", esp); }
     }
 
-    private void runAuraStealth(MinecraftClient client) {
-        if (!killaura) { targetFound = false; return; }
+    private void runStealthAura(MinecraftClient client) {
+        if (!killaura) return;
         
         currentTarget = null;
         double dist = Double.MAX_VALUE;
@@ -103,50 +103,56 @@ public class ExampleMod implements ModInitializer {
         for (PlayerEntity p : client.world.getPlayers()) {
             if (p == client.player || !p.isAlive() || friendsList.contains(p.getName().getString().toLowerCase())) continue;
             double d = client.player.distanceTo(p);
-            double currentMaxRange = client.player.canSee(p) ? kaRange : kawallsRange;
-            if (d <= currentMaxRange && d < dist) { dist = d; currentTarget = p; }
+            if (d <= kaRange && d < dist) { dist = d; currentTarget = p; }
         }
 
         if (currentTarget != null) {
-            targetFound = true;
-            // Рассчитываем идеальную точку удара (центр хитбокса с небольшим рандомом для легитности)
-            Vec3d targetVec = currentTarget.getPos().add(0, currentTarget.getHeight() * 0.5 + (random.nextDouble() * 0.1 - 0.05), 0);
+            // Имитация "дыхания" прицела (рандомная точка на хитбоксе)
+            double offsetZ = (random.nextDouble() * 0.2) - 0.1;
+            double offsetY = currentTarget.getHeight() * (0.4 + random.nextDouble() * 0.3);
+            
+            Vec3d targetVec = currentTarget.getPos().add(offsetZ, offsetY, offsetZ);
             Vec3d diff = targetVec.subtract(client.player.getEyePos());
             
-            float targetYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
-            float targetPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
+            float tYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
+            float tPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Плавная доводка «невидимого» взгляда
-            float rotSpeed = isMixer ? 35.0f : 180.0f;
-            fakeYaw = updateRotation(fakeYaw, targetYaw, rotSpeed);
-            fakePitch = updateRotation(fakePitch, targetPitch, rotSpeed);
+            // Очень плавная доводка для Mixer (30 градусов)
+            float step = isMixer ? 30.0f : 180.0f;
+            fakeYaw = updateRotation(fakeYaw, tYaw, step);
+            fakePitch = updateRotation(fakePitch, tPitch, step);
 
-            // КОРРЕКЦИЯ: Сохраняем реальные углы, ставим фейковые, бьем и возвращаем
-            // Это обходит проверку на "угол атаки" без дерганья твоей камеры
-            float realYaw = client.player.getYaw();
-            float realPitch = client.player.getPitch();
+            // Сохраняем реальный взгляд для игрока
+            float oldYaw = client.player.getYaw();
+            float oldPitch = client.player.getPitch();
 
-            // Рандомизация задержки для MixerGrief
-            float minCooldown = isMixer ? 0.94f : 0.91f;
-            if (client.player.getAttackCooldownProgress(0.0f) >= (minCooldown + random.nextFloat() * 0.04f)) {
-                // Временная подмена углов для легитного пакета
+            // Проверка кулдауна с "человеческим" фактором
+            if (attackDelay > 0) { attackDelay--; return; }
+
+            float progress = client.player.getAttackCooldownProgress(0.0f);
+            float limit = isMixer ? 0.96f : 0.92f;
+
+            if (progress >= limit) {
+                // Подменяем углы для легитного пакета
                 client.player.setYaw(fakeYaw);
                 client.player.setPitch(fakePitch);
 
-                boolean canHit = Math.abs(MathHelper.wrapDegrees(fakeYaw - targetYaw)) < 25.0f;
-                boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
-
-                if (canHit && (!smartCrits || isFalling || client.player.isSubmergedInWater())) {
-                    client.interactionManager.attackEntity(client.player, currentTarget);
-                    client.player.swingHand(Hand.MAIN_HAND);
+                // Если смотрим примерно на цель - бьем
+                if (Math.abs(MathHelper.wrapDegrees(fakeYaw - tYaw)) < 20.0f) {
+                    boolean isFalling = client.player.fallDistance > 0.05 && !client.player.isOnGround();
+                    if (!smartCrits || isFalling) {
+                        client.interactionManager.attackEntity(client.player, currentTarget);
+                        client.player.swingHand(Hand.MAIN_HAND);
+                        // Рандомная задержка после удара (0-2 тика)
+                        attackDelay = random.nextInt(3); 
+                    }
                 }
-
-                // Возвращаем камеру назад мгновенно
-                client.player.setYaw(realYaw);
-                client.player.setPitch(realPitch);
+                
+                // Сразу возвращаем камеру игроку
+                client.player.setYaw(oldYaw);
+                client.player.setPitch(oldPitch);
             }
         } else {
-            targetFound = false;
             fakeYaw = client.player.getYaw();
             fakePitch = client.player.getPitch();
         }
@@ -157,7 +163,7 @@ public class ExampleMod implements ModInitializer {
         return current + MathHelper.clamp(f, -maxStep, maxStep);
     }
 
-    // --- ОСТАЛЬНАЯ ЛОГИКА (БЕЗ ИЗМЕНЕНИЙ) ---
+    // --- ОСТАЛЬНАЯ ЛОГИКА (GUI, ESP, UTILS) ---
 
     private void runTrigger(MinecraftClient c) {
         if (c.crosshairTarget instanceof EntityHitResult e && e.getEntity() instanceof PlayerEntity p) {
@@ -229,9 +235,7 @@ public class ExampleMod implements ModInitializer {
             double z = MathHelper.lerp(context.tickCounter().getTickDelta(true), p.prevZ, p.getZ()) - camPos.z;
             ms.translate(x, y, z);
             ms.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-context.camera().getYaw()));
-            boolean isTarget = targetFound && (p == currentTarget);
-            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 
-                    isTarget ? 0f : 1f, isTarget ? 1f : 1f, isTarget ? 1f : 1f, 1f);
+            drawBox(buffer, ms.peek().getPositionMatrix(), p.getWidth()/2 + 0.05f, p.getHeight() + 0.05f, 1f, 1f, 1f, 1f);
             ms.pop();
         }
         consumers.draw(RenderLayer.getLines());
@@ -286,6 +290,7 @@ public class ExampleMod implements ModInitializer {
         } catch (Exception ignored) {}
     }
 
+    // --- GUI CLASSES (BubbleMenu, KillAuraSettings, BindScreen) ---
     public static class BubbleMenu extends Screen {
         public BubbleMenu() { super(Text.literal("Bubble")); }
         @Override
@@ -327,28 +332,25 @@ public class ExampleMod implements ModInitializer {
 
     public static class KillAuraSettings extends Screen {
         private final Screen parent;
-        private TextFieldWidget rF, wF, fF;
+        private TextFieldWidget rF, fF;
         public KillAuraSettings(Screen parent) { super(Text.literal("KA")); this.parent = parent; }
         protected void init() {
             int cx = width / 2, cy = height / 2;
             rF = new TextFieldWidget(textRenderer, cx - 40, cy - 75, 40, 14, Text.literal(""));
             rF.setText(String.valueOf(kaRange));
-            wF = new TextFieldWidget(textRenderer, cx - 40, cy - 55, 40, 14, Text.literal(""));
-            wF.setText(String.valueOf(kawallsRange));
             fF = new TextFieldWidget(textRenderer, cx - 60, cy - 35, 120, 14, Text.literal("Friends"));
             fF.setText(friendsRaw);
-            addDrawableChild(rF); addDrawableChild(wF); addDrawableChild(fF);
+            addDrawableChild(rF); addDrawableChild(fF);
         }
         public void render(DrawContext ctx, int mx, int my, float delta) {
             super.render(ctx, mx, my, delta);
             int cx = width / 2, cy = height / 2;
             ctx.fill(cx - 120, cy - 90, cx + 120, cy + 90, 0xEE050505);
             ctx.drawText(textRenderer, "Range:", cx - 110, cy - 72, -1, true);
-            ctx.drawText(textRenderer, "Walls:", cx - 110, cy - 52, -1, true);
             drawBtn(ctx, cx - 110, cy - 10, "Mixer", isMixer, mx, my);
             drawBtn(ctx, cx - 35, cy - 10, "Ares", isAres, mx, my);
             drawBtn(ctx, cx + 40, cy - 10, "Blaze", isBlaze, mx, my);
-            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits (Wait Fall)", smartCrits, mx, my);
+            drawCheck(ctx, cx - 110, cy + 20, "Smart Crits", smartCrits, mx, my);
             drawCheck(ctx, cx - 110, cy + 40, "AntiVelocity", antiVelocity, mx, my);
             drawCheck(ctx, cx - 110, cy + 60, "AutoRun", autoRun, mx, my);
         }
@@ -365,22 +367,21 @@ public class ExampleMod implements ModInitializer {
         public boolean mouseClicked(double mx, double my, int b) {
             int cx = width / 2, cy = height / 2;
             if (mx >= cx - 110 && mx <= cx - 40 && my >= cy - 10 && my <= cy + 5) { 
-                isMixer = true; isAres = false; isBlaze = false; kaRange = 3.0; kawallsRange = 0.0; smartCrits = false; autoRun = true; antiVelocity = false; updateFields(); return true; 
+                isMixer = true; isAres = false; isBlaze = false; kaRange = 3.2; return true; 
             }
             if (mx >= cx - 35 && mx <= cx + 35 && my >= cy - 10 && my <= cy + 5) { 
-                isAres = true; isMixer = false; isBlaze = false; kaRange = 3.4; kawallsRange = 3.0; updateFields(); return true; 
+                isAres = true; isMixer = false; isBlaze = false; kaRange = 3.4; return true; 
             }
             if (mx >= cx + 40 && mx <= cx + 110 && my >= cy - 10 && my <= cy + 5) { 
-                isBlaze = true; isMixer = false; isAres = false; kaRange = 3.6; kawallsRange = 0.0; updateFields(); return true; 
+                isBlaze = true; isMixer = false; isAres = false; kaRange = 3.6; return true; 
             }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 20 && my <= cy + 35) { smartCrits = !smartCrits; return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 40 && my <= cy + 55) { antiVelocity = !antiVelocity; return true; }
             if (mx >= cx - 110 && mx <= cx + 110 && my >= cy + 60 && my <= cy + 75) { autoRun = !autoRun; return true; }
             return super.mouseClicked(mx, my, b);
         }
-        private void updateFields() { rF.setText(String.valueOf(kaRange)); wF.setText(String.valueOf(kawallsRange)); }
         public void close() {
-            try { kaRange = Double.parseDouble(rF.getText()); kawallsRange = Double.parseDouble(wF.getText()); } catch (Exception ignored) {}
+            try { kaRange = Double.parseDouble(rF.getText()); } catch (Exception ignored) {}
             friendsRaw = fF.getText(); friendsList.clear();
             if (!friendsRaw.isEmpty()) Arrays.stream(friendsRaw.split(",")).map(String::trim).map(String::toLowerCase).forEach(friendsList::add);
             saveConfig(); client.setScreen(parent);
