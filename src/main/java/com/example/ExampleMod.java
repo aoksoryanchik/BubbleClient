@@ -108,15 +108,16 @@ public class ExampleMod implements ModInitializer {
 
         if (currentTarget != null) {
             targetFound = true;
-            // Улучшенная точка прицеливания (Mixer Bypass)
-            double randomOffset = 0.3 + (rnd.nextDouble() * 0.4); 
-            Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * randomOffset, 0);
+            
+            // Логика ротаций: Ares - четко, Mixer - плавно
+            double yOff = isMixer ? (0.3 + rnd.nextDouble() * 0.4) : 0.5;
+            Vec3d tPos = currentTarget.getPos().add(0, currentTarget.getHeight() * yOff, 0);
             Vec3d diff = tPos.subtract(client.player.getEyePos());
             
             serverYaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
             serverPitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.sqrt(diff.x * diff.x + diff.z * diff.z)));
 
-            // Фикс движения под ротацию
+            // Полный фикс движения (MoveFix)
             float f = client.player.input.movementForward;
             float s = client.player.input.movementSideways;
             if (f != 0 || s != 0) {
@@ -128,12 +129,12 @@ public class ExampleMod implements ModInitializer {
             }
 
             // Удар
-            if (client.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
+            if (client.player.getAttackCooldownProgress(0.0f) >= 0.92f) {
                 boolean isFalling = client.player.fallDistance > 0 && !client.player.isOnGround();
                 boolean isInWater = client.player.isSubmergedInWater() || client.player.isInLava();
 
                 if (!smartCrits || isFalling || isInWater) {
-                    // Отправляем пакет поворота СРАЗУ перед ударом
+                    // ГАРАНТИЯ УДАРА: Сначала пакет взгляда, потом моментальный удар
                     client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(serverYaw, serverPitch, client.player.isOnGround(), true));
                     client.interactionManager.attackEntity(client.player, currentTarget);
                     client.player.swingHand(Hand.MAIN_HAND);
