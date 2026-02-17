@@ -12,18 +12,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
 
+    /**
+     * Перехватываем отправку пакетов движения.
+     * Если киллаура нашла цель, подменяем Yaw и Pitch в пакете на плавные (serverYaw/Pitch).
+     */
     @Inject(method = "sendPacket(Lnet/minecraft/network/packet/Packet;)V", at = @At("HEAD"), cancellable = true)
     private void onSendPacket(Packet<?> packet, CallbackInfo ci) {
-        // Проверка флагов из ExampleMod
         if (ExampleMod.killaura && ExampleMod.targetFound && packet instanceof PlayerMoveC2SPacket movePacket) {
-            try {
-                // Применяем Silent ротации через аксессор
-                PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
-                accessor.setYaw(ExampleMod.serverYaw);
-                accessor.setPitch(ExampleMod.serverPitch);
-            } catch (Exception ignored) {
-                // Игнорируем ошибки каста, чтобы не вылетело
-            }
+            // Используем интерфейс-аксессор для изменения приватных полей пакета
+            PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
+            
+            accessor.setYaw(ExampleMod.serverYaw);
+            accessor.setPitch(ExampleMod.serverPitch);
+            
+            // Теперь сервер получит плавные ротации, а твой прицел (от 1 лица) останется на месте
         }
     }
 }
