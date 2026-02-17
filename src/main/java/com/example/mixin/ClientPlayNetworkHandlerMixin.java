@@ -12,18 +12,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
 
-    // В 1.21.4 Fabric Loader иногда капризничает с именами, 
-    // поэтому используем универсальную точку входа через sendPacket
-    @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true)
+    // remap = false отключает поиск по ID (method_52787) 
+    // и заставляет искать метод просто по названию. 
+    // Это лучший способ для 1.21.4 на TLauncher.
+    @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true, remap = false)
     private void onSendPacket(Packet<?> packet, CallbackInfo ci) {
         if (ExampleMod.killaura && ExampleMod.targetFound && packet instanceof PlayerMoveC2SPacket movePacket) {
             try {
                 PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
                 accessor.setYaw(ExampleMod.serverYaw);
                 accessor.setPitch(ExampleMod.serverPitch);
-            } catch (Exception e) {
-                // Если вдруг пакет не кастуется, просто не трогаем его
-            }
+            } catch (Exception ignored) { }
         }
     }
 }
