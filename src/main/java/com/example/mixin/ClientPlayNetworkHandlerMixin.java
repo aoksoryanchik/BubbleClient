@@ -12,20 +12,23 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
 
-    /**
-     * remap = false критически важен для 1.21.4, чтобы избежать InvalidInjectionException
-     * который мы видели в краш-репорте.
-     */
-    @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true, remap = false)
+    // Мы инжектимся в HEAD метода, но используем дескриптор, 
+    // который Fabric поймет на 1.21.4.
+    @Inject(method = "sendPacket(Lnet/minecraft/network/packet/Packet;)V", at = @At("HEAD"), cancellable = true)
     private void onSendPacket(Packet<?> packet, CallbackInfo ci) {
+        // Проверка флагов твоей киллауры (настройки под Ares/Blaze)
         if (ExampleMod.killaura && ExampleMod.targetFound && packet instanceof PlayerMoveC2SPacket movePacket) {
             try {
-                // Используем наш аксессор для подмены углов обзора (Silent Rotations)
+                // Тот самый аксессор, который ты создал
                 PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
+                
+                // Устанавливаем серверные углы (Silent Rotations)
                 accessor.setYaw(ExampleMod.serverYaw);
                 accessor.setPitch(ExampleMod.serverPitch);
-            } catch (Exception ignored) {
-                // Игнорируем ошибки каста, чтобы не вылетал майнкрафт
+                
+            } catch (Exception e) {
+                // Если что-то пошло не так, просто печатаем в консоль, чтобы не крашнуло
+                e.printStackTrace();
             }
         }
     }
