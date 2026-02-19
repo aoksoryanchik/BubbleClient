@@ -12,17 +12,21 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
 
-    // remap = false отключает поиск по ID (method_52787) 
-    // и заставляет искать метод просто по названию. 
-    // Это лучший способ для 1.21.4 на TLauncher.
+    /**
+     * remap = false критически важен для 1.21.4, чтобы избежать InvalidInjectionException
+     * который мы видели в краш-репорте.
+     */
     @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true, remap = false)
     private void onSendPacket(Packet<?> packet, CallbackInfo ci) {
         if (ExampleMod.killaura && ExampleMod.targetFound && packet instanceof PlayerMoveC2SPacket movePacket) {
             try {
+                // Используем наш аксессор для подмены углов обзора (Silent Rotations)
                 PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
                 accessor.setYaw(ExampleMod.serverYaw);
                 accessor.setPitch(ExampleMod.serverPitch);
-            } catch (Exception ignored) { }
+            } catch (Exception ignored) {
+                // Игнорируем ошибки каста, чтобы не вылетал майнкрафт
+            }
         }
     }
 }
