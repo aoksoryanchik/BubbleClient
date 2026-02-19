@@ -12,22 +12,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
 
-    // Мы инжектимся в HEAD метода, но используем дескриптор, 
-    // который Fabric поймет на 1.21.4.
+    // В 1.21.4 обязательно нужно указывать аргументы метода в скобках (Lnet/minecraft/network/packet/Packet;)V
+    // Это гарантирует, что Mixin найдет нужный метод при запуске
     @Inject(method = "sendPacket(Lnet/minecraft/network/packet/Packet;)V", at = @At("HEAD"), cancellable = true)
     private void onSendPacket(Packet<?> packet, CallbackInfo ci) {
-        // Проверка флагов твоей киллауры (настройки под Ares/Blaze)
         if (ExampleMod.killaura && ExampleMod.targetFound && packet instanceof PlayerMoveC2SPacket movePacket) {
             try {
-                // Тот самый аксессор, который ты создал
+                // Используем твой аксессор для подмены углов (Silent Rotations)
                 PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
-                
-                // Устанавливаем серверные углы (Silent Rotations)
                 accessor.setYaw(ExampleMod.serverYaw);
                 accessor.setPitch(ExampleMod.serverPitch);
-                
             } catch (Exception e) {
-                // Если что-то пошло не так, просто печатаем в консоль, чтобы не крашнуло
+                // Чтобы не крашило, если аксессор вдруг не сработал
                 e.printStackTrace();
             }
         }
