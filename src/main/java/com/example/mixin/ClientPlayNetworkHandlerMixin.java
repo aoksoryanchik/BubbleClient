@@ -12,19 +12,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
 
-    // Используем полный дескриптор метода, чтобы Fabric Loader 0.17.2 его узнал
-    @Inject(method = "sendPacket(Lnet/minecraft/network/packet/Packet;)V", at = @At("HEAD"), cancellable = true)
+    // В 1.21.4 мы используем прямую ссылку на метод с дескриптором.
+    // remap = false — это ВАЖНО, чтобы он не искал битый method_52787
+    @Inject(method = "sendPacket(Lnet/minecraft/network/packet/Packet;)V", at = @At("HEAD"), cancellable = true, remap = false)
     private void onSendPacket(Packet<?> packet, CallbackInfo ci) {
-        // Проверка твоих настроек под Ares/MineBlaze
         if (ExampleMod.killaura && ExampleMod.targetFound && packet instanceof PlayerMoveC2SPacket movePacket) {
             try {
-                // Пытаемся подменить углы обзора через аксессор
                 PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
                 accessor.setYaw(ExampleMod.serverYaw);
                 accessor.setPitch(ExampleMod.serverPitch);
-            } catch (Exception e) {
-                // Если не получилось, просто продолжаем, чтобы не было краша
-            }
+            } catch (Exception ignored) {}
         }
     }
 }
